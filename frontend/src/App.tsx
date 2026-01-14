@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
 import { useAuthStore } from './stores/authStore';
 import Layout from './components/Layout';
 import LoginPage from './pages/auth/LoginPage';
@@ -8,6 +9,39 @@ import ProjectListPage from './pages/projects/ProjectListPage';
 import ProjectDetailPage from './pages/projects/ProjectDetailPage';
 import IssueListPage from './pages/issues/IssueListPage';
 import IssueDetailPage from './pages/issues/IssueDetailPage';
+import TimeEntriesPage from './pages/time-entries/TimeEntriesPage';
+import NewsListPage from './pages/news/NewsListPage';
+import AdminDashboardPage from './pages/admin/AdminDashboardPage';
+import UsersPage from './pages/admin/UsersPage';
+import RolesPage from './pages/admin/RolesPage';
+import GroupsPage from './pages/admin/GroupsPage';
+import CustomFieldsPage from './pages/admin/CustomFieldsPage';
+import WorkflowsPage from './pages/admin/WorkflowsPage';
+
+// Redirect component for /new routes
+function NewProjectRedirect() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    navigate('/projects?openModal=true', { replace: true });
+  }, [navigate]);
+  return null;
+}
+
+function NewIssueRedirect() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    navigate('/issues?openModal=true', { replace: true });
+  }, [navigate]);
+  return null;
+}
+
+function NewTimeEntryRedirect() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    navigate('/time-entries?openForm=true', { replace: true });
+  }, [navigate]);
+  return null;
+}
 
 function App() {
   const { isAuthenticated } = useAuthStore();
@@ -21,9 +55,20 @@ function App() {
         <Route path="/" element={<Layout />}>
           <Route index element={<DashboardPage />} />
           <Route path="projects" element={<ProjectListPage />} />
+          <Route path="projects/new" element={<NewProjectRedirect />} />
           <Route path="projects/:id" element={<ProjectDetailPage />} />
           <Route path="issues" element={<IssueListPage />} />
+          <Route path="issues/new" element={<NewIssueRedirect />} />
           <Route path="issues/:id" element={<IssueDetailPage />} />
+          <Route path="news" element={<NewsListPage />} />
+          <Route path="time-entries" element={<TimeEntriesPage />} />
+          <Route path="time-entries/new" element={<NewTimeEntryRedirect />} />
+          <Route path="admin" element={<AdminDashboardPage />} />
+          <Route path="admin/users" element={<UsersPage />} />
+          <Route path="admin/roles" element={<RolesPage />} />
+          <Route path="admin/groups" element={<GroupsPage />} />
+          <Route path="admin/custom-fields" element={<CustomFieldsPage />} />
+          <Route path="admin/workflows" element={<WorkflowsPage />} />
         </Route>
       ) : (
         <Route path="*" element={<Navigate to="/login" replace />} />

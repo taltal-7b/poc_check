@@ -21,6 +21,10 @@ import customFieldRoutes from './routes/custom-field.routes';
 import documentRoutes from './routes/document.routes';
 import newsRoutes from './routes/news.routes';
 import wikiRoutes from './routes/wiki.routes';
+import masterDataRoutes from './routes/master-data.routes';
+import attachmentRoutes from './routes/attachment.routes';
+import { errorHandler } from './middleware/error.middleware';
+// import attachmentRoutes from './routes/attachment.routes'; // TODO: multerをインストール後に有効化
 import { errorHandler } from './middleware/error.middleware';
 
 config();
@@ -31,7 +35,17 @@ const PORT = process.env.PORT || 3000;
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 1000, // limit each IP to 1000 requests per windowMs
+  message: 'Too many requests, please try again later.',
+  skip: (req) => {
+    // Skip rate limiting for certain paths in development
+    if (process.env.NODE_ENV === 'development') {
+      return req.path.startsWith('/api/trackers') || 
+             req.path.startsWith('/api/issue-statuses') || 
+             req.path.startsWith('/api/issue-priorities');
+    }
+    return false;
+  }
 });
 
 // Middleware
@@ -70,6 +84,9 @@ app.use('/api', customFieldRoutes);
 app.use('/api', documentRoutes);
 app.use('/api', newsRoutes);
 app.use('/api', wikiRoutes);
+app.use('/api', masterDataRoutes);
+app.use('/api', attachmentRoutes);
+// app.use('/api', attachmentRoutes); // TODO: multerをインストール後に有効化
 
 // Health check
 app.get('/health', (req, res) => {

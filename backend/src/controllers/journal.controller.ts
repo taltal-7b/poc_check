@@ -1,8 +1,10 @@
 import { Response } from 'express';
 import { AppDataSource } from '../config/database';
+import { In } from 'typeorm';
 import { Journal } from '../entities/Journal';
 import { JournalDetail } from '../entities/JournalDetail';
 import { Issue } from '../entities/Issue';
+import { Attachment } from '../entities/Attachment';
 import { AppError, catchAsync } from '../middleware/error.middleware';
 import { AuthRequest } from '../middleware/auth.middleware';
 
@@ -12,7 +14,10 @@ export const getIssueJournals = catchAsync(async (req: AuthRequest, res: Respons
 
   const journalRepository = AppDataSource.getRepository(Journal);
   const journals = await journalRepository.find({
-    where: { issueId: parseInt(issueId) },
+    where: { 
+      journalizedId: parseInt(issueId),
+      journalizedType: 'Issue'
+    },
     relations: ['user', 'details'],
     order: { createdOn: 'ASC' },
   });
@@ -33,9 +38,34 @@ export const getIssueJournals = catchAsync(async (req: AuthRequest, res: Respons
     return false;
   });
 
+  const attachmentRepository = AppDataSource.getRepository(Attachment);
+  const journalIds = filteredJournals.map((journal) => journal.id);
+  const journalAttachments = journalIds.length
+    ? await attachmentRepository.find({
+        where: {
+          containerType: 'Journal',
+          containerId: In(journalIds),
+        },
+        relations: ['author'],
+        order: { createdOn: 'ASC' },
+      })
+    : [];
+
+  const journalAttachmentMap = new Map<number, Attachment[]>();
+  for (const attachment of journalAttachments) {
+    const list = journalAttachmentMap.get(attachment.containerId) || [];
+    list.push(attachment);
+    journalAttachmentMap.set(attachment.containerId, list);
+  }
+
+  const journalsWithAttachments = filteredJournals.map((journal) => ({
+    ...journal,
+    attachments: journalAttachmentMap.get(journal.id) || [],
+  }));
+
   res.json({
     status: 'success',
-    data: { journals: filteredJournals },
+    data: { journals: journalsWithAttachments },
   });
 });
 
@@ -60,7 +90,8 @@ export const addJournalEntry = catchAsync(async (req: AuthRequest, res: Response
 
   const journalRepository = AppDataSource.getRepository(Journal);
   const journal = journalRepository.create({
-    issueId: parseInt(issueId),
+    journalizedId: parseInt(issueId),
+    journalizedType: 'Issue',
     userId: req.user!.id,
     notes,
     privateNotes,
@@ -125,7 +156,11 @@ export const deleteJournalEntry = catchAsync(async (req: AuthRequest, res: Respo
 
   const journalRepository = AppDataSource.getRepository(Journal);
   const journal = await journalRepository.findOne({
-    where: { id: parseInt(journalId), issueId: parseInt(issueId) },
+    where: { 
+      id: parseInt(journalId), 
+      journalizedId: parseInt(issueId),
+      journalizedType: 'Issue'
+    },
   });
 
   if (!journal) {

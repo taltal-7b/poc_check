@@ -16,7 +16,6 @@ import { User } from './User';
 import { IssuePriority } from './IssuePriority';
 import { IssueCategory } from './IssueCategory';
 import { Version } from './Version';
-import { Journal } from './Journal';
 import { TimeEntry } from './TimeEntry';
 import { Attachment } from './Attachment';
 import { IssueRelation } from './IssueRelation';
@@ -130,8 +129,8 @@ export class Issue {
   @OneToMany(() => Issue, (issue) => issue.parent)
   children: Issue[];
 
-  @OneToMany(() => Journal, (journal) => journal.issue)
-  journals: Journal[];
+  // Note: journals use polymorphic relation (journalized_id + journalized_type)
+  // so we query them manually instead of using @OneToMany
 
   @OneToMany(() => TimeEntry, (timeEntry) => timeEntry.issue)
   timeEntries: TimeEntry[];

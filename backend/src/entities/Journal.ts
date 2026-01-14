@@ -36,8 +36,8 @@ export class Journal {
   privateNotes: boolean;
 
   // Relations
-  @ManyToOne(() => Issue, (issue) => issue.journals)
-  issue: Issue;
+  // Note: We don't use @ManyToOne for issue because it's a polymorphic relation
+  // (journalized_id + journalized_type). We query journals manually instead.
 
   @ManyToOne(() => User, (user) => user.journals)
   user: User;

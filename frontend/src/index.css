@@ -25,6 +25,7 @@
 
 body {
   min-height: 100vh;
+  background-color: #f9fafb;
 }
 
 #root {
@@ -33,7 +34,7 @@ body {
 
 @layer components {
   .btn {
-    @apply px-4 py-2 rounded-md font-medium transition-colors duration-200;
+    @apply px-4 py-2 rounded-md font-medium transition-colors duration-200 shadow-sm;
   }
 
   .btn-primary {
@@ -41,7 +42,7 @@ body {
   }
 
   .btn-secondary {
-    @apply bg-gray-200 text-gray-900 hover:bg-gray-300;
+    @apply bg-white text-gray-700 hover:bg-gray-50 border border-gray-300;
   }
 
   .btn-danger {
@@ -49,14 +50,42 @@ body {
   }
 
   .input {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+    @apply w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors;
   }
 
   .card {
-    @apply bg-white rounded-lg shadow-md p-6;
+    @apply bg-white rounded-lg shadow-sm border border-gray-200 p-6;
   }
 
   .label {
     @apply block text-sm font-medium text-gray-700 mb-1;
   }
+}
+
+/* Select のスタイルを統一 */
+select.input {
+  @apply appearance-none bg-white;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 0.5rem center;
+  background-repeat: no-repeat;
+  background-size: 1.5em 1.5em;
+  padding-right: 2.5rem;
+}
+
+/* Checkbox のスタイルを統一 */
+input[type="checkbox"] {
+  @apply w-4 h-4 text-primary-600 bg-white border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:ring-offset-0 transition-colors cursor-pointer;
+}
+
+/* Range slider のスタイルを統一 */
+input[type="range"] {
+  @apply appearance-none bg-gray-200 h-2 rounded-lg outline-none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  @apply appearance-none w-4 h-4 bg-primary-600 rounded-full cursor-pointer hover:bg-primary-700;
+}
+
+input[type="range"]::-moz-range-thumb {
+  @apply w-4 h-4 bg-primary-600 border-0 rounded-full cursor-pointer;
 }

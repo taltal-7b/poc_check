@@ -8,6 +8,9 @@ import {
   ListTodo,
   Home,
   User,
+  Clock,
+  Shield,
+  Newspaper,
 } from 'lucide-react';
 
 export default function Layout() {
@@ -36,7 +39,7 @@ export default function Layout() {
               <Link to="/" className="flex items-center space-x-2">
                 <Menu className="w-6 h-6 text-primary-600" />
                 <span className="text-xl font-bold text-gray-900">
-                  プロジェクト管理
+                  プロジェクト管琁E
                 </span>
               </Link>
 
@@ -62,6 +65,29 @@ export default function Layout() {
                   <ListTodo className="w-4 h-4" />
                   <span>課題</span>
                 </Link>
+                <Link
+                  to="/news"
+                  className="flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100"
+                >
+                  <Newspaper className="w-4 h-4" />
+                  <span>ニュース</span>
+                </Link>
+                <Link
+                  to="/time-entries"
+                  className="flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100"
+                >
+                  <Clock className="w-4 h-4" />
+                  <span>Time</span>
+                </Link>
+                {user?.admin && (
+                  <Link
+                    to="/admin"
+                    className="flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100"
+                  >
+                    <Shield className="w-4 h-4" />
+                    <span>Admin</span>
+                  </Link>
+                )}
               </nav>
             </div>
 

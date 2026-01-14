@@ -38,3 +38,5 @@ export const Loading: React.FC<LoadingProps> = ({ size = 'md', text = '読み込
     </div>
   );
 };
+
+export default Loading;

@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { AppDataSource } from '../config/database';
+import { In } from 'typeorm';
 import { Issue } from '../entities/Issue';
 import { Project } from '../entities/Project';
 import { Tracker } from '../entities/Tracker';
@@ -8,6 +9,8 @@ import { IssuePriority } from '../entities/IssuePriority';
 import { IssueCategory } from '../entities/IssueCategory';
 import { Version } from '../entities/Version';
 import { User } from '../entities/User';
+import { Journal } from '../entities/Journal';
+import { Attachment } from '../entities/Attachment';
 import { AppError, catchAsync } from '../middleware/error.middleware';
 import { AuthRequest } from '../middleware/auth.middleware';
 
@@ -141,20 +144,10 @@ export const getIssueById = catchAsync(async (req: AuthRequest, res: Response) =
       'fixedVersion',
       'parent',
       'children',
-      'journals',
-      'journals.user',
-      'journals.details',
-      'timeEntries',
-      'timeEntries.user',
-      'timeEntries.activity',
-      'attachments',
-      'attachments.author',
-      'relationsFrom',
-      'relationsFrom.issueTo',
-      'relationsTo',
-      'relationsTo.issueFrom',
-      'watchers',
-      'watchers.user',
+      'children.status',
+      'children.priority',
+      'children.tracker',
+      'children.assignedTo',
     ],
   });
 
@@ -169,9 +162,62 @@ export const getIssueById = catchAsync(async (req: AuthRequest, res: Response) =
     }
   }
 
+  // Manually fetch journals (polymorphic relation)
+  const journalRepository = AppDataSource.getRepository(Journal);
+  const journals = await journalRepository.find({
+    where: {
+      journalizedId: parseInt(id),
+      journalizedType: 'Issue',
+    },
+    relations: ['user'],
+    order: { createdOn: 'ASC' },
+  });
+
+  const attachmentRepository = AppDataSource.getRepository(Attachment);
+  const issueAttachments = await attachmentRepository.find({
+    where: {
+      containerType: 'Issue',
+      containerId: parseInt(id),
+    },
+    relations: ['author'],
+    order: { createdOn: 'ASC' },
+  });
+
+  let journalsWithAttachments = journals;
+  if (journals.length > 0) {
+    const journalIds = journals.map((journal) => journal.id);
+    const journalAttachments = await attachmentRepository.find({
+      where: {
+        containerType: 'Journal',
+        containerId: In(journalIds),
+      },
+      relations: ['author'],
+      order: { createdOn: 'ASC' },
+    });
+
+    const journalAttachmentMap = new Map<number, Attachment[]>();
+    for (const attachment of journalAttachments) {
+      const list = journalAttachmentMap.get(attachment.containerId) || [];
+      list.push(attachment);
+      journalAttachmentMap.set(attachment.containerId, list);
+    }
+
+    journalsWithAttachments = journals.map((journal) => ({
+      ...journal,
+      attachments: journalAttachmentMap.get(journal.id) || [],
+    }));
+  }
+
+  // Add journals to issue
+  const issueWithJournals = {
+    ...issue,
+    attachments: issueAttachments,
+    journals: journalsWithAttachments,
+  };
+
   res.json({
     status: 'success',
-    data: { issue },
+    data: { issue: issueWithJournals },
   });
 });
 

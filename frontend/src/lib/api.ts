@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { useAuthStore } from '../stores/authStore';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+export const API_URL =
+  (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001/api';
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -97,6 +98,25 @@ export const issuesApi = {
   getJournals: (id: number) => api.get(`/issues/${id}/journals`),
   addJournal: (id: number, data: any) =>
     api.post(`/issues/${id}/journals`, data),
+  uploadIssueAttachments: (issueId: number, files: File[]) => {
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+    return api.post(`/issues/${issueId}/attachments`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  uploadJournalAttachments: (issueId: number, journalId: number, files: File[]) => {
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+    return api.post(`/issues/${issueId}/journals/${journalId}/attachments`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+};
+
+export const attachmentsApi = {
+  delete: (id: number) => api.delete(`/attachments/${id}`),
+  getDownloadUrl: (id: number) => `${API_URL}/attachments/${id}/download`,
 };
 
 // Users API
@@ -106,4 +126,90 @@ export const usersApi = {
   create: (data: any) => api.post('/users', data),
   update: (id: number, data: any) => api.put(`/users/${id}`, data),
   delete: (id: number) => api.delete(`/users/${id}`),
+  toggleLock: (id: number) => api.post(`/users/${id}/lock`),
+};
+
+// Trackers API
+export const trackersApi = {
+  getAll: () => api.get('/trackers'),
+};
+
+// Issue Statuses API
+export const issueStatusesApi = {
+  getAll: () => api.get('/issue-statuses'),
+};
+
+// Issue Priorities API
+export const issuePrioritiesApi = {
+  getAll: () => api.get('/issue-priorities'),
+};
+
+// Time Entries API
+export const timeEntriesApi = {
+  getAll: (params?: any) => api.get('/time-entries', { params }),
+  getById: (id: number) => api.get(`/time-entries/${id}`),
+  create: (data: any) => api.post('/time-entries', data),
+  update: (id: number, data: any) => api.put(`/time-entries/${id}`, data),
+  delete: (id: number) => api.delete(`/time-entries/${id}`),
+  getActivities: () => api.get('/time-entries/activities/list'),
+  createActivity: (data: any) => api.post('/time-entries/activities', data),
+  updateActivity: (id: number, data: any) =>
+    api.put(`/time-entries/activities/${id}`, data),
+  deleteActivity: (id: number) => api.delete(`/time-entries/activities/${id}`),
+};
+
+// Roles API
+export const rolesApi = {
+  getAll: () => api.get('/roles'),
+  getById: (id: number) => api.get(`/roles/${id}`),
+  create: (data: any) => api.post('/roles', data),
+  update: (id: number, data: any) => api.put(`/roles/${id}`, data),
+  delete: (id: number) => api.delete(`/roles/${id}`),
+  getAvailablePermissions: () => api.get('/roles/permissions/available'),
+};
+
+// Groups API
+export const groupsApi = {
+  getAll: () => api.get('/groups'),
+  getById: (id: number) => api.get(`/groups/${id}`),
+  create: (data: any) => api.post('/groups', data),
+  update: (id: number, data: any) => api.put(`/groups/${id}`, data),
+  delete: (id: number) => api.delete(`/groups/${id}`),
+  getUsers: (id: number) => api.get(`/groups/${id}/users`),
+  addUser: (id: number, userId: number) =>
+    api.post(`/groups/${id}/users`, { userId }),
+  removeUser: (id: number, userId: number) =>
+    api.delete(`/groups/${id}/users/${userId}`),
+};
+
+// Custom Fields API
+export const customFieldsApi = {
+  getAll: () => api.get('/custom-fields'),
+  getById: (id: number) => api.get(`/custom-fields/${id}`),
+  create: (data: any) => api.post('/custom-fields', data),
+  update: (id: number, data: any) => api.put(`/custom-fields/${id}`, data),
+  delete: (id: number) => api.delete(`/custom-fields/${id}`),
+  associateWithProject: (data: any) =>
+    api.post('/custom-fields/associate', data),
+  getProjectCustomFields: (projectId: number, params?: any) =>
+    api.get(`/projects/${projectId}/custom-fields`, { params }),
+};
+
+// Workflows API
+export const workflowsApi = {
+  getAll: (params?: any) => api.get('/workflows', { params }),
+  getById: (id: number) => api.get(`/workflows/${id}`),
+  create: (data: any) => api.post('/workflows', data),
+  update: (id: number, data: any) => api.put(`/workflows/${id}`, data),
+  delete: (id: number) => api.delete(`/workflows/${id}`),
+  copy: (data: any) => api.post('/workflows/copy', data),
+};
+
+// News API
+export const newsApi = {
+  getAll: (params?: any) => api.get('/news', { params }),
+  getById: (id: number) => api.get(`/news/${id}`),
+  create: (data: any) => api.post('/news', data),
+  update: (id: number, data: any) => api.put(`/news/${id}`, data),
+  delete: (id: number) => api.delete(`/news/${id}`),
 };
