@@ -44,13 +44,13 @@ const emptyForm = (): CustomFieldFormState => ({
 });
 
 const fieldFormatOptions = [
-  'string',
-  'text',
-  'int',
-  'float',
-  'list',
-  'date',
-  'bool',
+  { value: 'string', label: '文字列' },
+  { value: 'text', label: 'テキスト' },
+  { value: 'int', label: '整数' },
+  { value: 'float', label: '小数' },
+  { value: 'list', label: 'リスト' },
+  { value: 'date', label: '日付' },
+  { value: 'bool', label: '真偽値' },
 ];
 
 export default function CustomFieldsPage() {
@@ -85,7 +85,7 @@ export default function CustomFieldsPage() {
       setCustomFields(response.data.data.customFields || []);
     } catch (err: any) {
       console.error('Failed to load custom fields:', err);
-      setError(err.response?.data?.message || 'Failed to load custom fields.');
+      setError(err.response?.data?.message || 'カスタムフィールドの読み込みに失敗しました。');
     } finally {
       setLoading(false);
     }
@@ -115,7 +115,7 @@ export default function CustomFieldsPage() {
     setFormError('');
 
     if (!formData.name.trim()) {
-      setFormError('Name is required.');
+      setFormError('名前は必須です。');
       return;
     }
 
@@ -149,7 +149,7 @@ export default function CustomFieldsPage() {
       loadCustomFields();
     } catch (err: any) {
       console.error('Failed to save custom field:', err);
-      setFormError(err.response?.data?.message || 'Failed to save custom field.');
+      setFormError(err.response?.data?.message || 'カスタムフィールドの保存に失敗しました。');
     } finally {
       setSaving(false);
     }
@@ -177,13 +177,13 @@ export default function CustomFieldsPage() {
   };
 
   const handleDelete = async (fieldId: number) => {
-    if (!confirm('Delete this custom field?')) return;
+    if (!confirm('このカスタムフィールドを削除してもよろしいですか？')) return;
     try {
       await customFieldsApi.delete(fieldId);
       loadCustomFields();
     } catch (err) {
       console.error('Failed to delete custom field:', err);
-      alert('Failed to delete custom field.');
+      alert('カスタムフィールドの削除に失敗しました。');
     }
   };
 
@@ -192,7 +192,7 @@ export default function CustomFieldsPage() {
     setAssociateError('');
 
     if (!associateState.customFieldId || !associateState.projectId || !associateState.trackerId) {
-      setAssociateError('Custom field, project, and tracker are required.');
+      setAssociateError('カスタムフィールド、プロジェクト、トラッカーは必須です。');
       return;
     }
 
@@ -206,7 +206,7 @@ export default function CustomFieldsPage() {
       setAssociateState({ customFieldId: '', projectId: '', trackerId: '' });
     } catch (err: any) {
       console.error('Failed to associate custom field:', err);
-      setAssociateError(err.response?.data?.message || 'Failed to associate custom field.');
+      setAssociateError(err.response?.data?.message || 'カスタムフィールドの関連付けに失敗しました。');
     } finally {
       setAssociateSaving(false);
     }
@@ -215,16 +215,16 @@ export default function CustomFieldsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900">Custom Fields</h1>
+        <h1 className="text-3xl font-bold text-gray-900">カスタムフィールド</h1>
         <button className="btn btn-primary flex items-center space-x-2" onClick={resetForm}>
           <Plus className="w-4 h-4" />
-          <span>New field</span>
+          <span>新規フィールド</span>
         </button>
       </div>
 
       <div className="card">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          {editingId ? 'Edit custom field' : 'Create custom field'}
+          {editingId ? 'カスタムフィールド編集' : 'カスタムフィールド作成'}
         </h2>
         {formError && (
           <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
@@ -234,7 +234,7 @@ export default function CustomFieldsPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="label">Name *</label>
+              <label className="label">名前 *</label>
               <input
                 type="text"
                 value={formData.name}
@@ -246,7 +246,7 @@ export default function CustomFieldsPage() {
               />
             </div>
             <div>
-              <label className="label">Field format</label>
+              <label className="label">フィールド形式</label>
               <select
                 value={formData.fieldFormat}
                 onChange={(event) =>
@@ -258,14 +258,14 @@ export default function CustomFieldsPage() {
                 className="input"
               >
                 {fieldFormatOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
+                  <option key={option.value} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="label">Position</label>
+              <label className="label">表示順</label>
               <input
                 type="number"
                 min={1}
@@ -280,7 +280,7 @@ export default function CustomFieldsPage() {
               />
             </div>
             <div>
-              <label className="label">Default value</label>
+              <label className="label">デフォルト値</label>
               <input
                 type="text"
                 value={formData.defaultValue}
@@ -294,7 +294,7 @@ export default function CustomFieldsPage() {
               />
             </div>
             <div>
-              <label className="label">Possible values (comma separated)</label>
+              <label className="label">選択可能な値（カンマ区切り）</label>
               <input
                 type="text"
                 value={formData.possibleValues}
@@ -308,7 +308,7 @@ export default function CustomFieldsPage() {
               />
             </div>
             <div>
-              <label className="label">Validation regexp</label>
+              <label className="label">検証用正規表現</label>
               <input
                 type="text"
                 value={formData.regexp}
@@ -322,7 +322,7 @@ export default function CustomFieldsPage() {
               />
             </div>
             <div>
-              <label className="label">Min length</label>
+              <label className="label">最小長</label>
               <input
                 type="number"
                 min={0}
@@ -337,7 +337,7 @@ export default function CustomFieldsPage() {
               />
             </div>
             <div>
-              <label className="label">Max length</label>
+              <label className="label">最大長</label>
               <input
                 type="number"
                 min={0}
@@ -354,7 +354,7 @@ export default function CustomFieldsPage() {
           </div>
 
           <div>
-            <label className="label">Description</label>
+            <label className="label">説明</label>
             <textarea
               value={formData.description}
               onChange={(event) =>
@@ -380,7 +380,7 @@ export default function CustomFieldsPage() {
                   }))
                 }
               />
-              <span>Required</span>
+              <span>必須</span>
             </label>
             <label className="flex items-center space-x-2 text-sm text-gray-700">
               <input
@@ -393,7 +393,7 @@ export default function CustomFieldsPage() {
                   }))
                 }
               />
-              <span>For all projects</span>
+              <span>全プロジェクト共通</span>
             </label>
             <label className="flex items-center space-x-2 text-sm text-gray-700">
               <input
@@ -406,7 +406,7 @@ export default function CustomFieldsPage() {
                   }))
                 }
               />
-              <span>Filterable</span>
+              <span>フィルタ可能</span>
             </label>
             <label className="flex items-center space-x-2 text-sm text-gray-700">
               <input
@@ -419,7 +419,7 @@ export default function CustomFieldsPage() {
                   }))
                 }
               />
-              <span>Searchable</span>
+              <span>検索可能</span>
             </label>
             <label className="flex items-center space-x-2 text-sm text-gray-700">
               <input
@@ -432,7 +432,7 @@ export default function CustomFieldsPage() {
                   }))
                 }
               />
-              <span>Multiple values</span>
+              <span>複数値</span>
             </label>
             <label className="flex items-center space-x-2 text-sm text-gray-700">
               <input
@@ -445,25 +445,25 @@ export default function CustomFieldsPage() {
                   }))
                 }
               />
-              <span>Visible</span>
+              <span>表示</span>
             </label>
           </div>
 
           <div className="flex justify-end space-x-3">
             {editingId && (
               <button type="button" onClick={resetForm} className="btn btn-secondary" disabled={saving}>
-                Cancel edit
+                編集キャンセル
               </button>
             )}
             <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? 'Saving...' : editingId ? 'Update' : 'Create'}
+              {saving ? '保存中...' : editingId ? '更新' : '作成'}
             </button>
           </div>
         </form>
       </div>
 
       <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Project association</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">プロジェクトへの関連付け</h2>
         {associateError && (
           <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
             {associateError}
@@ -480,7 +480,7 @@ export default function CustomFieldsPage() {
             }
             className="input"
           >
-            <option value="">Select custom field</option>
+            <option value="">カスタムフィールドを選択</option>
             {customFields.map((field) => (
               <option key={field.id} value={field.id}>
                 {field.name}
@@ -497,7 +497,7 @@ export default function CustomFieldsPage() {
             }
             className="input"
           >
-            <option value="">Select project</option>
+            <option value="">プロジェクトを選択</option>
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.name}
@@ -514,7 +514,7 @@ export default function CustomFieldsPage() {
             }
             className="input"
           >
-            <option value="">Select tracker</option>
+            <option value="">トラッカーを選択</option>
             {trackers.map((tracker) => (
               <option key={tracker.id} value={tracker.id}>
                 {tracker.name}
@@ -523,14 +523,14 @@ export default function CustomFieldsPage() {
           </select>
           <div className="md:col-span-3 flex justify-end">
             <button type="submit" className="btn btn-primary" disabled={associateSaving}>
-              {associateSaving ? 'Saving...' : 'Associate'}
+              {associateSaving ? '保存中...' : '関連付け'}
             </button>
           </div>
         </form>
       </div>
 
       <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Custom fields</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">カスタムフィールド一覧</h2>
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
             {error}
@@ -544,19 +544,19 @@ export default function CustomFieldsPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Name
+                    名前
                   </th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Format
+                    形式
                   </th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Required
+                    必須
                   </th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Position
+                    表示順
                   </th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
+                    アクション
                   </th>
                 </tr>
               </thead>
@@ -564,16 +564,18 @@ export default function CustomFieldsPage() {
                 {customFields.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
-                      No custom fields found.
+                      カスタムフィールドが見つかりません。
                     </td>
                   </tr>
                 ) : (
                   customFields.map((field) => (
                     <tr key={field.id} className="hover:bg-gray-50">
                       <td className="px-4 py-2 text-sm text-gray-900">{field.name}</td>
-                      <td className="px-4 py-2 text-sm text-gray-500">{field.fieldFormat}</td>
                       <td className="px-4 py-2 text-sm text-gray-500">
-                        {field.isRequired ? 'Yes' : 'No'}
+                        {fieldFormatOptions.find(o => o.value === field.fieldFormat)?.label || field.fieldFormat}
+                      </td>
+                      <td className="px-4 py-2 text-sm text-gray-500">
+                        {field.isRequired ? 'はい' : 'いいえ'}
                       </td>
                       <td className="px-4 py-2 text-sm text-gray-500">{field.position}</td>
                       <td className="px-4 py-2 text-right text-sm">
@@ -583,14 +585,14 @@ export default function CustomFieldsPage() {
                             className="btn btn-secondary flex items-center space-x-1"
                           >
                             <Edit className="w-4 h-4" />
-                            <span>Edit</span>
+                            <span>編集</span>
                           </button>
                           <button
                             onClick={() => handleDelete(field.id)}
                             className="btn btn-secondary text-red-600 hover:bg-red-50 flex items-center space-x-1"
                           >
                             <Trash2 className="w-4 h-4" />
-                            <span>Delete</span>
+                            <span>削除</span>
                           </button>
                         </div>
                       </td>

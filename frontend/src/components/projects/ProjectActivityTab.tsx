@@ -175,7 +175,7 @@ export default function ProjectActivityTab({ projectId }: ProjectActivityTabProp
                           <div className="text-sm">
                             <span className="font-medium text-gray-900">
                               {activity.user
-                                ? `${activity.user.firstName} ${activity.user.lastName}`
+                                ? `${activity.user.lastName} ${activity.user.firstName}`
                                 : '不明なユーザー'}
                             </span>
                             <span className="text-gray-600 mx-2">が</span>

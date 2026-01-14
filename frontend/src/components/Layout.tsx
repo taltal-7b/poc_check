@@ -39,7 +39,7 @@ export default function Layout() {
               <Link to="/" className="flex items-center space-x-2">
                 <Menu className="w-6 h-6 text-primary-600" />
                 <span className="text-xl font-bold text-gray-900">
-                  プロジェクト管琁E
+                  プロジェクト管理
                 </span>
               </Link>
 
@@ -77,7 +77,7 @@ export default function Layout() {
                   className="flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100"
                 >
                   <Clock className="w-4 h-4" />
-                  <span>Time</span>
+                  <span>時間</span>
                 </Link>
                 {user?.admin && (
                   <Link
@@ -85,7 +85,7 @@ export default function Layout() {
                     className="flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100"
                   >
                     <Shield className="w-4 h-4" />
-                    <span>Admin</span>
+                    <span>管理</span>
                   </Link>
                 )}
               </nav>
@@ -95,7 +95,7 @@ export default function Layout() {
               <div className="flex items-center space-x-2">
                 <User className="w-5 h-5 text-gray-500" />
                 <span className="text-sm text-gray-700">
-                  {user?.firstName} {user?.lastName}
+                  {user?.lastName} {user?.firstName}
                 </span>
                 {user?.admin && (
                   <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded">

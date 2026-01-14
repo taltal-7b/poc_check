@@ -24,8 +24,6 @@ import wikiRoutes from './routes/wiki.routes';
 import masterDataRoutes from './routes/master-data.routes';
 import attachmentRoutes from './routes/attachment.routes';
 import { errorHandler } from './middleware/error.middleware';
-// import attachmentRoutes from './routes/attachment.routes'; // TODO: multerをインストール後に有効化
-import { errorHandler } from './middleware/error.middleware';
 
 config();
 
@@ -86,7 +84,6 @@ app.use('/api', newsRoutes);
 app.use('/api', wikiRoutes);
 app.use('/api', masterDataRoutes);
 app.use('/api', attachmentRoutes);
-// app.use('/api', attachmentRoutes); // TODO: multerをインストール後に有効化
 
 // Health check
 app.get('/health', (req, res) => {

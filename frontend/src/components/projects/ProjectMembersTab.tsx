@@ -124,7 +124,7 @@ export default function ProjectMembersTab({ projectId, onUpdate }: ProjectMember
                       <div className="flex items-center">
                         <div>
                           <div className="text-sm font-medium text-gray-900">
-                            {member.user?.firstName} {member.user?.lastName}
+                            {member.user?.lastName} {member.user?.firstName}
                           </div>
                           <div className="text-sm text-gray-500">
                             {member.user?.login}
@@ -289,7 +289,7 @@ function AddMemberModal({ projectId, roles, onClose, onSuccess }: AddMemberModal
                   <option value="">選択してください</option>
                   {users.map((user) => (
                     <option key={user.id} value={user.id}>
-                      {user.firstName} {user.lastName} ({user.login})
+                      {user.lastName} {user.firstName} ({user.login})
                     </option>
                   ))}
                 </select>

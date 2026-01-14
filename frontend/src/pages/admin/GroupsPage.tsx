@@ -66,7 +66,7 @@ export default function GroupsPage() {
     setFormError('');
 
     if (!formData.name.trim()) {
-      setFormError('Group name is required.');
+      setFormError('グループ名は必須です');
       return;
     }
 
@@ -89,7 +89,7 @@ export default function GroupsPage() {
       loadGroups();
     } catch (err: any) {
       console.error('Failed to save group:', err);
-      setFormError(err.response?.data?.message || 'Failed to save group.');
+      setFormError(err.response?.data?.message || 'グループの保存に失敗しました');
     } finally {
       setSaving(false);
     }
@@ -106,13 +106,13 @@ export default function GroupsPage() {
   };
 
   const handleDelete = async (groupId: number) => {
-    if (!confirm('Delete this group?')) return;
+    if (!confirm('このグループを削除してもよろしいですか？')) return;
     try {
       await groupsApi.delete(groupId);
       loadGroups();
     } catch (err) {
       console.error('Failed to delete group:', err);
-      alert('Failed to delete group.');
+      alert('グループの削除に失敗しました');
     }
   };
 
@@ -131,16 +131,21 @@ export default function GroupsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900">Groups</h1>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">グループ管理</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            ユーザーをグループに整理
+          </p>
+        </div>
         <button className="btn btn-primary flex items-center space-x-2" onClick={resetForm}>
           <Plus className="w-4 h-4" />
-          <span>New group</span>
+          <span>新規グループ</span>
         </button>
       </div>
 
       <div className="card">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          {editingId ? 'Edit group' : 'Create group'}
+          {editingId ? 'グループ編集' : 'グループ作成'}
         </h2>
         {formError && (
           <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
@@ -150,7 +155,7 @@ export default function GroupsPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="label">Name *</label>
+              <label className="label">グループ名 *</label>
               <input
                 type="text"
                 value={formData.name}
@@ -162,7 +167,7 @@ export default function GroupsPage() {
               />
             </div>
             <div>
-              <label className="label">Last name (optional)</label>
+              <label className="label">姓（任意）</label>
               <input
                 type="text"
                 value={formData.lastName}
@@ -177,7 +182,7 @@ export default function GroupsPage() {
             </div>
           </div>
           <div>
-            <label className="label">Description</label>
+            <label className="label">説明</label>
             <textarea
               value={formData.description}
               onChange={(event) =>
@@ -192,7 +197,7 @@ export default function GroupsPage() {
           </div>
           {users.length > 0 && (
             <div>
-              <label className="label">Members</label>
+              <label className="label">メンバー</label>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                 {users.map((user) => (
                   <label key={user.id} className="flex items-center space-x-2 text-sm text-gray-700">
@@ -201,9 +206,9 @@ export default function GroupsPage() {
                       checked={formData.userIds.includes(user.id)}
                       onChange={() => toggleUserSelection(user.id)}
                     />
-                    <span>
-                      {user.firstName} {user.lastName} ({user.login})
-                    </span>
+                        <span>
+                          {user.lastName} {user.firstName} ({user.login})
+                        </span>
                   </label>
                 ))}
               </div>
@@ -212,18 +217,18 @@ export default function GroupsPage() {
           <div className="flex justify-end space-x-3">
             {editingId && (
               <button type="button" onClick={resetForm} className="btn btn-secondary" disabled={saving}>
-                Cancel edit
+                キャンセル
               </button>
             )}
             <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? 'Saving...' : editingId ? 'Update' : 'Create'}
+              {saving ? '保存中...' : editingId ? '更新' : '作成'}
             </button>
           </div>
         </form>
       </div>
 
       <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Groups</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">グループ一覧</h2>
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
             {error}
@@ -237,16 +242,16 @@ export default function GroupsPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Name
+                    グループ名
                   </th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Description
+                    説明
                   </th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Members
+                    メンバー数
                   </th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
+                    操作
                   </th>
                 </tr>
               </thead>
@@ -254,7 +259,7 @@ export default function GroupsPage() {
                 {groups.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
-                      No groups found.
+                      グループが見つかりませんでした
                     </td>
                   </tr>
                 ) : (
@@ -274,14 +279,14 @@ export default function GroupsPage() {
                             className="btn btn-secondary flex items-center space-x-1"
                           >
                             <Edit className="w-4 h-4" />
-                            <span>Edit</span>
+                            <span>編集</span>
                           </button>
                           <button
                             onClick={() => handleDelete(group.id)}
                             className="btn btn-secondary text-red-600 hover:bg-red-50 flex items-center space-x-1"
                           >
                             <Trash2 className="w-4 h-4" />
-                            <span>Delete</span>
+                            <span>削除</span>
                           </button>
                         </div>
                       </td>

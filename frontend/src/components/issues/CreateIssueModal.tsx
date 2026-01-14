@@ -323,7 +323,7 @@ export default function CreateIssueModal({
                     <option value="">未割り当て</option>
                     {users.map((user) => (
                       <option key={user.id} value={user.id}>
-                        {user.firstName} {user.lastName} ({user.login})
+                        {user.lastName} {user.firstName} ({user.login})
                       </option>
                     ))}
                   </select>

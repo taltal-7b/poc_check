@@ -116,7 +116,7 @@ export default function ProjectCategoriesTab({ projectId }: ProjectCategoriesTab
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-500">
                         {category.assignedTo
-                          ? `${category.assignedTo.firstName} ${category.assignedTo.lastName}`
+                          ? `${category.assignedTo.lastName} ${category.assignedTo.firstName}`
                           : '-'}
                       </div>
                     </td>
@@ -285,7 +285,7 @@ function CategoryModal({ projectId, category, onClose, onSuccess }: CategoryModa
                   <option value="">未割り当て</option>
                   {users.map((user) => (
                     <option key={user.id} value={user.id}>
-                      {user.firstName} {user.lastName} ({user.login})
+                      {user.lastName} {user.firstName} ({user.login})
                     </option>
                   ))}
                 </select>

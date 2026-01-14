@@ -37,7 +37,7 @@ export default function IssueDetailPage() {
       setIssue(response.data.data.issue);
     } catch (err: any) {
       console.error('Failed to load issue:', err);
-      setError(err.response?.data?.message || '課題�E読み込みに失敗しました');
+      setError(err.response?.data?.message || '課題の読み込みに失敗しました');
     } finally {
       setLoading(false);
     }
@@ -59,39 +59,39 @@ export default function IssueDetailPage() {
       loadIssue(); // Reload to get updated journals
     } catch (err: any) {
       console.error('Failed to add comment:', err);
-      alert('コメント�E追加に失敗しました');
+      alert('コメントの追加に失敗しました');
     } finally {
       setAddingComment(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!confirm('こ�E課題を削除してもよろしぁE��すか�E�E)) return;
+    if (!confirm('この課題を削除してもよろしいですか？')) return;
 
     try {
       await issuesApi.delete(parseInt(id!));
       navigate('/issues');
     } catch (err: any) {
       console.error('Failed to delete issue:', err);
-      alert('課題�E削除に失敗しました');
+      alert('課題の削除に失敗しました');
     }
   };
 
   const getStatusColor = (status: any) => {
     if (!status) return 'gray';
     if (status.isClosed) return 'gray';
-    if (status.name === '新要E) return 'blue';
+    if (status.name === '新規') return 'blue';
     if (status.name === '進行中') return 'yellow';
     if (status.name === 'レビュー中') return 'purple';
-    if (status.name === '完亁E) return 'green';
+    if (status.name === '完了') return 'green';
     return 'gray';
   };
 
   const getPriorityColor = (priority: any) => {
     if (!priority) return 'gray';
-    if (priority.name === '佁E) return 'gray';
+    if (priority.name === '低') return 'gray';
     if (priority.name === '通常') return 'blue';
-    if (priority.name === '髁E) return 'orange';
+    if (priority.name === '高') return 'orange';
     if (priority.name === '緊急' || priority.name === '至急') return 'red';
     return 'gray';
   };
@@ -116,7 +116,7 @@ export default function IssueDetailPage() {
   };
 
   const handleDeleteAttachment = async (attachmentId: number) => {
-    if (!confirm('こ�E添付ファイルを削除してもよろしぁE��すか�E�E)) return;
+    if (!confirm('この添付ファイルを削除してもよろしいですか？')) return;
     try {
       await attachmentsApi.delete(attachmentId);
       loadIssue();
@@ -160,7 +160,7 @@ export default function IssueDetailPage() {
               {issue.status?.name || '-'}
             </Badge>
             {issue.isPrivate && (
-              <Badge color="red">プライベ�EチE/Badge>
+              <Badge color="red">プライベート</Badge>
             )}
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mt-2">
@@ -176,7 +176,7 @@ export default function IssueDetailPage() {
             className="btn btn-secondary flex items-center space-x-2"
           >
             <Edit className="w-5 h-5" />
-            <span>編雁E/span>
+            <span>編集</span>
           </button>
           <button
             onClick={handleDelete}
@@ -191,7 +191,7 @@ export default function IssueDetailPage() {
         <div className="lg:col-span-2 space-y-6">
           {/* Description */}
           <div className="card">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">説昁E/h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-4">説明</h2>
             <div className="prose max-w-none">
               {issue.description ? (
                 <p className="text-gray-700 whitespace-pre-wrap">{issue.description}</p>
@@ -211,7 +211,7 @@ export default function IssueDetailPage() {
           <div className="card">
             <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center space-x-2">
               <MessageSquare className="w-5 h-5" />
-              <span>コメンチE/span>
+              <span>コメント</span>
             </h2>
             <div className="space-y-4">
               {issue.journals && issue.journals.length > 0 ? (
@@ -220,7 +220,7 @@ export default function IssueDetailPage() {
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <span className="font-medium text-gray-900">
-                          {journal.user?.firstName} {journal.user?.lastName}
+                          {journal.user?.lastName} {journal.user?.firstName}
                         </span>
                         <span className="text-sm text-gray-500 ml-2">
                           {formatDateTime(journal.createdOn)}
@@ -247,8 +247,8 @@ export default function IssueDetailPage() {
                               <div className="text-xs text-gray-500">
                                 {formatFileSize(attachment.filesize)} ·{' '}
                                 {attachment.author
-                                  ? `${attachment.author.firstName} ${attachment.author.lastName}`
-                                  : '不�E'}
+                                  ? `${attachment.author.lastName} ${attachment.author.firstName}`
+                                  : '不明'}
                               </div>
                             </div>
                             <button
@@ -266,7 +266,7 @@ export default function IssueDetailPage() {
                       <div className="mt-2 text-sm text-gray-600">
                         {journal.details.map((detail: any, idx: number) => (
                           <div key={idx}>
-                            {detail.property}: {detail.oldValue || '(空)'} ↁE{detail.value || '(空)'}
+                            {detail.property}: {detail.oldValue || '(空)'} → {detail.value || '(空)'}
                           </div>
                         ))}
                       </div>
@@ -283,7 +283,7 @@ export default function IssueDetailPage() {
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
                   className="input h-24 resize-none w-full"
-                  placeholder="コメントを入劁E.."
+                  placeholder="コメントを入力..."
                 />
                 <div className="mt-2">
                   <input
@@ -314,7 +314,7 @@ export default function IssueDetailPage() {
             <h2 className="text-lg font-bold text-gray-900 mb-4">詳細</h2>
             <dl className="space-y-3">
               <div>
-                <dt className="text-sm font-medium text-gray-500">スチE�Eタス</dt>
+                <dt className="text-sm font-medium text-gray-500">ステータス</dt>
                 <dd className="mt-1">
                   <Badge color={getStatusColor(issue.status)}>
                     {issue.status?.name || '-'}
@@ -330,20 +330,20 @@ export default function IssueDetailPage() {
                 </dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-gray-500">拁E��老E/dt>
-                <dd className="mt-1 text-sm text-gray-900">
-                  {issue.assignedTo
-                    ? `${issue.assignedTo.firstName} ${issue.assignedTo.lastName}`
-                    : '未割り当て'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-500">作�E老E/dt>
-                <dd className="mt-1 text-sm text-gray-900">
-                  {issue.author
-                    ? `${issue.author.firstName} ${issue.author.lastName}`
-                    : '-'}
-                </dd>
+                <dt className="text-sm font-medium text-gray-500">担当者</dt>
+                  <dd className="mt-1 text-sm text-gray-900">
+                    {issue.assignedTo
+                      ? `${issue.assignedTo.lastName} ${issue.assignedTo.firstName}`
+                      : '未割り当て'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">作成者</dt>
+                  <dd className="mt-1 text-sm text-gray-900">
+                    {issue.author
+                      ? `${issue.author.lastName} ${issue.author.firstName}`
+                      : '-'}
+                  </dd>
               </div>
               <div>
                 <dt className="text-sm font-medium text-gray-500">開始日</dt>
@@ -364,7 +364,7 @@ export default function IssueDetailPage() {
                 </dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-gray-500">作�E日</dt>
+                <dt className="text-sm font-medium text-gray-500">作成日</dt>
                 <dd className="mt-1 text-sm text-gray-900">
                   {formatDateTime(issue.createdOn)}
                 </dd>

@@ -1,30 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Edit, Lock, Plus, Trash2, Unlock } from 'lucide-react';
-import { groupsApi, usersApi } from '../../lib/api';
+import { usersApi } from '../../lib/api';
 import Loading from '../../components/ui/Loading';
 import Pagination from '../../components/ui/Pagination';
-
-type UserFormState = {
-  login: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  password: string;
-  admin: boolean;
-  status: string;
-  groupIds: number[];
-};
-
-const emptyForm = (): UserFormState => ({
-  login: '',
-  email: '',
-  firstName: '',
-  lastName: '',
-  password: '',
-  admin: false,
-  status: '1',
-  groupIds: [],
-});
+import CreateUserModal from '../../components/users/CreateUserModal';
 
 const statusOptions = [
   { value: '1', label: '有効' },
@@ -34,13 +13,10 @@ const statusOptions = [
 
 export default function UsersPage() {
   const [users, setUsers] = useState<any[]>([]);
-  const [groups, setGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [formError, setFormError] = useState('');
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [formData, setFormData] = useState<UserFormState>(emptyForm());
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<any>(null);
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -48,23 +24,8 @@ export default function UsersPage() {
   const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
-    loadGroups();
-  }, []);
-
-  useEffect(() => {
     loadUsers();
   }, [page, search, statusFilter]);
-
-  const groupedUsers = useMemo(() => users, [users]);
-
-  const loadGroups = async () => {
-    try {
-      const response = await groupsApi.getAll();
-      setGroups(response.data.data.groups || []);
-    } catch (err) {
-      console.error('Failed to load groups:', err);
-    }
-  };
 
   const loadUsers = async () => {
     setLoading(true);
@@ -79,88 +40,39 @@ export default function UsersPage() {
       setTotalPages(pagination.pages || 1);
     } catch (err: any) {
       console.error('Failed to load users:', err);
-      setError(err.response?.data?.message || 'Failed to load users.');
+      setError(err.response?.data?.message || 'ユーザーの読み込みに失敗しました。');
     } finally {
       setLoading(false);
     }
   };
 
-  const resetForm = () => {
-    setFormData(emptyForm());
-    setEditingId(null);
-    setFormError('');
+  const handleCreateClick = () => {
+    setEditingUser(null);
+    setIsModalOpen(true);
   };
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setFormError('');
-
-    if (!formData.login.trim() && !editingId) {
-      setFormError('Login is required.');
-      return;
-    }
-
-    if (!formData.email.trim()) {
-      setFormError('Email is required.');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const payload: any = {
-        email: formData.email.trim(),
-        firstName: formData.firstName.trim(),
-        lastName: formData.lastName.trim(),
-        admin: formData.admin,
-        status: Number(formData.status),
-        groupIds: formData.groupIds,
-      };
-
-      if (!editingId) {
-        payload.login = formData.login.trim();
-        payload.password = formData.password;
-      } else if (formData.password.trim()) {
-        payload.password = formData.password;
-      }
-
-      if (editingId) {
-        await usersApi.update(editingId, payload);
-      } else {
-        await usersApi.create(payload);
-      }
-
-      resetForm();
-      loadUsers();
-    } catch (err: any) {
-      console.error('Failed to save user:', err);
-      setFormError(err.response?.data?.message || 'Failed to save user.');
-    } finally {
-      setSaving(false);
-    }
+  const handleEditClick = (user: any) => {
+    setEditingUser(user);
+    setIsModalOpen(true);
   };
 
-  const handleEdit = (user: any) => {
-    setEditingId(user.id);
-    setFormData({
-      login: user.login || '',
-      email: user.email || '',
-      firstName: user.firstName || '',
-      lastName: user.lastName || '',
-      password: '',
-      admin: !!user.admin,
-      status: user.status?.toString() || '1',
-      groupIds: (user.groups || []).map((group: any) => group.id),
-    });
+  const handleModalClose = () => {
+    setIsModalOpen(false);
+    setEditingUser(null);
+  };
+
+  const handleModalSuccess = () => {
+    loadUsers();
   };
 
   const handleDelete = async (userId: number) => {
-    if (!confirm('Delete this user?')) return;
+    if (!confirm('このユーザーを削除してもよろしいですか？')) return;
     try {
       await usersApi.delete(userId);
       loadUsers();
     } catch (err) {
       console.error('Failed to delete user:', err);
-      alert('Failed to delete user.');
+      alert('ユーザーの削除に失敗しました。');
     }
   };
 
@@ -170,20 +82,8 @@ export default function UsersPage() {
       loadUsers();
     } catch (err) {
       console.error('Failed to toggle lock:', err);
-      alert('Failed to update user status.');
+      alert('ユーザーのステータス更新に失敗しました。');
     }
-  };
-
-  const toggleGroupSelection = (groupId: number) => {
-    setFormData((prev) => {
-      const exists = prev.groupIds.includes(groupId);
-      return {
-        ...prev,
-        groupIds: exists
-          ? prev.groupIds.filter((id) => id !== groupId)
-          : [...prev.groupIds, groupId],
-      };
-    });
   };
 
   const formatDateTime = (dateString: string) => {
@@ -194,14 +94,9 @@ export default function UsersPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">ユーザー管理</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            システムユーザーの作成・編集・削除
-          </p>
-        </div>
+        <h1 className="text-3xl font-bold text-gray-900">ユーザー管理</h1>
         <button
-          onClick={() => setEditingId(null)}
+          onClick={handleCreateClick}
           className="btn btn-primary flex items-center space-x-2"
         >
           <Plus className="w-4 h-4" />
@@ -209,156 +104,9 @@ export default function UsersPage() {
         </button>
       </div>
 
-      <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          {editingId ? 'ユーザー編集' : 'ユーザー作成'}
-        </h2>
-        {formError && (
-          <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
-            {formError}
-          </div>
-        )}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="label">ログインID *</label>
-              <input
-                type="text"
-                value={formData.login}
-                onChange={(event) =>
-                  setFormData((prev) => ({ ...prev, login: event.target.value }))
-                }
-                className="input"
-                placeholder="ログインID"
-                required={!editingId}
-                disabled={!!editingId}
-              />
-            </div>
-            <div>
-              <label className="label">メールアドレス *</label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(event) =>
-                  setFormData((prev) => ({ ...prev, email: event.target.value }))
-                }
-                className="input"
-                placeholder="email@example.com"
-                required
-              />
-            </div>
-            <div>
-              <label className="label">名</label>
-              <input
-                type="text"
-                value={formData.firstName}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    firstName: event.target.value,
-                  }))
-                }
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="label">姓</label>
-              <input
-                type="text"
-                value={formData.lastName}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    lastName: event.target.value,
-                  }))
-                }
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="label">
-                パスワード {editingId ? '(変更しない場合は空欄)' : '*'}
-              </label>
-              <input
-                type="password"
-                value={formData.password}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    password: event.target.value,
-                  }))
-                }
-                className="input"
-                required={!editingId}
-              />
-            </div>
-            <div>
-              <label className="label">ステータス</label>
-              <select
-                value={formData.status}
-                onChange={(event) =>
-                  setFormData((prev) => ({ ...prev, status: event.target.value }))
-                }
-                className="input"
-              >
-                {statusOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={formData.admin}
-                onChange={(event) =>
-                  setFormData((prev) => ({ ...prev, admin: event.target.checked }))
-                }
-              />
-              <label className="text-sm text-gray-700">管理者</label>
-            </div>
-          </div>
-
-          {groups.length > 0 && (
-            <div>
-              <label className="label">グループ</label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                {groups.map((group) => (
-                  <label key={group.id} className="flex items-center space-x-2 text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={formData.groupIds.includes(group.id)}
-                      onChange={() => toggleGroupSelection(group.id)}
-                    />
-                    <span>{group.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex justify-end space-x-3">
-            {editingId && (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="btn btn-secondary"
-                disabled={saving}
-              >
-                キャンセル
-              </button>
-            )}
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={saving}
-            >
-              {saving ? '保存中...' : editingId ? '更新' : '作成'}
-            </button>
-          </div>
-        </form>
-      </div>
+      <p className="text-sm text-gray-600">
+        システムユーザーの作成・編集・削除
+      </p>
 
       <div className="card">
         <div className="flex items-center justify-between mb-4">
@@ -418,22 +166,22 @@ export default function UsersPage() {
                     最終ログイン
                   </th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    操作
+                    アクション
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {groupedUsers.length === 0 ? (
+                {users.length === 0 ? (
                   <tr>
                     <td
                       colSpan={7}
                       className="px-4 py-8 text-center text-gray-500"
                     >
-                      ユーザーが見つかりませんでした
+                      ユーザーが見つかりません。
                     </td>
                   </tr>
                 ) : (
-                  groupedUsers.map((user) => (
+                  users.map((user) => (
                     <tr key={user.id} className="hover:bg-gray-50">
                       <td className="px-4 py-2 text-sm text-gray-900">
                         {user.login}
@@ -444,7 +192,7 @@ export default function UsersPage() {
                         )}
                       </td>
                       <td className="px-4 py-2 text-sm text-gray-700">
-                        {user.firstName} {user.lastName}
+                        {user.lastName} {user.firstName}
                       </td>
                       <td className="px-4 py-2 text-sm text-gray-500">
                         {user.email}
@@ -463,7 +211,7 @@ export default function UsersPage() {
                       <td className="px-4 py-2 text-right text-sm">
                         <div className="flex justify-end space-x-2">
                           <button
-                            onClick={() => handleEdit(user)}
+                            onClick={() => handleEditClick(user)}
                             className="btn btn-secondary flex items-center space-x-1"
                           >
                             <Edit className="w-4 h-4" />
@@ -508,6 +256,14 @@ export default function UsersPage() {
           </div>
         )}
       </div>
+
+      {/* User Create/Edit Modal */}
+      <CreateUserModal
+        isOpen={isModalOpen}
+        onClose={handleModalClose}
+        onSuccess={handleModalSuccess}
+        editingUser={editingUser}
+      />
     </div>
   );
 }

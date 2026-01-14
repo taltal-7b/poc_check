@@ -461,7 +461,7 @@ export default function TimeEntriesPage() {
                     <option value="">Use current user</option>
                     {users.map((u) => (
                       <option key={u.id} value={u.id}>
-                        {u.firstName} {u.lastName} ({u.login})
+                        {u.lastName} {u.firstName} ({u.login})
                       </option>
                     ))}
                   </select>
@@ -659,7 +659,7 @@ export default function TimeEntriesPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {entry.user
-                            ? `${entry.user.firstName} ${entry.user.lastName}`
+                            ? `${entry.user.lastName} ${entry.user.firstName}`
                             : '-'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

@@ -102,7 +102,7 @@ export default function IssueWatchersSection({ issueId }: IssueWatchersSectionPr
               <option value="">ユーザーを選択</option>
               {availableUsers.map((user) => (
                 <option key={user.id} value={user.id}>
-                  {user.firstName} {user.lastName} ({user.login})
+                  {user.lastName} {user.firstName} ({user.login})
                 </option>
               ))}
             </select>
@@ -136,7 +136,7 @@ export default function IssueWatchersSection({ issueId }: IssueWatchersSectionPr
             >
               <div className="flex-1">
                 <span className="text-sm text-gray-900">
-                  {watcher.user?.firstName} {watcher.user?.lastName}
+                  {watcher.user?.lastName} {watcher.user?.firstName}
                 </span>
                 <span className="text-sm text-gray-500 ml-2">
                   ({watcher.user?.login})

@@ -85,7 +85,7 @@ export default function WorkflowsPage() {
       setRules(response.data.data.rules || []);
     } catch (err: any) {
       console.error('Failed to load workflow rules:', err);
-      setError(err.response?.data?.message || 'Failed to load workflow rules.');
+      setError(err.response?.data?.message || 'ワークフロールールの読み込みに失敗しました。');
     } finally {
       setLoading(false);
     }
@@ -102,7 +102,7 @@ export default function WorkflowsPage() {
     setFormError('');
 
     if (!formData.roleId || !formData.trackerId || !formData.oldStatusId || !formData.newStatusId) {
-      setFormError('Role, tracker, old status, and new status are required.');
+      setFormError('ロール、トラッカー、変更前ステータス、変更後ステータスは必須です。');
       return;
     }
 
@@ -128,7 +128,7 @@ export default function WorkflowsPage() {
       loadRules();
     } catch (err: any) {
       console.error('Failed to save workflow rule:', err);
-      setFormError(err.response?.data?.message || 'Failed to save workflow rule.');
+      setFormError(err.response?.data?.message || 'ワークフロールールの保存に失敗しました。');
     } finally {
       setSaving(false);
     }
@@ -148,13 +148,13 @@ export default function WorkflowsPage() {
   };
 
   const handleDelete = async (ruleId: number) => {
-    if (!confirm('Delete this workflow rule?')) return;
+    if (!confirm('このワークフロールールを削除してもよろしいですか？')) return;
     try {
       await workflowsApi.delete(ruleId);
       loadRules();
     } catch (err) {
       console.error('Failed to delete workflow rule:', err);
-      alert('Failed to delete workflow rule.');
+      alert('ワークフロールールの削除に失敗しました。');
     }
   };
 
@@ -163,7 +163,7 @@ export default function WorkflowsPage() {
     setCopyError('');
 
     if (!copyState.sourceTrackerId || !copyState.targetTrackerId) {
-      setCopyError('Source and target trackers are required.');
+      setCopyError('コピー元とコピー先のトラッカーは必須です。');
       return;
     }
 
@@ -184,7 +184,7 @@ export default function WorkflowsPage() {
       loadRules();
     } catch (err: any) {
       console.error('Failed to copy workflow rules:', err);
-      setCopyError(err.response?.data?.message || 'Failed to copy workflow rules.');
+      setCopyError(err.response?.data?.message || 'ワークフロールールのコピーに失敗しました。');
     } finally {
       setCopySaving(false);
     }
@@ -197,16 +197,16 @@ export default function WorkflowsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900">Workflows</h1>
+        <h1 className="text-3xl font-bold text-gray-900">ワークフロー</h1>
         <button className="btn btn-primary flex items-center space-x-2" onClick={resetForm}>
           <Plus className="w-4 h-4" />
-          <span>New rule</span>
+          <span>新規ルール</span>
         </button>
       </div>
 
       <div className="card">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          {editingId ? 'Edit workflow rule' : 'Create workflow rule'}
+          {editingId ? 'ワークフロールール編集' : 'ワークフロールール作成'}
         </h2>
         {formError && (
           <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
@@ -223,7 +223,7 @@ export default function WorkflowsPage() {
               className="input"
               disabled={!!editingId}
             >
-              <option value="">Select role</option>
+              <option value="">ロールを選択</option>
               {roleOptions.map((role) => (
                 <option key={role.id} value={role.id}>
                   {role.name}
@@ -238,7 +238,7 @@ export default function WorkflowsPage() {
               className="input"
               disabled={!!editingId}
             >
-              <option value="">Select tracker</option>
+              <option value="">トラッカーを選択</option>
               {trackerOptions.map((tracker) => (
                 <option key={tracker.id} value={tracker.id}>
                   {tracker.name}
@@ -253,7 +253,7 @@ export default function WorkflowsPage() {
               className="input"
               disabled={!!editingId}
             >
-              <option value="">Select old status</option>
+              <option value="">変更前ステータスを選択</option>
               {statusOptions.map((status) => (
                 <option key={status.id} value={status.id}>
                   {status.name}
@@ -268,7 +268,7 @@ export default function WorkflowsPage() {
               className="input"
               disabled={!!editingId}
             >
-              <option value="">Select new status</option>
+              <option value="">変更後ステータスを選択</option>
               {statusOptions.map((status) => (
                 <option key={status.id} value={status.id}>
                   {status.name}
@@ -286,7 +286,7 @@ export default function WorkflowsPage() {
                   setFormData((prev) => ({ ...prev, author: event.target.checked }))
                 }
               />
-              <span>Author only</span>
+              <span>作成者のみ</span>
             </label>
             <label className="flex items-center space-x-2 text-sm text-gray-700">
               <input
@@ -296,12 +296,12 @@ export default function WorkflowsPage() {
                   setFormData((prev) => ({ ...prev, assignee: event.target.checked }))
                 }
               />
-              <span>Assignee only</span>
+              <span>担当者のみ</span>
             </label>
           </div>
 
           <div>
-            <label className="label">Field permissions (JSON)</label>
+            <label className="label">フィールド権限（JSON）</label>
             <textarea
               value={formData.fieldPermissions}
               onChange={(event) =>
@@ -315,18 +315,18 @@ export default function WorkflowsPage() {
           <div className="flex justify-end space-x-3">
             {editingId && (
               <button type="button" onClick={resetForm} className="btn btn-secondary" disabled={saving}>
-                Cancel edit
+                編集キャンセル
               </button>
             )}
             <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? 'Saving...' : editingId ? 'Update' : 'Create'}
+              {saving ? '保存中...' : editingId ? '更新' : '作成'}
             </button>
           </div>
         </form>
       </div>
 
       <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Copy rules</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">ルールのコピー</h2>
         {copyError && (
           <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
             {copyError}
@@ -340,7 +340,7 @@ export default function WorkflowsPage() {
             }
             className="input"
           >
-            <option value="">Source tracker</option>
+            <option value="">コピー元トラッカー</option>
             {trackerOptions.map((tracker) => (
               <option key={tracker.id} value={tracker.id}>
                 {tracker.name}
@@ -354,7 +354,7 @@ export default function WorkflowsPage() {
             }
             className="input"
           >
-            <option value="">Target tracker</option>
+            <option value="">コピー先トラッカー</option>
             {trackerOptions.map((tracker) => (
               <option key={tracker.id} value={tracker.id}>
                 {tracker.name}
@@ -368,7 +368,7 @@ export default function WorkflowsPage() {
             }
             className="input"
           >
-            <option value="">Source role (optional)</option>
+            <option value="">コピー元ロール（任意）</option>
             {roleOptions.map((role) => (
               <option key={role.id} value={role.id}>
                 {role.name}
@@ -382,7 +382,7 @@ export default function WorkflowsPage() {
             }
             className="input"
           >
-            <option value="">Target role (optional)</option>
+            <option value="">コピー先ロール（任意）</option>
             {roleOptions.map((role) => (
               <option key={role.id} value={role.id}>
                 {role.name}
@@ -392,7 +392,7 @@ export default function WorkflowsPage() {
           <div className="md:col-span-2 flex justify-end">
             <button type="submit" className="btn btn-primary flex items-center space-x-2" disabled={copySaving}>
               <Copy className="w-4 h-4" />
-              <span>{copySaving ? 'Copying...' : 'Copy rules'}</span>
+              <span>{copySaving ? 'コピー中...' : 'ルールをコピー'}</span>
             </button>
           </div>
         </form>
@@ -400,7 +400,7 @@ export default function WorkflowsPage() {
 
       <div className="card">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Workflow rules</h2>
+          <h2 className="text-lg font-semibold text-gray-900">ワークフロールール一覧</h2>
           <div className="flex items-center space-x-3">
             <select
               value={filters.roleId}
@@ -409,7 +409,7 @@ export default function WorkflowsPage() {
               }
               className="input w-48"
             >
-              <option value="">All roles</option>
+              <option value="">すべてのロール</option>
               {roleOptions.map((role) => (
                 <option key={role.id} value={role.id}>
                   {role.name}
@@ -423,7 +423,7 @@ export default function WorkflowsPage() {
               }
               className="input w-48"
             >
-              <option value="">All trackers</option>
+              <option value="">すべてのトラッカー</option>
               {trackerOptions.map((tracker) => (
                 <option key={tracker.id} value={tracker.id}>
                   {tracker.name}
@@ -447,19 +447,19 @@ export default function WorkflowsPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Role
+                    ロール
                   </th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Tracker
+                    トラッカー
                   </th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Transition
+                    ステータス遷移
                   </th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Rules
+                    条件
                   </th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
+                    アクション
                   </th>
                 </tr>
               </thead>
@@ -467,7 +467,7 @@ export default function WorkflowsPage() {
                 {rules.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
-                      No workflow rules found.
+                      ワークフロールールが見つかりません。
                     </td>
                   </tr>
                 ) : (
@@ -483,9 +483,9 @@ export default function WorkflowsPage() {
                         {rule.oldStatus?.name || '-'} → {rule.newStatus?.name || '-'}
                       </td>
                       <td className="px-4 py-2 text-sm text-gray-500">
-                        {rule.author ? 'Author ' : ''}
-                        {rule.assignee ? 'Assignee' : ''}
-                        {!rule.author && !rule.assignee ? 'None' : ''}
+                        {rule.author ? '作成者 ' : ''}
+                        {rule.assignee ? '担当者' : ''}
+                        {!rule.author && !rule.assignee ? 'なし' : ''}
                       </td>
                       <td className="px-4 py-2 text-right text-sm">
                         <div className="flex justify-end space-x-2">
@@ -494,14 +494,14 @@ export default function WorkflowsPage() {
                             className="btn btn-secondary flex items-center space-x-1"
                           >
                             <Edit className="w-4 h-4" />
-                            <span>Edit</span>
+                            <span>編集</span>
                           </button>
                           <button
                             onClick={() => handleDelete(rule.id)}
                             className="btn btn-secondary text-red-600 hover:bg-red-50 flex items-center space-x-1"
                           >
                             <Trash2 className="w-4 h-4" />
-                            <span>Delete</span>
+                            <span>削除</span>
                           </button>
                         </div>
                       </td>

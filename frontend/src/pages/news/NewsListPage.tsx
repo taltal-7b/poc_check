@@ -178,7 +178,7 @@ export default function NewsListPage() {
                       )}
                       {news.author && (
                         <span>
-                          {news.author.firstName} {news.author.lastName}
+                          {news.author.lastName} {news.author.firstName}
                         </span>
                       )}
                     </div>

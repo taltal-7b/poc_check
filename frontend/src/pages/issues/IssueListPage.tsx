@@ -191,7 +191,7 @@ export default function IssueListPage() {
               <option value="">すべての担当者</option>
               {users.map((user) => (
                 <option key={user.id} value={user.id}>
-                  {user.firstName} {user.lastName}
+                  {user.lastName} {user.firstName}
                 </option>
               ))}
             </select>
@@ -283,7 +283,7 @@ export default function IssueListPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {issue.assignedTo
-                            ? `${issue.assignedTo.firstName} ${issue.assignedTo.lastName}`
+                            ? `${issue.assignedTo.lastName} ${issue.assignedTo.firstName}`
                             : '未割り当て'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
