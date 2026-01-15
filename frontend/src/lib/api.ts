@@ -112,6 +112,13 @@ export const issuesApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
+  getGanttData: (params?: any) => api.get('/issues/gantt', { params }),
+};
+
+// Gantt API
+export const ganttApi = {
+  getAll: (params?: any) => api.get('/issues/gantt', { params }),
+  getByProject: (projectId: number, params?: any) => api.get(`/projects/${projectId}/issues/gantt`, { params }),
 };
 
 export const attachmentsApi = {

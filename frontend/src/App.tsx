@@ -11,6 +11,7 @@ import IssueListPage from './pages/issues/IssueListPage';
 import IssueDetailPage from './pages/issues/IssueDetailPage';
 import TimeEntriesPage from './pages/time-entries/TimeEntriesPage';
 import NewsListPage from './pages/news/NewsListPage';
+import GanttPage from './pages/gantt/GanttPage';
 import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import UsersPage from './pages/admin/UsersPage';
 import RolesPage from './pages/admin/RolesPage';
@@ -63,6 +64,8 @@ function App() {
           <Route path="news" element={<NewsListPage />} />
           <Route path="time-entries" element={<TimeEntriesPage />} />
           <Route path="time-entries/new" element={<NewTimeEntryRedirect />} />
+          <Route path="gantt" element={<GanttPage />} />
+          <Route path="projects/:projectId/gantt" element={<GanttPage />} />
           <Route path="admin" element={<AdminDashboardPage />} />
           <Route path="admin/users" element={<UsersPage />} />
           <Route path="admin/roles" element={<RolesPage />} />

@@ -9,6 +9,7 @@ import {
   Home,
   User,
   Clock,
+  Calendar,
   Shield,
   Newspaper,
 } from 'lucide-react';
@@ -78,6 +79,13 @@ export default function Layout() {
                 >
                   <Clock className="w-4 h-4" />
                   <span>時間</span>
+                </Link>
+                <Link
+                  to="/gantt"
+                  className="flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100"
+                >
+                  <Calendar className="w-4 h-4" />
+                  <span>ガント</span>
                 </Link>
                 {user?.admin && (
                   <Link

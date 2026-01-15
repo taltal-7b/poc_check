@@ -26,6 +26,7 @@ import {
   updateJournalEntry,
   deleteJournalEntry,
 } from '../controllers/journal.controller';
+import { getGanttData } from '../controllers/gantt.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { checkIssuePermission, canViewIssue } from '../middleware/permission.middleware';
 import { AppDataSource } from '../config/database';
@@ -37,6 +38,8 @@ router.use(authenticate);
 
 // Issue CRUD
 router.get('/', getAllIssues);
+// Gantt chart (must be before /:id route to avoid matching)
+router.get('/gantt', getGanttData);
 router.get('/:id', canViewIssue, getIssueById);
 router.post('/', checkIssuePermission('add_issues'), createIssue);
 router.put('/:id', checkIssuePermission('edit_issues'), updateIssue);

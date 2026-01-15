@@ -20,6 +20,7 @@ import {
   removeMember,
   autocompleteMembersToAdd,
 } from '../controllers/member.controller';
+import { getGanttData } from '../controllers/gantt.controller';
 
 const router = Router();
 
@@ -45,5 +46,8 @@ router.post('/:projectId/members', authenticate, checkProjectPermission('manage_
 router.put('/:projectId/members/:memberId', authenticate, checkProjectPermission('manage_members'), updateMemberRoles);
 router.delete('/:projectId/members/:memberId', authenticate, checkProjectPermission('manage_members'), removeMember);
 router.get('/:projectId/members/autocomplete', authenticate, checkProjectPermission('manage_members'), autocompleteMembersToAdd);
+
+// Project gantt chart
+router.get('/:projectId/issues/gantt', optionalAuth, canViewProject, getGanttData);
 
 export default router;
