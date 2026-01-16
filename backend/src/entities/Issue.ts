@@ -7,6 +7,7 @@ import {
   ManyToOne,
   OneToMany,
   ManyToMany,
+  JoinColumn,
   Index,
 } from 'typeorm';
 import { Project } from './Project';
@@ -100,6 +101,7 @@ export class Issue {
 
   // Relations
   @ManyToOne(() => Project, (project) => project.issues)
+  @JoinColumn({ name: 'project_id' })
   project: Project;
 
   @ManyToOne(() => Tracker, (tracker) => tracker.issues)
@@ -109,9 +111,11 @@ export class Issue {
   status: IssueStatus;
 
   @ManyToOne(() => User, (user) => user.createdIssues)
+  @JoinColumn({ name: 'author_id' })
   author: User;
 
   @ManyToOne(() => User, (user) => user.assignedIssues)
+  @JoinColumn({ name: 'assigned_to_id' })
   assignedTo: User;
 
   @ManyToOne(() => IssuePriority, (priority) => priority.issues)

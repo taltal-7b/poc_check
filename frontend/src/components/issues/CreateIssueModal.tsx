@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { issuesApi, projectsApi, trackersApi, issueStatusesApi, issuePrioritiesApi, usersApi } from '../../lib/api';
 
@@ -42,6 +43,14 @@ export default function CreateIssueModal({
     if (isOpen) {
       loadMasterData();
     }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    document.body.classList.add('modal-open');
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
   }, [isOpen]);
 
   const loadMasterData = async () => {
@@ -155,17 +164,25 @@ export default function CreateIssueModal({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex min-h-screen items-center justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+  const modalContent = (
+    <div
+      className="fixed inset-0 overflow-y-auto"
+      id="issue-modal-container"
+      style={{ zIndex: 2147483647 }}
+    >
+      <div className="flex min-h-screen items-start justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
         {/* Background overlay */}
         <div
           className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+          style={{ zIndex: 2147483646 }}
           onClick={handleClose}
         ></div>
 
         {/* Modal panel */}
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+        <div
+          className="relative inline-block align-top bg-white rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:max-w-2xl sm:w-full"
+          style={{ zIndex: 2147483647 }}
+        >
           {/* Header */}
           <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
             <div className="flex items-center justify-between mb-4">
@@ -229,6 +246,71 @@ export default function CreateIssueModal({
                       </option>
                     ))}
                   </select>
+                </div>
+              </div>
+
+              {/* Date fields - using text input to avoid browser native calendar overlap */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Start Date */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    開始日
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.startDate}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Allow only date format YYYY-MM-DD
+                      if (value === '' || /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                        setFormData({ ...formData, startDate: value });
+                      }
+                    }}
+                    placeholder="YYYY-MM-DD (例: 2026-01-16)"
+                    className="input w-full"
+                    pattern="\d{4}-\d{2}-\d{2}"
+                    onBlur={(e) => {
+                      const value = e.target.value;
+                      if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                        const date = new Date(value);
+                        if (!isNaN(date.getTime())) {
+                          const formatted = date.toISOString().split('T')[0];
+                          setFormData({ ...formData, startDate: formatted });
+                        }
+                      }
+                    }}
+                  />
+                </div>
+
+                {/* Due Date */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    期日
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.dueDate}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Allow only date format YYYY-MM-DD
+                      if (value === '' || /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                        setFormData({ ...formData, dueDate: value });
+                      }
+                    }}
+                    placeholder="YYYY-MM-DD (例: 2026-01-16)"
+                    className="input w-full"
+                    pattern="\d{4}-\d{2}-\d{2}"
+                    onBlur={(e) => {
+                      const value = e.target.value;
+                      if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                        const date = new Date(value);
+                        if (!isNaN(date.getTime())) {
+                          const formatted = date.toISOString().split('T')[0];
+                          setFormData({ ...formData, dueDate: formatted });
+                        }
+                      }
+                    }}
+                  />
                 </div>
               </div>
 
@@ -348,37 +430,6 @@ export default function CreateIssueModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Start Date */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    開始日
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.startDate}
-                    onChange={(e) =>
-                      setFormData({ ...formData, startDate: e.target.value })
-                    }
-                    className="input w-full"
-                  />
-                </div>
-
-                {/* Due Date */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    期日
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.dueDate}
-                    onChange={(e) =>
-                      setFormData({ ...formData, dueDate: e.target.value })
-                    }
-                    className="input w-full"
-                  />
-                </div>
-              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -438,4 +489,6 @@ export default function CreateIssueModal({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

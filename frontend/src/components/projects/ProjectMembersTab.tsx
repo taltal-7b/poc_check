@@ -26,7 +26,19 @@ export default function ProjectMembersTab({ projectId, onUpdate }: ProjectMember
     setError('');
     try {
       const response = await projectsApi.getMembers(projectId);
-      setMembers(response.data.data.members || []);
+      const membersData = response.data.data.members || [];
+      
+      // Debug: Log members data
+      console.log('[Frontend] Loaded members:', membersData.map((m: any) => ({
+        id: m.id,
+        userId: m.userId,
+        hasUser: !!m.user,
+        userName: m.user ? `${m.user.lastName} ${m.user.firstName}` : 'NO USER',
+        userData: m.user,
+        memberRoles: m.memberRoles,
+      })));
+      
+      setMembers(membersData);
     } catch (err: any) {
       console.error('Failed to load members:', err);
       setError('メンバーの読み込みに失敗しました');
@@ -52,7 +64,28 @@ export default function ProjectMembersTab({ projectId, onUpdate }: ProjectMember
       loadMembers();
       if (onUpdate) onUpdate();
     } catch (err: any) {
-      alert('メンバーの削除に失敗しました');
+      console.error('Failed to remove member:', err);
+      alert(err.response?.data?.message || 'メンバーの削除に失敗しました');
+    }
+  };
+
+  const handleToggleMailNotification = async (memberId: number, mailNotification: boolean) => {
+    try {
+      // Get current member roles
+      const member = members.find(m => m.id === memberId);
+      if (!member) return;
+
+      const roleIds = member.memberRoles?.map((mr: any) => mr.role?.id).filter(Boolean) || [];
+
+      await projectsApi.updateMember(projectId, memberId, {
+        roleIds,
+        mailNotification,
+      });
+      loadMembers();
+      if (onUpdate) onUpdate();
+    } catch (err: any) {
+      console.error('Failed to update member:', err);
+      alert(err.response?.data?.message || 'メール通知の更新に失敗しました');
     }
   };
 
@@ -110,6 +143,9 @@ export default function ProjectMembersTab({ projectId, onUpdate }: ProjectMember
                     ロール
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    メール通知
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     追加日
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -124,26 +160,49 @@ export default function ProjectMembersTab({ projectId, onUpdate }: ProjectMember
                       <div className="flex items-center">
                         <div>
                           <div className="text-sm font-medium text-gray-900">
-                            {member.user?.lastName} {member.user?.firstName}
+                            {member.user?.lastName && member.user?.firstName
+                              ? `${member.user.lastName} ${member.user.firstName}`
+                              : member.user?.login || '不明なユーザー'}
                           </div>
-                          <div className="text-sm text-gray-500">
-                            {member.user?.login}
-                          </div>
+                          {member.user?.login && (
+                            <div className="text-sm text-gray-500">
+                              {member.user.login}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-wrap gap-1">
-                        {member.roles?.map((role: any) => (
-                          <Badge key={role.id} variant="info">
-                            <Shield className="w-3 h-3 inline mr-1" />
-                            {role.name}
-                          </Badge>
-                        ))}
+                        {member.memberRoles && member.memberRoles.length > 0 ? (
+                          member.memberRoles.map((memberRole: any) => (
+                            <Badge key={memberRole.id || memberRole.role?.id} variant="info">
+                              <Shield className="w-3 h-3 inline mr-1" />
+                              {memberRole.role?.name || '不明なロール'}
+                            </Badge>
+                          ))
+                        ) : (
+                          <span className="text-sm text-gray-400">ロール未設定</span>
+                        )}
                       </div>
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <button
+                        onClick={() => handleToggleMailNotification(member.id, !member.mailNotification)}
+                        className="inline-flex items-center"
+                        title={member.mailNotification ? 'メール通知を無効にする' : 'メール通知を有効にする'}
+                      >
+                        {member.mailNotification ? (
+                          <Badge variant="success">有効</Badge>
+                        ) : (
+                          <Badge variant="default">無効</Badge>
+                        )}
+                      </button>
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {new Date(member.createdOn).toLocaleDateString('ja-JP')}
+                      {member.createdOn
+                        ? new Date(member.createdOn).toLocaleDateString('ja-JP')
+                        : '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button
@@ -190,6 +249,7 @@ function AddMemberModal({ projectId, roles, onClose, onSuccess }: AddMemberModal
   const [users, setUsers] = useState<any[]>([]);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [selectedRoleIds, setSelectedRoleIds] = useState<number[]>([]);
+  const [mailNotification, setMailNotification] = useState(true); // デフォルトで有効
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -226,6 +286,7 @@ function AddMemberModal({ projectId, roles, onClose, onSuccess }: AddMemberModal
       await projectsApi.addMember(projectId, {
         userId: parseInt(selectedUserId),
         roleIds: selectedRoleIds,
+        mailNotification: mailNotification,
       });
       onSuccess();
     } catch (err: any) {
@@ -295,25 +356,43 @@ function AddMemberModal({ projectId, roles, onClose, onSuccess }: AddMemberModal
                 </select>
               </div>
 
-              {/* Role Selection */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  ロール <span className="text-red-500">*</span>
-                </label>
-                <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-300 rounded-md p-3">
-                  {roles.map((role) => (
-                    <label key={role.id} className="flex items-center space-x-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedRoleIds.includes(role.id)}
-                        onChange={() => toggleRole(role.id)}
-                        className="rounded"
-                      />
-                      <span className="text-sm text-gray-700">{role.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
+                        {/* Role Selection */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            ロール <span className="text-red-500">*</span>
+                          </label>
+                          <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-300 rounded-md p-3">
+                            {roles.map((role) => (
+                              <label key={role.id} className="flex items-center space-x-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedRoleIds.includes(role.id)}
+                                  onChange={() => toggleRole(role.id)}
+                                  className="rounded"
+                                />
+                                <span className="text-sm text-gray-700">{role.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Mail Notification */}
+                        <div>
+                          <label className="flex items-center space-x-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={mailNotification}
+                              onChange={(e) => setMailNotification(e.target.checked)}
+                              className="rounded"
+                            />
+                            <span className="text-sm font-medium text-gray-700">
+                              メール通知を受け取る
+                            </span>
+                          </label>
+                          <p className="text-xs text-gray-500 mt-1 ml-6">
+                            プロジェクトの課題に関するメール通知を受け取ります
+                          </p>
+                        </div>
 
               {/* Actions */}
               <div className="flex justify-end space-x-3 pt-4">

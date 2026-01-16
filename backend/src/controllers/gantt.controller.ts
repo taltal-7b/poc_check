@@ -19,6 +19,13 @@ interface GanttTask {
 
 // Get gantt chart data for all issues or filtered by project
 export const getGanttData = catchAsync(async (req: AuthRequest, res: Response) => {
+  console.log('[Gantt] Request received:', {
+    method: req.method,
+    path: req.path,
+    url: req.url,
+    projectId: req.params.projectId,
+    query: req.query,
+  });
   const { projectId } = req.params;
   const { start_date, due_date, project_id, status_id, assigned_to_id } = req.query;
 

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { authApi } from '../lib/api';
@@ -17,6 +18,21 @@ import {
 export default function Layout() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const updateModalState = () => {
+      const isModalOpen = Boolean(document.getElementById('issue-modal-container'));
+      document.body.classList.toggle('modal-open', isModalOpen);
+    };
+
+    updateModalState();
+    const observer = new MutationObserver(updateModalState);
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   const handleLogout = async () => {
     try {

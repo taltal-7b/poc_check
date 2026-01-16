@@ -2,7 +2,7 @@
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ganttApi, projectsApi } from '../../lib/api';
-import { Calendar, RefreshCw } from 'lucide-react';
+import { Calendar, RefreshCw, Plus } from 'lucide-react';
 
 interface GanttTask {
   id: string;
@@ -190,6 +190,13 @@ export default function GanttPage() {
             </div>
             <div className="flex items-center space-x-2">
               <button
+                onClick={() => navigate('/issues/new')}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center space-x-2"
+              >
+                <Plus className="h-4 w-4" />
+                <span>新規課題</span>
+              </button>
+              <button
                 onClick={() => refetch()}
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center space-x-2"
               >
@@ -363,3 +370,4 @@ export default function GanttPage() {
     </div>
   );
 }
+

@@ -50,6 +50,18 @@ services:
       
       # Frontend URL
       FRONTEND_URL: http://localhost:5173
+      
+      # SMTP Email Configuration
+      # For development, you can use a service like Mailtrap or Gmail
+      # Example for Gmail: SMTP_HOST=smtp.gmail.com, SMTP_PORT=587, SMTP_SECURE=false
+      # Example for Mailtrap: SMTP_HOST=sandbox.smtp.mailtrap.io, SMTP_PORT=2525
+      # For local testing with MailHog: SMTP_HOST=mailhog, SMTP_PORT=1025
+      SMTP_HOST: sandbox.smtp.mailtrap.io
+      SMTP_PORT: 2525
+      SMTP_SECURE: "false"
+      SMTP_USER: dcf048baac6763
+      SMTP_PASS: 44a4aa0411dba9
+      SMTP_FROM: noreply@example.com
     ports:
       - "3001:3000"
     depends_on:

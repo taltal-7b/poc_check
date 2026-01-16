@@ -1,4 +1,4 @@
-import { Response } from 'express';
+﻿import { Response } from 'express';
 import path from 'path';
 import fs from 'fs/promises';
 import crypto from 'crypto';
@@ -29,6 +29,14 @@ const ensureDirectory = async (dir: string) => {
 const getFileExtension = (filename: string) => {
   const ext = path.extname(filename || '').toLowerCase();
   return ext.startsWith('.') ? ext.slice(1) : ext;
+};
+const normalizeFilename = (filename: string) => {
+  if (!filename) return '';
+  if (!/[\u00c0-\u00ff]/.test(filename)) return filename;
+  const decoded = Buffer.from(filename, 'latin1').toString('utf8');
+  if (!decoded || decoded === filename) return filename;
+  if (decoded.includes('\uFFFD')) return filename;
+  return decoded;
 };
 
 const isExtensionAllowed = (filename: string) => {
@@ -94,7 +102,8 @@ const createAttachmentRecord = async (
   containerId: number,
   userId: number
 ) => {
-  if (!isExtensionAllowed(file.originalname)) {
+  const originalFilename = normalizeFilename(file.originalname);
+  if (!isExtensionAllowed(originalFilename)) {
     await fs.unlink(file.path);
     throw new AppError('許可されていない拡張子です', 400);
   }
@@ -106,7 +115,7 @@ const createAttachmentRecord = async (
   const attachment = attachmentRepository.create({
     containerId,
     containerType,
-    filename: file.originalname,
+    filename: originalFilename,
     diskFilename: path.basename(file.path),
     filesize: file.size,
     contentType: file.mimetype,
@@ -138,7 +147,7 @@ export const uploadIssueAttachments = catchAsync(async (req: AuthRequest, res: R
 
   res.status(201).json({
     status: 'success',
-    message: '添付ファイルを追加しました',
+    message: '豺ｻ莉倥ヵ繧｡繧､繝ｫ繧定ｿｽ蜉縺励∪縺励◆',
     data: { attachments },
   });
 });
@@ -170,7 +179,7 @@ export const uploadJournalAttachments = catchAsync(async (req: AuthRequest, res:
 
   res.status(201).json({
     status: 'success',
-    message: 'コメントに添付を追加しました',
+    message: '繧ｳ繝｡繝ｳ繝医↓豺ｻ莉倥ｒ霑ｽ蜉縺励∪縺励◆',
     data: { attachments },
   });
 });
@@ -206,6 +215,16 @@ export const downloadAttachment = catchAsync(async (req: AuthRequest, res: Respo
   attachment.downloads = (attachment.downloads || 0) + 1;
   await attachmentRepository.save(attachment);
 
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  if (attachment.contentType && attachment.contentType.startsWith('image/')) {
+    // Escape filename for Content-Disposition header (remove invalid characters)
+    const escapedFilename = attachment.filename.replace(/[\r\n"]/g, '').replace(/\\/g, '');
+    res.setHeader('Content-Disposition', `inline; filename="${escapedFilename}"`);
+    res.setHeader('Content-Type', attachment.contentType);
+    res.sendFile(diskPath);
+    return;
+  }
+
   res.download(diskPath, attachment.filename);
 });
 
@@ -233,7 +252,7 @@ export const deleteAttachment = catchAsync(async (req: AuthRequest, res: Respons
 
   res.json({
     status: 'success',
-    message: '添付ファイルを削除しました',
+    message: '豺ｻ莉倥ヵ繧｡繧､繝ｫ繧貞炎髯､縺励∪縺励◆',
   });
 });
 
@@ -241,3 +260,7 @@ export const getUploadSettings = () => ({
   storageDir: ATTACHMENTS_ROOT,
   maxSizeBytes: MAX_SIZE_KB * 1024,
 });
+
+
+
+

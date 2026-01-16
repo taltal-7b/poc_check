@@ -89,3 +89,84 @@ input[type="range"]::-webkit-slider-thumb {
 input[type="range"]::-moz-range-thumb {
   @apply w-4 h-4 bg-primary-600 border-0 rounded-full cursor-pointer;
 }
+
+/* Date picker calendar popup - force behind modals */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  position: relative;
+  z-index: 1 !important;
+  cursor: pointer;
+}
+
+/* Date picker input - low z-index so calendar appears behind modal */
+input[type="date"] {
+  position: relative;
+  z-index: 1 !important;
+}
+
+/* Force date picker calendar popup to appear behind modal */
+input[type="date"]::-webkit-datetime-edit {
+  z-index: 1 !important;
+}
+
+/* Force all potential date picker popups to appear behind modals */
+body > div[style*="position: fixed"],
+body > div[style*="position: absolute"] {
+  max-z-index: 1 !important;
+}
+
+/* Modal container should be on top of everything */
+#issue-modal-container,
+[id="issue-modal-container"] {
+  z-index: 2147483647 !important;
+}
+
+/* Keep gantt sticky headers under modal when modal is open */
+body.modal-open .gantt-container {
+  position: relative;
+  z-index: 0 !important;
+  isolation: isolate;
+  pointer-events: none;
+}
+
+body.modal-open .gantt-container,
+body.modal-open .gantt-container * {
+  visibility: hidden;
+}
+
+body.modal-open main {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+body.modal-open #issue-modal-container,
+body.modal-open [id="issue-modal-container"] {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* Fallback for when body class isn't applied */
+body:has(#issue-modal-container) main,
+body:has([id="issue-modal-container"]) main {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+body:has(#issue-modal-container) #issue-modal-container,
+body:has([id="issue-modal-container"]) [id="issue-modal-container"] {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+body.modal-open .gantt-container .grid-header,
+body.modal-open .gantt-container .side-header,
+body.modal-open .gantt-container .current-ball-highlight,
+body.modal-open .gantt-container .current-highlight {
+  z-index: 0 !important;
+}
+
+/* Dark overlay for date picker calendar area */
+input[type="date"]:focus ~ *,
+input[type="date"]:focus::after {
+  background-color: rgba(0, 0, 0, 0.5) !important;
+  z-index: 1 !important;
+}

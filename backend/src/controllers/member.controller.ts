@@ -13,11 +13,45 @@ export const getProjectMembers = catchAsync(async (req: AuthRequest, res: Respon
   const { projectId } = req.params;
 
   const memberRepository = AppDataSource.getRepository(Member);
-  const members = await memberRepository.find({
-    where: { projectId: parseInt(projectId) },
-    relations: ['user', 'memberRoles', 'memberRoles.role'],
-    order: { id: 'ASC' },
-  });
+  
+  // Use query builder to ensure relations are loaded correctly
+  const members = await memberRepository
+    .createQueryBuilder('member')
+    .leftJoinAndSelect('member.user', 'user')
+    .leftJoinAndSelect('member.memberRoles', 'memberRoles')
+    .leftJoinAndSelect('memberRoles.role', 'role')
+    .where('member.projectId = :projectId', { projectId: parseInt(projectId) })
+    .orderBy('member.id', 'ASC')
+    .getMany();
+
+  // If relations are not loaded, manually fetch them
+  for (const member of members) {
+    if (!member.user && member.userId) {
+      const userRepository = AppDataSource.getRepository(User);
+      member.user = await userRepository.findOne({
+        where: { id: member.userId },
+      }) || undefined;
+    }
+    
+    if (!member.memberRoles || member.memberRoles.length === 0) {
+      const memberRoleRepository = AppDataSource.getRepository(MemberRole);
+      member.memberRoles = await memberRoleRepository.find({
+        where: { memberId: member.id },
+        relations: ['role'],
+      });
+    }
+  }
+
+  // Debug: Log members to check relations
+  console.log('[Member] Fetched members:', members.map(m => ({
+    id: m.id,
+    userId: m.userId,
+    hasUser: !!m.user,
+    userName: m.user ? `${m.user.lastName} ${m.user.firstName}` : 'NO USER',
+    userLogin: m.user?.login || 'NO LOGIN',
+    memberRolesCount: m.memberRoles?.length || 0,
+    roles: m.memberRoles?.map((mr: any) => mr.role?.name).filter(Boolean) || [],
+  })));
 
   res.json({
     status: 'success',
@@ -51,7 +85,7 @@ export const getMemberById = catchAsync(async (req: AuthRequest, res: Response) 
 // Add member to project
 export const addMember = catchAsync(async (req: AuthRequest, res: Response) => {
   const { projectId } = req.params;
-  const { userId, roleIds = [] } = req.body;
+  const { userId, roleIds = [], mailNotification = false } = req.body;
 
   if (!userId) {
     throw new AppError('ユーザーIDは必須です', 400);
@@ -101,6 +135,7 @@ export const addMember = catchAsync(async (req: AuthRequest, res: Response) => {
   const member = memberRepository.create({
     userId,
     projectId: parseInt(projectId),
+    mailNotification: mailNotification === true || mailNotification === 'true',
   });
 
   await memberRepository.save(member);
@@ -136,9 +171,10 @@ export const addMember = catchAsync(async (req: AuthRequest, res: Response) => {
 // Update member roles
 export const updateMemberRoles = catchAsync(async (req: AuthRequest, res: Response) => {
   const { projectId, memberId } = req.params;
-  const { roleIds = [] } = req.body;
+  const { roleIds, mailNotification } = req.body;
 
-  if (roleIds.length === 0) {
+  // If roleIds is provided, it must not be empty
+  if (roleIds !== undefined && roleIds.length === 0) {
     throw new AppError('少なくとも1つのロールを指定してください', 400);
   }
 
@@ -158,21 +194,30 @@ export const updateMemberRoles = catchAsync(async (req: AuthRequest, res: Respon
     throw new AppError('メンバーが見つかりません', 404);
   }
 
-  // Delete existing roles
-  await memberRoleRepository.delete({ memberId: member.id });
+  // Update mail notification if provided
+  if (mailNotification !== undefined) {
+    member.mailNotification = mailNotification === true || mailNotification === 'true';
+    await memberRepository.save(member);
+  }
 
-  // Add new roles
-  for (const roleId of roleIds) {
-    const role = await roleRepository.findOne({
-      where: { id: roleId },
-    });
+  // Update roles if provided
+  if (roleIds !== undefined) {
+    // Delete existing roles
+    await memberRoleRepository.delete({ memberId: member.id });
 
-    if (role) {
-      const memberRole = memberRoleRepository.create({
-        memberId: member.id,
-        roleId: role.id,
+    // Add new roles
+    for (const roleId of roleIds) {
+      const role = await roleRepository.findOne({
+        where: { id: roleId },
       });
-      await memberRoleRepository.save(memberRole);
+
+      if (role) {
+        const memberRole = memberRoleRepository.create({
+          memberId: member.id,
+          roleId: role.id,
+        });
+        await memberRoleRepository.save(memberRole);
+      }
     }
   }
 
@@ -231,6 +276,11 @@ export const removeMember = catchAsync(async (req: AuthRequest, res: Response) =
     }
   }
 
+  // Delete member roles first (cascade delete might not work)
+  const memberRoleRepository = AppDataSource.getRepository(MemberRole);
+  await memberRoleRepository.delete({ memberId: member.id });
+
+  // Delete member
   await memberRepository.remove(member);
 
   res.json({

@@ -2,7 +2,7 @@ import axios from 'axios';
 import { useAuthStore } from '../stores/authStore';
 
 export const API_URL =
-  (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001/api';
+  (import.meta as any).env?.VITE_API_URL || 'http://localhost:3000/api';
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -73,6 +73,8 @@ export const projectsApi = {
   delete: (id: number) => api.delete(`/projects/${id}`),
   getMembers: (id: number) => api.get(`/projects/${id}/members`),
   addMember: (id: number, data: any) => api.post(`/projects/${id}/members`, data),
+  updateMember: (id: number, memberId: number, data: any) =>
+    api.put(`/projects/${id}/members/${memberId}`, data),
   removeMember: (id: number, memberId: number) =>
     api.delete(`/projects/${id}/members/${memberId}`),
 };

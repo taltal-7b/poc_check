@@ -3,6 +3,7 @@ import {
   PrimaryGeneratedColumn,
   Column,
   ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { Member } from './Member';
 import { Role } from './Role';
@@ -23,8 +24,10 @@ export class MemberRole {
 
   // Relations
   @ManyToOne(() => Member, (member) => member.memberRoles)
+  @JoinColumn({ name: 'member_id' })
   member: Member;
 
   @ManyToOne(() => Role, (role) => role.memberRoles)
+  @JoinColumn({ name: 'role_id' })
   role: Role;
 }

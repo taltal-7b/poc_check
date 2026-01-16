@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Edit, MessageSquare, Trash2 } from 'lucide-react';
-import { attachmentsApi, issuesApi } from '../../lib/api';
+import { api, attachmentsApi, issuesApi } from '../../lib/api';
 import EditIssueModal from '../../components/issues/EditIssueModal';
 import IssueRelationsSection from '../../components/issues/IssueRelationsSection';
 import IssueWatchersSection from '../../components/issues/IssueWatchersSection';
@@ -22,6 +22,14 @@ export default function IssueDetailPage() {
   const [addingComment, setAddingComment] = useState(false);
   const [commentFiles, setCommentFiles] = useState<File[]>([]);
   const [commentInputKey, setCommentInputKey] = useState(0);
+  const [commentError, setCommentError] = useState('');
+  const [commentUploadError, setCommentUploadError] = useState('');
+  const [pendingJournalId, setPendingJournalId] = useState<number | null>(null);
+  const [journalPreviewUrls, setJournalPreviewUrls] = useState<Record<string, string>>({});
+  const loadingJournalPreviewIdsRef = useRef<Set<string>>(new Set());
+
+  const commentMaxFiles = 10;
+  const commentMaxFileSizeBytes = 5 * 1024 * 1024;
 
   useEffect(() => {
     if (id) {
@@ -43,23 +51,104 @@ export default function IssueDetailPage() {
     }
   };
 
-  const handleAddComment = async () => {
-    if (!comment.trim()) return;
-
-    setAddingComment(true);
-    try {
-      const response = await issuesApi.addJournal(parseInt(id!), { notes: comment });
-      const journalId = response.data?.data?.journal?.id;
-      if (journalId && commentFiles.length > 0) {
-        await issuesApi.uploadJournalAttachments(parseInt(id!), journalId, commentFiles);
-      }
-      setComment('');
+  const handleCommentFilesChange = (files: FileList | null) => {
+    if (!files || files.length === 0) {
       setCommentFiles([]);
+      setCommentError('');
+      return;
+    }
+
+    const selectedFiles = Array.from(files);
+    const rejectedFiles: string[] = [];
+    let validFiles = selectedFiles.filter((file) => {
+      if (file.size > commentMaxFileSizeBytes) {
+        rejectedFiles.push(`${file.name} (サイズ超過)`);
+        return false;
+      }
+      return true;
+    });
+
+    if (validFiles.length > commentMaxFiles) {
+      const overflow = validFiles.slice(commentMaxFiles);
+      overflow.forEach((file) => rejectedFiles.push(`${file.name} (最大件数超過)`));
+      validFiles = validFiles.slice(0, commentMaxFiles);
+    }
+
+    if (rejectedFiles.length > 0) {
+      setCommentError(`添付できないファイルがあります: ${rejectedFiles.join(', ')}`);
+    } else {
+      setCommentError('');
+    }
+
+    setCommentFiles(validFiles);
+    setCommentUploadError('');
+  };
+
+  const handleRemoveCommentFile = (index: number) => {
+    setCommentFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddComment = async () => {
+    const trimmedComment = comment.trim();
+    if (!trimmedComment && commentFiles.length === 0) {
+      setCommentError('コメントを入力してください');
+      return;
+    }
+
+    setCommentError('');
+    setCommentUploadError('');
+    setAddingComment(true);
+
+    try {
+      const response = await issuesApi.addJournal(parseInt(id!), {
+        notes: trimmedComment || '添付ファイル',
+      });
+      const journalId = response.data?.data?.journal?.id;
+
+      setComment('');
       setCommentInputKey((prev) => prev + 1);
-      loadIssue(); // Reload to get updated journals
+
+      if (journalId && commentFiles.length > 0) {
+        try {
+          await issuesApi.uploadJournalAttachments(parseInt(id!), journalId, commentFiles);
+          setCommentFiles([]);
+          setPendingJournalId(null);
+        } catch (err: any) {
+          console.error('Failed to upload comment files:', err);
+          setPendingJournalId(journalId);
+          setCommentUploadError(
+            err.response?.data?.message || '添付ファイルのアップロードに失敗しました'
+          );
+          await loadIssue();
+          return;
+        }
+      }
+
+      await loadIssue();
     } catch (err: any) {
       console.error('Failed to add comment:', err);
-      alert('コメントの追加に失敗しました');
+      setCommentError(err.response?.data?.message || 'コメントの追加に失敗しました');
+    } finally {
+      setAddingComment(false);
+    }
+  };
+
+  const handleRetryCommentUpload = async () => {
+    if (!pendingJournalId || commentFiles.length === 0 || !id) return;
+
+    setAddingComment(true);
+    setCommentUploadError('');
+    try {
+      await issuesApi.uploadJournalAttachments(parseInt(id), pendingJournalId, commentFiles);
+      setPendingJournalId(null);
+      setCommentFiles([]);
+      setCommentInputKey((prev) => prev + 1);
+      await loadIssue();
+    } catch (err: any) {
+      console.error('Failed to retry comment upload:', err);
+      setCommentUploadError(
+        err.response?.data?.message || '添付ファイルのアップロードに失敗しました'
+      );
     } finally {
       setAddingComment(false);
     }
@@ -114,6 +203,93 @@ export default function IssueDetailPage() {
     if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   };
+
+  const normalizeFilename = (filename: string) => {
+    if (!filename) return '';
+    if (!/[\u00c0-\u00ff]/.test(filename)) return filename;
+    try {
+      const decoded = decodeURIComponent(escape(filename));
+      if (!decoded || decoded === filename) return filename;
+      if (decoded.includes('\uFFFD')) return filename;
+      return decoded;
+    } catch {
+      return filename;
+    }
+  };
+
+  const isImageFile = (attachment: any) => {
+    const contentType = attachment?.contentType || attachment?.content_type || '';
+    if (typeof contentType === 'string' && contentType.startsWith('image/')) return true;
+    const filename = normalizeFilename(attachment?.filename || '');
+    return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(filename);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const attachments = issue?.journals?.flatMap((journal: any) => journal.attachments || []) || [];
+    const attachmentIds = new Set(attachments.map((attachment: any) => String(attachment.id)));
+
+    setJournalPreviewUrls((prev) => {
+      const next = { ...prev };
+      Object.keys(prev).forEach((key) => {
+        if (!attachmentIds.has(key)) {
+          URL.revokeObjectURL(prev[key]);
+          delete next[key];
+        }
+      });
+      return next;
+    });
+
+    const loadPreviews = async () => {
+      const targets = attachments.filter((attachment: any) => {
+        if (!attachment?.id) return false;
+        if (!isImageFile(attachment)) return false;
+        const id = String(attachment.id);
+        if (journalPreviewUrls[id]) return false;
+        if (loadingJournalPreviewIdsRef.current.has(id)) return false;
+        loadingJournalPreviewIdsRef.current.add(id);
+        return true;
+      });
+
+      if (targets.length === 0) return;
+
+      const entries = await Promise.all(
+        targets.map(async (attachment: any) => {
+          const id = String(attachment.id);
+          try {
+            const response = await api.get(`/attachments/${attachment.id}/download`, {
+              responseType: 'blob',
+            });
+            const url = URL.createObjectURL(response.data);
+            return [id, url] as const;
+          } catch (error) {
+            console.error('Failed to load journal preview:', attachment.id, error);
+            return null;
+          } finally {
+            loadingJournalPreviewIdsRef.current.delete(id);
+          }
+        })
+      );
+
+      if (cancelled) return;
+
+      setJournalPreviewUrls((prev) => {
+        const next = { ...prev };
+        entries.forEach((entry) => {
+          if (!entry) return;
+          const [entryId, url] = entry;
+          next[entryId] = url;
+        });
+        return next;
+      });
+    };
+
+    loadPreviews();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [issue]);
 
   const handleDeleteAttachment = async (attachmentId: number) => {
     if (!confirm('この添付ファイルを削除してもよろしいですか？')) return;
@@ -189,7 +365,6 @@ export default function IssueDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          {/* Description */}
           <div className="card">
             <h2 className="text-lg font-bold text-gray-900 mb-4">説明</h2>
             <div className="prose max-w-none">
@@ -207,7 +382,6 @@ export default function IssueDetailPage() {
             onRefresh={loadIssue}
           />
 
-          {/* Comments */}
           <div className="card">
             <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center space-x-2">
               <MessageSquare className="w-5 h-5" />
@@ -232,34 +406,59 @@ export default function IssueDetailPage() {
                     )}
                     {journal.attachments && journal.attachments.length > 0 && (
                       <div className="mt-2 space-y-2">
-                        {journal.attachments.map((attachment: any) => (
-                          <div
-                            key={attachment.id}
-                            className="flex items-center justify-between p-2 bg-gray-50 rounded"
-                          >
-                            <div className="flex-1 min-w-0">
-                              <a
-                                href={attachmentsApi.getDownloadUrl(attachment.id)}
-                                className="text-sm text-blue-600 hover:text-blue-800 truncate block"
-                              >
-                                {attachment.filename}
-                              </a>
-                              <div className="text-xs text-gray-500">
-                                {formatFileSize(attachment.filesize)} ·{' '}
-                                {attachment.author
-                                  ? `${attachment.author.lastName} ${attachment.author.firstName}`
-                                  : '不明'}
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => handleDeleteAttachment(attachment.id)}
-                              className="text-red-600 hover:text-red-800 ml-2"
-                              title="削除"
+                        {journal.attachments.map((attachment: any) => {
+                          const displayName = normalizeFilename(attachment.filename || '');
+                          const downloadUrl = attachmentsApi.getDownloadUrl(attachment.id);
+                          const previewUrl = journalPreviewUrls[String(attachment.id)];
+                          const showPreview = isImageFile(attachment);
+                          return (
+                            <div
+                              key={attachment.id}
+                              className="flex items-start justify-between p-2 bg-gray-50 rounded"
                             >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ))}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center space-x-2">
+                                  {showPreview && previewUrl && (
+                                    <img
+                                      src={previewUrl}
+                                      alt={displayName}
+                                      className="h-10 w-10 rounded object-cover border border-gray-200"
+                                      loading="lazy"
+                                    />
+                                  )}
+                                  <a
+                                    href={downloadUrl}
+                                    download={displayName}
+                                    className="text-sm text-blue-600 hover:text-blue-800 truncate block"
+                                  >
+                                    {displayName}
+                                  </a>
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {formatFileSize(attachment.filesize)} ・{' '}
+                                  {attachment.author
+                                    ? `${attachment.author.lastName} ${attachment.author.firstName}`
+                                    : '不明'}
+                                </div>
+                                {showPreview && previewUrl && (
+                                  <img
+                                    src={previewUrl}
+                                    alt={displayName}
+                                    className="mt-3 max-h-[400px] w-auto rounded border border-gray-200"
+                                    loading="lazy"
+                                  />
+                                )}
+                              </div>
+                              <button
+                                onClick={() => handleDeleteAttachment(attachment.id)}
+                                className="text-red-600 hover:text-red-800 ml-2"
+                                title="削除"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                     {journal.details && journal.details.length > 0 && (
@@ -278,26 +477,70 @@ export default function IssueDetailPage() {
                   <p>コメントがありません</p>
                 </div>
               )}
+
               <div>
                 <textarea
                   value={comment}
-                  onChange={(e) => setComment(e.target.value)}
+                  onChange={(e) => {
+                    setComment(e.target.value);
+                    setCommentError('');
+                    setCommentUploadError('');
+                  }}
                   className="input h-24 resize-none w-full"
                   placeholder="コメントを入力..."
                 />
+                {commentError && (
+                  <div className="mt-2 text-sm text-red-600">{commentError}</div>
+                )}
+                {commentUploadError && (
+                  <div className="mt-2 text-sm text-red-600">
+                    {commentUploadError}
+                    {pendingJournalId && commentFiles.length > 0 && (
+                      <button
+                        onClick={handleRetryCommentUpload}
+                        className="ml-2 text-blue-600 hover:text-blue-800 underline"
+                        disabled={addingComment}
+                      >
+                        添付を再アップロード
+                      </button>
+                    )}
+                  </div>
+                )}
                 <div className="mt-2">
                   <input
                     key={commentInputKey}
                     type="file"
                     multiple
-                    onChange={(e) => setCommentFiles(Array.from(e.target.files || []))}
+                    onChange={(e) => handleCommentFilesChange(e.target.files)}
                     className="input"
+                    disabled={addingComment}
                   />
                 </div>
+                {commentFiles.length > 0 && (
+                  <div className="mt-2 space-y-2">
+                    {commentFiles.map((file, index) => (
+                      <div
+                        key={`${file.name}-${index}`}
+                        className="flex items-center justify-between text-sm text-gray-700"
+                      >
+                        <div className="truncate">
+                          {file.name} ({formatFileSize(file.size)})
+                        </div>
+                        <button
+                          onClick={() => handleRemoveCommentFile(index)}
+                          className="text-red-600 hover:text-red-800 ml-3"
+                          type="button"
+                        >
+                          削除
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="mt-2 flex justify-end">
                   <button
                     onClick={handleAddComment}
-                    disabled={addingComment || !comment.trim()}
+                    disabled={addingComment}
                     className="btn btn-primary"
                   >
                     {addingComment ? 'コメント追加中...' : 'コメントを追加'}
@@ -309,7 +552,6 @@ export default function IssueDetailPage() {
         </div>
 
         <div className="space-y-6">
-          {/* Details */}
           <div className="card">
             <h2 className="text-lg font-bold text-gray-900 mb-4">詳細</h2>
             <dl className="space-y-3">
@@ -331,19 +573,19 @@ export default function IssueDetailPage() {
               </div>
               <div>
                 <dt className="text-sm font-medium text-gray-500">担当者</dt>
-                  <dd className="mt-1 text-sm text-gray-900">
-                    {issue.assignedTo
-                      ? `${issue.assignedTo.lastName} ${issue.assignedTo.firstName}`
-                      : '未割り当て'}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">作成者</dt>
-                  <dd className="mt-1 text-sm text-gray-900">
-                    {issue.author
-                      ? `${issue.author.lastName} ${issue.author.firstName}`
-                      : '-'}
-                  </dd>
+                <dd className="mt-1 text-sm text-gray-900">
+                  {issue.assignedTo
+                    ? `${issue.assignedTo.lastName} ${issue.assignedTo.firstName}`
+                    : '未割り当て'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-sm font-medium text-gray-500">作成者</dt>
+                <dd className="mt-1 text-sm text-gray-900">
+                  {issue.author
+                    ? `${issue.author.lastName} ${issue.author.firstName}`
+                    : '-'}
+                </dd>
               </div>
               <div>
                 <dt className="text-sm font-medium text-gray-500">開始日</dt>
@@ -378,26 +620,18 @@ export default function IssueDetailPage() {
             </dl>
           </div>
 
-          {/* Relations */}
           <IssueRelationsSection issueId={parseInt(id!)} />
-
-          {/* Watchers */}
           <IssueWatchersSection issueId={parseInt(id!)} />
-
-          {/* Time Entries */}
           <IssueTimeEntriesSection
             issueId={parseInt(id!)}
             estimatedHours={issue.estimatedHours}
           />
-
-          {/* Children */}
           {issue.children && issue.children.length > 0 && (
             <IssueChildrenSection children={issue.children} />
           )}
         </div>
       </div>
 
-      {/* Edit Modal */}
       <EditIssueModal
         isOpen={isEditModalOpen}
         onClose={() => setIsEditModalOpen(false)}

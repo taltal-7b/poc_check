@@ -13,6 +13,7 @@ import { Journal } from '../entities/Journal';
 import { Attachment } from '../entities/Attachment';
 import { AppError, catchAsync } from '../middleware/error.middleware';
 import { AuthRequest } from '../middleware/auth.middleware';
+import { notifyIssueCreated, notifyIssueUpdated } from '../services/notification.service';
 
 // Get all issues
 export const getAllIssues = catchAsync(async (req: AuthRequest, res: Response) => {
@@ -131,25 +132,24 @@ export const getIssueById = catchAsync(async (req: AuthRequest, res: Response) =
   const { id } = req.params;
 
   const issueRepository = AppDataSource.getRepository(Issue);
-  const issue = await issueRepository.findOne({
-    where: { id: parseInt(id) },
-    relations: [
-      'project',
-      'tracker',
-      'status',
-      'priority',
-      'author',
-      'assignedTo',
-      'category',
-      'fixedVersion',
-      'parent',
-      'children',
-      'children.status',
-      'children.priority',
-      'children.tracker',
-      'children.assignedTo',
-    ],
-  });
+  const issue = await issueRepository
+    .createQueryBuilder('issue')
+    .leftJoinAndSelect('issue.project', 'project')
+    .leftJoinAndSelect('issue.tracker', 'tracker')
+    .leftJoinAndSelect('issue.status', 'status')
+    .leftJoinAndSelect('issue.priority', 'priority')
+    .leftJoinAndSelect('issue.author', 'author')
+    .leftJoinAndSelect('issue.assignedTo', 'assignedTo')
+    .leftJoinAndSelect('issue.category', 'category')
+    .leftJoinAndSelect('issue.fixedVersion', 'fixedVersion')
+    .leftJoinAndSelect('issue.parent', 'parent')
+    .leftJoinAndSelect('issue.children', 'children')
+    .leftJoinAndSelect('children.status', 'childrenStatus')
+    .leftJoinAndSelect('children.priority', 'childrenPriority')
+    .leftJoinAndSelect('children.tracker', 'childrenTracker')
+    .leftJoinAndSelect('children.assignedTo', 'childrenAssignedTo')
+    .where('issue.id = :id', { id: parseInt(id) })
+    .getOne();
 
   if (!issue) {
     throw new AppError('課題が見つかりません', 404);
@@ -323,6 +323,13 @@ export const createIssue = catchAsync(async (req: AuthRequest, res: Response) =>
     ],
   });
 
+  // Send notification (async, don't wait)
+  if (savedIssue && savedIssue.project) {
+    notifyIssueCreated(savedIssue, savedIssue.project).catch((error) => {
+      console.error('[Notification] Failed to send issue created notification:', error);
+    });
+  }
+
   res.status(201).json({
     status: 'success',
     message: '課題を作成しました',
@@ -409,6 +416,32 @@ export const updateIssue = catchAsync(async (req: AuthRequest, res: Response) =>
       'fixedVersion',
     ],
   });
+
+  // Create a journal entry for the update (for notification purposes)
+  // This follows Redmine's pattern of tracking all changes
+  const journalRepository = AppDataSource.getRepository(Journal);
+  const updateJournal = journalRepository.create({
+    journalizedId: issue.id,
+    journalizedType: 'Issue',
+    userId: req.user!.id,
+    notes: '', // No comment, just field changes
+    privateNotes: false,
+    createdOn: new Date(),
+  });
+  await journalRepository.save(updateJournal);
+
+  // Reload journal with relations
+  const savedJournal = await journalRepository.findOne({
+    where: { id: updateJournal.id },
+    relations: ['user'],
+  });
+
+  // Send notification (async, don't wait for it)
+  if (updatedIssue && updatedIssue.project && savedJournal) {
+    notifyIssueUpdated(updatedIssue, updatedIssue.project, savedJournal).catch((error) => {
+      console.error('[Issue] Failed to send update notification:', error);
+    });
+  }
 
   res.json({
     status: 'success',

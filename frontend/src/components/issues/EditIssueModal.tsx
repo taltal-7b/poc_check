@@ -123,7 +123,7 @@ export default function EditIssueModal({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex min-h-screen items-center justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+      <div className="flex min-h-screen items-start justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
         {/* Background overlay */}
         <div
           className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
@@ -131,7 +131,7 @@ export default function EditIssueModal({
         ></div>
 
         {/* Modal panel */}
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+        <div className="relative inline-block align-top bg-white rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:max-w-2xl sm:w-full">
           {/* Header */}
           <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
             <div className="flex items-center justify-between mb-4">
@@ -275,12 +275,28 @@ export default function EditIssueModal({
                     開始日
                   </label>
                   <input
-                    type="date"
+                    type="text"
                     value={formData.startDate}
-                    onChange={(e) =>
-                      setFormData({ ...formData, startDate: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Allow only date format YYYY-MM-DD
+                      if (value === '' || /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                        setFormData({ ...formData, startDate: value });
+                      }
+                    }}
+                    placeholder="YYYY-MM-DD (例: 2026-01-16)"
                     className="input w-full"
+                    pattern="\d{4}-\d{2}-\d{2}"
+                    onBlur={(e) => {
+                      const value = e.target.value;
+                      if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                        const date = new Date(value);
+                        if (!isNaN(date.getTime())) {
+                          const formatted = date.toISOString().split('T')[0];
+                          setFormData({ ...formData, startDate: formatted });
+                        }
+                      }
+                    }}
                   />
                 </div>
 
@@ -290,12 +306,28 @@ export default function EditIssueModal({
                     期日
                   </label>
                   <input
-                    type="date"
+                    type="text"
                     value={formData.dueDate}
-                    onChange={(e) =>
-                      setFormData({ ...formData, dueDate: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Allow only date format YYYY-MM-DD
+                      if (value === '' || /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                        setFormData({ ...formData, dueDate: value });
+                      }
+                    }}
+                    placeholder="YYYY-MM-DD (例: 2026-01-16)"
                     className="input w-full"
+                    pattern="\d{4}-\d{2}-\d{2}"
+                    onBlur={(e) => {
+                      const value = e.target.value;
+                      if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                        const date = new Date(value);
+                        if (!isNaN(date.getTime())) {
+                          const formatted = date.toISOString().split('T')[0];
+                          setFormData({ ...formData, dueDate: formatted });
+                        }
+                      }
+                    }}
                   />
                 </div>
               </div>

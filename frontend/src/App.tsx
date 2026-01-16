@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useAuthStore } from './stores/authStore';
 import Layout from './components/Layout';
@@ -8,6 +8,7 @@ import DashboardPage from './pages/DashboardPage';
 import ProjectListPage from './pages/projects/ProjectListPage';
 import ProjectDetailPage from './pages/projects/ProjectDetailPage';
 import IssueListPage from './pages/issues/IssueListPage';
+import CreateIssuePage from './pages/issues/CreateIssuePage';
 import IssueDetailPage from './pages/issues/IssueDetailPage';
 import TimeEntriesPage from './pages/time-entries/TimeEntriesPage';
 import NewsListPage from './pages/news/NewsListPage';
@@ -24,14 +25,6 @@ function NewProjectRedirect() {
   const navigate = useNavigate();
   useEffect(() => {
     navigate('/projects?openModal=true', { replace: true });
-  }, [navigate]);
-  return null;
-}
-
-function NewIssueRedirect() {
-  const navigate = useNavigate();
-  useEffect(() => {
-    navigate('/issues?openModal=true', { replace: true });
   }, [navigate]);
   return null;
 }
@@ -59,7 +52,7 @@ function App() {
           <Route path="projects/new" element={<NewProjectRedirect />} />
           <Route path="projects/:id" element={<ProjectDetailPage />} />
           <Route path="issues" element={<IssueListPage />} />
-          <Route path="issues/new" element={<NewIssueRedirect />} />
+          <Route path="issues/new" element={<CreateIssuePage />} />
           <Route path="issues/:id" element={<IssueDetailPage />} />
           <Route path="news" element={<NewsListPage />} />
           <Route path="time-entries" element={<TimeEntriesPage />} />

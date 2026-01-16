@@ -7,6 +7,7 @@ import { Issue } from '../entities/Issue';
 import { Attachment } from '../entities/Attachment';
 import { AppError, catchAsync } from '../middleware/error.middleware';
 import { AuthRequest } from '../middleware/auth.middleware';
+import { notifyIssueCommented, notifyIssueUpdated } from '../services/notification.service';
 
 // Get issue journals (comments/history)
 export const getIssueJournals = catchAsync(async (req: AuthRequest, res: Response) => {
@@ -105,6 +106,43 @@ export const addJournalEntry = catchAsync(async (req: AuthRequest, res: Response
     where: { id: journal.id },
     relations: ['user', 'details'],
   });
+
+  // Reload issue with relations for notification using QueryBuilder
+  const issueWithRelations = await issueRepository
+    .createQueryBuilder('issue')
+    .leftJoinAndSelect('issue.project', 'project')
+    .leftJoinAndSelect('issue.author', 'author')
+    .leftJoinAndSelect('issue.assignedTo', 'assignedTo')
+    .leftJoinAndSelect('issue.status', 'status')
+    .leftJoinAndSelect('issue.priority', 'priority')
+    .where('issue.id = :id', { id: parseInt(issueId) })
+    .getOne();
+
+  // Debug: Check what we got
+  console.log(`[Journal] addJournalEntry: savedJournal=${!!savedJournal}, issueWithRelations=${!!issueWithRelations}`);
+  if (issueWithRelations) {
+    console.log(`[Journal] issue.projectId=${issueWithRelations.projectId}, issue.project=${!!issueWithRelations.project}, issue.project?.name=${issueWithRelations.project?.name || 'N/A'}`);
+  }
+
+  // Send notification (async, don't wait for it)
+  console.log(`[Journal] addJournalEntry: savedJournal=${!!savedJournal}, issueWithRelations=${!!issueWithRelations}, project=${!!issueWithRelations?.project}, notes="${notes}"`);
+  if (savedJournal && issueWithRelations && issueWithRelations.project) {
+    if (notes && notes.trim().length > 0) {
+      // This is a comment
+      console.log(`[Journal] Calling notifyIssueCommented for issue #${issueWithRelations.id}`);
+      notifyIssueCommented(issueWithRelations, issueWithRelations.project, savedJournal).catch((error) => {
+        console.error('[Journal] Failed to send comment notification:', error);
+      });
+    } else {
+      // This is an update (field change)
+      console.log(`[Journal] Calling notifyIssueUpdated for issue #${issueWithRelations.id}`);
+      notifyIssueUpdated(issueWithRelations, issueWithRelations.project, savedJournal).catch((error) => {
+        console.error('[Journal] Failed to send update notification:', error);
+      });
+    }
+  } else {
+    console.log(`[Journal] Notification skipped: savedJournal=${!!savedJournal}, issueWithRelations=${!!issueWithRelations}, project=${!!issueWithRelations?.project}`);
+  }
 
   res.status(201).json({
     status: 'success',

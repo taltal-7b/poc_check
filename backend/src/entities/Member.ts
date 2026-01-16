@@ -6,6 +6,7 @@ import {
   ManyToOne,
   OneToMany,
   Index,
+  JoinColumn,
 } from 'typeorm';
 import { User } from './User';
 import { Project } from './Project';
@@ -30,10 +31,12 @@ export class Member {
   createdOn: Date;
 
   // Relations
-  @ManyToOne(() => User, (user) => user.members)
+  @ManyToOne(() => User, (user) => user.members, { eager: false })
+  @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @ManyToOne(() => Project, (project) => project.members)
+  @ManyToOne(() => Project, (project) => project.members, { eager: false })
+  @JoinColumn({ name: 'project_id' })
   project: Project;
 
   @OneToMany(() => MemberRole, (memberRole) => memberRole.member)
