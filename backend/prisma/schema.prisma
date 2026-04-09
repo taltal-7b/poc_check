@@ -1,0 +1,776 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===================== ユーザー・認証 =====================
+
+model User {
+  id             String    @id @default(uuid())
+  login          String    @unique
+  hashedPassword String    @map("hashed_password")
+  firstname      String
+  lastname       String
+  mail           String    @unique
+  admin          Boolean   @default(false)
+  status         Int       @default(1) // 1=active, 2=registered, 3=locked
+  language       String    @default("ja")
+  totpSecret     String?   @map("totp_secret")
+  totpEnabled    Boolean   @default(false) @map("totp_enabled")
+  apiKey         String?   @unique @map("api_key")
+  lastLoginOn    DateTime? @map("last_login_on")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  members        Member[]
+  issues         Issue[]         @relation("AssignedIssues")
+  authoredIssues Issue[]         @relation("AuthoredIssues")
+  timeEntries    TimeEntry[]
+  watchers       Watcher[]
+  reactions      Reaction[]
+  journals       Journal[]
+  news           News[]
+  documents      Document[]
+  wikiContents   WikiContent[]   @relation("WikiAuthor")
+  comments       Comment[]
+  messages       Message[]
+  tokens         Token[]
+  groupUsers     GroupUser[]
+  attachments    Attachment[]
+  queries        Query[]
+  userPreference UserPreference?
+
+  @@map("users")
+}
+
+model UserPreference {
+  id             String @id @default(uuid())
+  userId         String @unique @map("user_id")
+  user           User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  timeZone       String @default("Asia/Tokyo") @map("time_zone")
+  noSelfNotified Boolean @default(false) @map("no_self_notified")
+  others         Json   @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("user_preferences")
+}
+
+model Token {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String   // "api", "feeds", "recovery", "refresh"
+  value     String   @unique
+  expiresAt DateTime? @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("tokens")
+}
+
+model Group {
+  id         String      @id @default(uuid())
+  name       String      @unique
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+  groupUsers GroupUser[]
+  members    Member[]
+
+  @@map("groups")
+}
+
+model GroupUser {
+  id      String @id @default(uuid())
+  groupId String @map("group_id")
+  userId  String @map("user_id")
+  group   Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@map("group_users")
+}
+
+// ===================== ロール・権限 =====================
+
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  position    Int              @default(0)
+  assignable  Boolean          @default(true)
+  builtin     Int              @default(0) // 0=custom, 1=non_member, 2=anonymous
+  permissions Json             @default("[]")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  memberRoles MemberRole[]
+  workflows   WorkflowTransition[]
+
+  @@map("roles")
+}
+
+// ===================== プロジェクト =====================
+
+model Project {
+  id           String    @id @default(uuid())
+  name         String
+  identifier   String    @unique
+  description  String?
+  homepage     String?
+  isPublic     Boolean   @default(true) @map("is_public")
+  parentId     String?   @map("parent_id")
+  parent       Project?  @relation("SubProjects", fields: [parentId], references: [id])
+  children     Project[] @relation("SubProjects")
+  status       Int       @default(1) // 1=active, 5=archived, 9=closed
+  bookmarked   Boolean   @default(false)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  members        Member[]
+  enabledModules EnabledModule[]
+  issues         Issue[]
+  versions       Version[]
+  issueCategories IssueCategory[]
+  wiki           Wiki?
+  boards         Board[]
+  news           News[]
+  documents      Document[]
+  timeEntries    TimeEntry[]
+  queries        Query[]
+  repositories   Repository[]
+  projectTrackers ProjectTracker[]
+  activities     Activity[]
+  files          ProjectFile[]
+
+  @@map("projects")
+}
+
+model EnabledModule {
+  id        String  @id @default(uuid())
+  projectId String  @map("project_id")
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+
+  @@unique([projectId, name])
+  @@map("enabled_modules")
+}
+
+model Member {
+  id          String       @id @default(uuid())
+  projectId   String       @map("project_id")
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId      String?      @map("user_id")
+  user        User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId     String?      @map("group_id")
+  group       Group?       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  memberRoles MemberRole[]
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  @@unique([projectId, userId])
+  @@map("members")
+}
+
+model MemberRole {
+  id       String @id @default(uuid())
+  memberId String @map("member_id")
+  member   Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  roleId   String @map("role_id")
+  role     Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, roleId])
+  @@map("member_roles")
+}
+
+// ===================== トラッカー・ステータス・ワークフロー =====================
+
+model Tracker {
+  id              String           @id @default(uuid())
+  name            String           @unique
+  position        Int              @default(0)
+  defaultStatusId String?          @map("default_status_id")
+  defaultStatus   IssueStatus?     @relation("DefaultStatus", fields: [defaultStatusId], references: [id])
+  description     String?
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  issues          Issue[]
+  projectTrackers ProjectTracker[]
+  workflows       WorkflowTransition[]
+  customFieldTrackers CustomFieldTracker[]
+
+  @@map("trackers")
+}
+
+model ProjectTracker {
+  id        String  @id @default(uuid())
+  projectId String  @map("project_id")
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  trackerId String  @map("tracker_id")
+  tracker   Tracker @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, trackerId])
+  @@map("project_trackers")
+}
+
+model IssueStatus {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  isClosed  Boolean  @default(false) @map("is_closed")
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  issues             Issue[]
+  defaultForTrackers Tracker[] @relation("DefaultStatus")
+  workflowsFrom      WorkflowTransition[] @relation("OldStatus")
+  workflowsTo        WorkflowTransition[] @relation("NewStatus")
+
+  @@map("issue_statuses")
+}
+
+model WorkflowTransition {
+  id          String      @id @default(uuid())
+  trackerId   String      @map("tracker_id")
+  tracker     Tracker     @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+  roleId      String      @map("role_id")
+  role        Role        @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  oldStatusId String      @map("old_status_id")
+  oldStatus   IssueStatus @relation("OldStatus", fields: [oldStatusId], references: [id], onDelete: Cascade)
+  newStatusId String      @map("new_status_id")
+  newStatus   IssueStatus @relation("NewStatus", fields: [newStatusId], references: [id], onDelete: Cascade)
+  assignee    Boolean     @default(false)
+  author      Boolean     @default(false)
+
+  @@unique([trackerId, roleId, oldStatusId, newStatusId])
+  @@map("workflow_transitions")
+}
+
+// ===================== カスタムフィールド =====================
+
+model CustomField {
+  id            String   @id @default(uuid())
+  type          String   // "IssueCustomField", "ProjectCustomField", "UserCustomField", "TimeEntryCustomField", "VersionCustomField"
+  name          String
+  fieldFormat   String   @map("field_format") // "string","text","int","float","list","date","bool","user","version"
+  possibleValues Json?   @map("possible_values")
+  regexp        String?
+  minLength     Int?     @map("min_length")
+  maxLength     Int?     @map("max_length")
+  isRequired    Boolean  @default(false) @map("is_required")
+  isFilter      Boolean  @default(false) @map("is_filter")
+  searchable    Boolean  @default(false)
+  multiple      Boolean  @default(false)
+  defaultValue  String?  @map("default_value")
+  position      Int      @default(0)
+  visible       Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  customValues        CustomValue[]
+  customFieldTrackers CustomFieldTracker[]
+  enumerations        CustomFieldEnumeration[]
+
+  @@map("custom_fields")
+}
+
+model CustomFieldTracker {
+  id            String      @id @default(uuid())
+  customFieldId String      @map("custom_field_id")
+  customField   CustomField @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+  trackerId     String      @map("tracker_id")
+  tracker       Tracker     @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+
+  @@unique([customFieldId, trackerId])
+  @@map("custom_field_trackers")
+}
+
+model CustomValue {
+  id            String      @id @default(uuid())
+  customFieldId String      @map("custom_field_id")
+  customField   CustomField @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+  customizedType String     @map("customized_type") // "Issue", "Project", "User", "TimeEntry", "Version"
+  customizedId  String      @map("customized_id")
+  value         String?
+
+  @@map("custom_values")
+}
+
+model CustomFieldEnumeration {
+  id            String      @id @default(uuid())
+  customFieldId String      @map("custom_field_id")
+  customField   CustomField @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+  name          String
+  position      Int         @default(0)
+  active        Boolean     @default(true)
+
+  @@map("custom_field_enumerations")
+}
+
+// ===================== チケット =====================
+
+model Issue {
+  id             String    @id @default(uuid())
+  projectId      String    @map("project_id")
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  trackerId      String    @map("tracker_id")
+  tracker        Tracker   @relation(fields: [trackerId], references: [id])
+  statusId       String    @map("status_id")
+  status         IssueStatus @relation(fields: [statusId], references: [id])
+  priority       Int       @default(2) // 1=low,2=normal,3=high,4=urgent,5=immediate
+  subject        String
+  description    String?
+  authorId       String    @map("author_id")
+  author         User      @relation("AuthoredIssues", fields: [authorId], references: [id])
+  assigneeId     String?   @map("assignee_id")
+  assignee       User?     @relation("AssignedIssues", fields: [assigneeId], references: [id])
+  categoryId     String?   @map("category_id")
+  category       IssueCategory? @relation(fields: [categoryId], references: [id])
+  versionId      String?   @map("version_id")
+  version        Version?  @relation(fields: [versionId], references: [id])
+  parentId       String?   @map("parent_id")
+  parent         Issue?    @relation("SubIssues", fields: [parentId], references: [id])
+  children       Issue[]   @relation("SubIssues")
+  startDate      DateTime? @map("start_date")
+  dueDate        DateTime? @map("due_date")
+  estimatedHours Float?    @map("estimated_hours")
+  doneRatio      Int       @default(0) @map("done_ratio")
+  closedOn       DateTime? @map("closed_on")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  journals       Journal[]
+  timeEntries    TimeEntry[]
+  watchers       Watcher[]      @relation("IssueWatchers")
+  reactions      Reaction[]
+  attachments    Attachment[]
+  relationsFrom  IssueRelation[] @relation("RelationFrom")
+  relationsTo    IssueRelation[] @relation("RelationTo")
+
+  @@index([projectId])
+  @@index([trackerId])
+  @@index([statusId])
+  @@index([assigneeId])
+  @@map("issues")
+}
+
+model IssueCategory {
+  id        String  @id @default(uuid())
+  projectId String  @map("project_id")
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  assigneeId String? @map("assignee_id")
+
+  issues Issue[]
+
+  @@unique([projectId, name])
+  @@map("issue_categories")
+}
+
+model IssueRelation {
+  id           String @id @default(uuid())
+  issueFromId  String @map("issue_from_id")
+  issueFrom    Issue  @relation("RelationFrom", fields: [issueFromId], references: [id], onDelete: Cascade)
+  issueToId    String @map("issue_to_id")
+  issueTo      Issue  @relation("RelationTo", fields: [issueToId], references: [id], onDelete: Cascade)
+  relationType String @map("relation_type") // "relates","duplicates","duplicated","blocks","blocked","precedes","follows","copied_to","copied_from"
+  delay        Int?
+
+  @@unique([issueFromId, issueToId, relationType])
+  @@map("issue_relations")
+}
+
+// ===================== ジャーナル =====================
+
+model Journal {
+  id        String          @id @default(uuid())
+  issueId   String          @map("issue_id")
+  issue     Issue           @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  userId    String          @map("user_id")
+  user      User            @relation(fields: [userId], references: [id])
+  notes     String?
+  private   Boolean         @default(false)
+  createdAt DateTime        @default(now()) @map("created_at")
+  details   JournalDetail[]
+
+  @@map("journals")
+}
+
+model JournalDetail {
+  id        String  @id @default(uuid())
+  journalId String  @map("journal_id")
+  journal   Journal @relation(fields: [journalId], references: [id], onDelete: Cascade)
+  property  String  // "attr", "cf", "attachment", "relation"
+  propKey   String  @map("prop_key")
+  oldValue  String? @map("old_value")
+  newValue  String? @map("new_value")
+
+  @@map("journal_details")
+}
+
+// ===================== 工数管理 =====================
+
+model TimeEntry {
+  id         String   @id @default(uuid())
+  projectId  String   @map("project_id")
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issueId    String?  @map("issue_id")
+  issue      Issue?   @relation(fields: [issueId], references: [id])
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id])
+  activityId String   @map("activity_id")
+  activity   Enumeration @relation(fields: [activityId], references: [id])
+  hours      Float
+  comments   String?
+  spentOn    DateTime @map("spent_on")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([projectId])
+  @@index([userId])
+  @@map("time_entries")
+}
+
+// ===================== 列挙値 =====================
+
+model Enumeration {
+  id        String   @id @default(uuid())
+  type      String   // "IssuePriority", "DocumentCategory", "TimeEntryActivity"
+  name      String
+  position  Int      @default(0)
+  isDefault Boolean  @default(false) @map("is_default")
+  active    Boolean  @default(true)
+  projectId String?  @map("project_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  timeEntries TimeEntry[]
+  documents   Document[]
+
+  @@map("enumerations")
+}
+
+// ===================== Wiki =====================
+
+model Wiki {
+  id        String     @id @default(uuid())
+  projectId String     @unique @map("project_id")
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  startPage String     @default("Wiki") @map("start_page")
+  createdAt DateTime   @default(now()) @map("created_at")
+  pages     WikiPage[]
+
+  @@map("wikis")
+}
+
+model WikiPage {
+  id        String    @id @default(uuid())
+  wikiId    String    @map("wiki_id")
+  wiki      Wiki      @relation(fields: [wikiId], references: [id], onDelete: Cascade)
+  title     String
+  parentId  String?   @map("parent_id")
+  parent    WikiPage? @relation("SubPages", fields: [parentId], references: [id])
+  children  WikiPage[] @relation("SubPages")
+  protected Boolean   @default(false)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  content   WikiContent?
+  redirects WikiRedirect[] @relation("RedirectTo")
+
+  @@unique([wikiId, title])
+  @@map("wiki_pages")
+}
+
+model WikiContent {
+  id        String   @id @default(uuid())
+  pageId    String   @unique @map("page_id")
+  page      WikiPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  authorId  String   @map("author_id")
+  author    User     @relation("WikiAuthor", fields: [authorId], references: [id])
+  text      String
+  version   Int      @default(1)
+  comments  String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  versions WikiContentVersion[]
+
+  @@map("wiki_contents")
+}
+
+model WikiContentVersion {
+  id        String      @id @default(uuid())
+  contentId String      @map("content_id")
+  content   WikiContent @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  authorId  String      @map("author_id")
+  text      String
+  version   Int
+  comments  String?
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  @@unique([contentId, version])
+  @@map("wiki_content_versions")
+}
+
+model WikiRedirect {
+  id           String   @id @default(uuid())
+  wikiId       String   @map("wiki_id")
+  title        String
+  redirectToId String   @map("redirect_to_id")
+  redirectTo   WikiPage @relation("RedirectTo", fields: [redirectToId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([wikiId, title])
+  @@map("wiki_redirects")
+}
+
+// ===================== 文書 =====================
+
+model Document {
+  id          String      @id @default(uuid())
+  projectId   String      @map("project_id")
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  categoryId  String      @map("category_id")
+  category    Enumeration @relation(fields: [categoryId], references: [id])
+  title       String
+  description String?
+  authorId    String      @map("author_id")
+  author      User        @relation(fields: [authorId], references: [id])
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  attachments Attachment[]
+
+  @@map("documents")
+}
+
+// ===================== ニュース =====================
+
+model News {
+  id          String    @id @default(uuid())
+  projectId   String    @map("project_id")
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  authorId    String    @map("author_id")
+  author      User      @relation(fields: [authorId], references: [id])
+  title       String
+  summary     String?
+  description String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  comments Comment[]
+
+  @@map("news")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  newsId    String   @map("news_id")
+  news      News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  authorId  String   @map("author_id")
+  author    User     @relation(fields: [authorId], references: [id])
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("comments")
+}
+
+// ===================== フォーラム =====================
+
+model Board {
+  id          String    @id @default(uuid())
+  projectId   String    @map("project_id")
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  position    Int       @default(0)
+  parentId    String?   @map("parent_id")
+  parent      Board?    @relation("SubBoards", fields: [parentId], references: [id])
+  children    Board[]   @relation("SubBoards")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  messages Message[]
+
+  @@map("boards")
+}
+
+model Message {
+  id        String    @id @default(uuid())
+  boardId   String    @map("board_id")
+  board     Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  parentId  String?   @map("parent_id")
+  parent    Message?  @relation("Replies", fields: [parentId], references: [id])
+  replies   Message[] @relation("Replies")
+  authorId  String    @map("author_id")
+  author    User      @relation(fields: [authorId], references: [id])
+  subject   String
+  content   String?
+  locked    Boolean   @default(false)
+  sticky    Boolean   @default(false)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@map("messages")
+}
+
+// ===================== バージョン =====================
+
+model Version {
+  id          String    @id @default(uuid())
+  projectId   String    @map("project_id")
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  status      String    @default("open") // "open","locked","closed"
+  dueDate     DateTime? @map("due_date")
+  sharing     String    @default("none") // "none","descendants","hierarchy","tree","system"
+  wikiPageTitle String? @map("wiki_page_title")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  issues Issue[]
+
+  @@unique([projectId, name])
+  @@map("versions")
+}
+
+// ===================== 添付ファイル =====================
+
+model Attachment {
+  id             String    @id @default(uuid())
+  containerId    String?   @map("container_id")
+  containerType  String?   @map("container_type") // "Issue","Document","News","WikiPage","Message","Version","Project"
+  filename       String
+  diskFilename   String    @map("disk_filename")
+  filesize       Int
+  contentType    String?   @map("content_type")
+  digest         String?
+  description    String?
+  authorId       String    @map("author_id")
+  author         User      @relation(fields: [authorId], references: [id])
+  issueId        String?   @map("issue_id")
+  issue          Issue?    @relation(fields: [issueId], references: [id])
+  documentId     String?   @map("document_id")
+  document       Document? @relation(fields: [documentId], references: [id])
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([containerType, containerId])
+  @@map("attachments")
+}
+
+// ===================== ウォッチャー・リアクション =====================
+
+model Watcher {
+  id             String @id @default(uuid())
+  watchableType  String @map("watchable_type") // "Issue","News","WikiPage","Board","Message"
+  watchableId    String @map("watchable_id")
+  userId         String @map("user_id")
+  user           User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  issueId        String? @map("issue_id")
+  issue          Issue?  @relation("IssueWatchers", fields: [issueId], references: [id])
+
+  @@unique([watchableType, watchableId, userId])
+  @@map("watchers")
+}
+
+model Reaction {
+  id           String @id @default(uuid())
+  reactableType String @map("reactable_type") // "Issue","Journal","News","Message"
+  reactableId  String @map("reactable_id")
+  userId       String @map("user_id")
+  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji        String @default("👍")
+  issueId      String? @map("issue_id")
+  issue        Issue?  @relation(fields: [issueId], references: [id])
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([reactableType, reactableId, userId, emoji])
+  @@map("reactions")
+}
+
+// ===================== クエリ =====================
+
+model Query {
+  id         String   @id @default(uuid())
+  name       String
+  type       String   @default("IssueQuery") // "IssueQuery","TimeEntryQuery","ProjectQuery"
+  userId     String?  @map("user_id")
+  user       User?    @relation(fields: [userId], references: [id])
+  projectId  String?  @map("project_id")
+  project    Project? @relation(fields: [projectId], references: [id])
+  visibility Int      @default(0) // 0=private, 1=roles, 2=public
+  filters    Json     @default("{}") // { field: { operator: "=", values: ["1"] } }
+  columns    Json     @default("[]")
+  sortCriteria Json   @default("[]") @map("sort_criteria")
+  groupBy    String?  @map("group_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("queries")
+}
+
+// ===================== リポジトリ =====================
+
+model Repository {
+  id          String   @id @default(uuid())
+  projectId   String   @map("project_id")
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type        String   // "git","svn","mercurial","cvs","bazaar"
+  url         String
+  login       String?
+  password    String?
+  identifier  String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("repositories")
+}
+
+// ===================== アクティビティ =====================
+
+model Activity {
+  id           String   @id @default(uuid())
+  projectId    String?  @map("project_id")
+  project      Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId       String?  @map("user_id")
+  actType      String   @map("act_type") // "issue","changeset","news","document","file","wiki_edit","message","time_entry"
+  actId        String   @map("act_id")
+  title        String
+  description  String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([projectId, createdAt])
+  @@map("activities")
+}
+
+// ===================== プロジェクトファイル =====================
+
+model ProjectFile {
+  id          String   @id @default(uuid())
+  projectId   String   @map("project_id")
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  filename    String
+  diskFilename String  @map("disk_filename")
+  filesize    Int
+  contentType String?  @map("content_type")
+  description String?
+  versionId   String?  @map("version_id")
+  authorId    String   @map("author_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("project_files")
+}
+
+// ===================== 設定 =====================
+
+model Setting {
+  id    String @id @default(uuid())
+  name  String @unique
+  value String
+
+  @@map("settings")
+}

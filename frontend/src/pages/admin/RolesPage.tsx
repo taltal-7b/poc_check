@@ -1,391 +1,237 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Edit, Plus, Trash2 } from 'lucide-react';
-import { rolesApi } from '../../lib/api';
-import Loading from '../../components/ui/Loading';
+import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
+import { useRoles, useCreateRole, useUpdateRole } from '../../api/hooks';
+import type { Role } from '../../types';
 
-type RoleFormState = {
-  name: string;
-  assignable: boolean;
-  issuesVisibility: string;
-  usersVisibility: string;
-  timeEntriesVisibility: string;
-  permissions: string[];
+const PERMISSION_GROUPS: Record<string, string[]> = {
+  project: ['view_project', 'manage_project', 'select_project_modules', 'add_project', 'edit_project', 'close_project', 'delete_project', 'copy_project'],
+  issues: [
+    'view_issues',
+    'add_issues',
+    'edit_issues',
+    'edit_own_issues',
+    'copy_issues',
+    'manage_issue_relations',
+    'add_issue_notes',
+    'edit_issue_notes',
+    'edit_own_issue_notes',
+    'move_issues',
+    'delete_issues',
+    'manage_public_queries',
+    'save_queries',
+  ],
+  time: ['log_time', 'view_time_entries', 'edit_time_entries', 'edit_own_time_entries', 'manage_project_activities'],
+  wiki: ['view_wiki_pages', 'view_wiki_edits', 'export_wiki_pages', 'edit_wiki_pages', 'rename_wiki_pages', 'delete_wiki_pages'],
+  forums: ['view_messages', 'add_messages', 'edit_messages', 'edit_own_messages', 'delete_messages', 'delete_own_messages', 'manage_boards'],
+  documents: ['view_documents', 'add_documents', 'edit_documents', 'delete_documents'],
+  administration: ['administrate'],
 };
 
-const emptyForm = (): RoleFormState => ({
-  name: '',
-  assignable: true,
-  issuesVisibility: 'default',
-  usersVisibility: 'all',
-  timeEntriesVisibility: 'all',
-  permissions: [],
-});
+function parsePermissions(raw: string | undefined): Set<string> {
+  if (!raw) return new Set();
+  try {
+    const j = JSON.parse(raw) as unknown;
+    if (Array.isArray(j)) return new Set(j.map(String));
+  } catch {
+    /* comma-separated */
+  }
+  return new Set(
+    raw
+      .split(/[,\s]+/)
+      .map(s => s.trim())
+      .filter(Boolean),
+  );
+}
 
-const visibilityOptions = [
-  { value: 'all', label: 'すべて' },
-  { value: 'default', label: 'デフォルト' },
-  { value: 'own', label: '自分のみ' },
-];
+function categoryLabel(cat: string, t: (k: string) => string) {
+  const map: Record<string, string> = {
+    project: t('projects.title'),
+    issues: t('issues.title'),
+    time: t('timeEntries.title'),
+    wiki: t('wiki.title'),
+    forums: t('forums.title'),
+    documents: t('documents.title'),
+    administration: t('nav.admin'),
+  };
+  return map[cat] || cat;
+}
 
 export default function RolesPage() {
-  const [roles, setRoles] = useState<any[]>([]);
-  const [permissions, setPermissions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [formError, setFormError] = useState('');
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [formData, setFormData] = useState<RoleFormState>(emptyForm());
+  const { t } = useTranslation();
+  const { data: rolesRes, isLoading, isError } = useRoles();
+  const roles = rolesRes?.data ?? [];
+  const createRole = useCreateRole();
+  const updateRole = useUpdateRole();
 
-  useEffect(() => {
-    loadRoles();
-    loadPermissions();
-  }, []);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editRole, setEditRole] = useState<Role | null>(null);
+  const [name, setName] = useState('');
+  const [assignable, setAssignable] = useState(true);
+  const [selectedPerms, setSelectedPerms] = useState<Set<string>>(new Set());
 
-  const loadRoles = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const response = await rolesApi.getAll();
-      setRoles(response.data.data.roles || []);
-    } catch (err: any) {
-      console.error('Failed to load roles:', err);
-      setError(err.response?.data?.message || 'Failed to load roles.');
-    } finally {
-      setLoading(false);
-    }
+  const sortedRoles = useMemo(() => [...roles].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)), [roles]);
+
+  const openCreate = () => {
+    setName('');
+    setAssignable(true);
+    setSelectedPerms(new Set());
+    setCreateOpen(true);
   };
 
-  const loadPermissions = async () => {
-    try {
-      const response = await rolesApi.getAvailablePermissions();
-      setPermissions(response.data.data.permissions || []);
-    } catch (err) {
-      console.error('Failed to load permissions:', err);
-    }
+  const openEdit = (r: Role) => {
+    setEditRole(r);
+    setName(r.name);
+    setAssignable(r.assignable);
+    setSelectedPerms(parsePermissions(r.permissions));
   };
 
-  const permissionGroups = useMemo(() => {
-    const groups: Record<string, any[]> = {};
-    permissions.forEach((perm) => {
-      const key = perm.module || 'general';
-      if (!groups[key]) {
-        groups[key] = [];
-      }
-      groups[key].push(perm);
-    });
-    return groups;
-  }, [permissions]);
-
-  const resetForm = () => {
-    setFormData(emptyForm());
-    setEditingId(null);
-    setFormError('');
-  };
-
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setFormError('');
-
-    if (!formData.name.trim()) {
-      setFormError('ロール名は必須です');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const payload = {
-        name: formData.name.trim(),
-        assignable: formData.assignable,
-        issuesVisibility: formData.issuesVisibility,
-        usersVisibility: formData.usersVisibility,
-        timeEntriesVisibility: formData.timeEntriesVisibility,
-        permissions: formData.permissions,
-      };
-
-      if (editingId) {
-        await rolesApi.update(editingId, payload);
-      } else {
-        await rolesApi.create(payload);
-      }
-
-      resetForm();
-      loadRoles();
-    } catch (err: any) {
-      console.error('Failed to save role:', err);
-      setFormError(err.response?.data?.message || 'ロールの保存に失敗しました');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleEdit = async (role: any) => {
-    try {
-      const response = await rolesApi.getById(role.id);
-      const roleData = response.data.data.role;
-      setEditingId(role.id);
-      setFormData({
-        name: roleData.name || '',
-        assignable: roleData.assignable ?? true,
-        issuesVisibility: roleData.issuesVisibility || 'default',
-        usersVisibility: roleData.usersVisibility || 'all',
-        timeEntriesVisibility: roleData.timeEntriesVisibility || 'all',
-        permissions: roleData.permissions || [],
-      });
-    } catch (err) {
-      console.error('Failed to load role details:', err);
-      alert('ロール詳細の読み込みに失敗しました');
-    }
-  };
-
-  const handleDelete = async (role: any) => {
-    if (!confirm('このロールを削除してもよろしいですか？')) return;
-    try {
-      await rolesApi.delete(role.id);
-      loadRoles();
-    } catch (err) {
-      console.error('Failed to delete role:', err);
-      alert('ロールの削除に失敗しました');
-    }
-  };
-
-  const togglePermission = (permName: string) => {
-    setFormData((prev) => {
-      const exists = prev.permissions.includes(permName);
-      return {
-        ...prev,
-        permissions: exists
-          ? prev.permissions.filter((p) => p !== permName)
-          : [...prev.permissions, permName],
-      };
+  const togglePerm = (p: string) => {
+    setSelectedPerms(prev => {
+      const next = new Set(prev);
+      if (next.has(p)) next.delete(p);
+      else next.add(p);
+      return next;
     });
   };
+
+  const submitCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await createRole.mutateAsync({ name, assignable, permissions: [...selectedPerms] });
+    setCreateOpen(false);
+  };
+
+  const submitEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editRole) return;
+    await updateRole.mutateAsync({ id: editRole.id, name, assignable, permissions: [...selectedPerms] });
+    setEditRole(null);
+  };
+
+  const permissionForm = (
+    <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+      {Object.entries(PERMISSION_GROUPS).map(([cat, perms]) => (
+        <fieldset key={cat} className="rounded-lg border border-gray-200 p-3">
+          <legend className="px-1 text-sm font-semibold text-gray-800">{categoryLabel(cat, t)}</legend>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {perms.map(p => (
+              <label key={p} className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={selectedPerms.has(p)} onChange={() => togglePerm(p)} />
+                <span className="font-mono text-xs">{p}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ))}
+    </div>
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">ロール管理</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            権限と表示ルールを定義
-          </p>
-        </div>
-        <button className="btn btn-primary flex items-center space-x-2" onClick={() => resetForm()}>
-          <Plus className="w-4 h-4" />
-          <span>新規ロール</span>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold text-gray-900">{t('roles.title')}</h1>
+        <button type="button" onClick={openCreate} className="rounded bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700">
+          {t('roles.new')}
         </button>
       </div>
 
-      <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          {editingId ? 'ロール編集' : 'ロール作成'}
-        </h2>
-        {formError && (
-          <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
-            {formError}
-          </div>
-        )}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="label">ロール名 *</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(event) =>
-                  setFormData((prev) => ({ ...prev, name: event.target.value }))
-                }
-                className="input"
-                required
-              />
-            </div>
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={formData.assignable}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    assignable: event.target.checked,
-                  }))
-                }
-              />
-              <label className="text-sm text-gray-700">割り当て可能</label>
-            </div>
-            <div>
-              <label className="label">課題の表示範囲</label>
-              <select
-                value={formData.issuesVisibility}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    issuesVisibility: event.target.value,
-                  }))
-                }
-                className="input"
-              >
-                {visibilityOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">ユーザーの表示範囲</label>
-              <select
-                value={formData.usersVisibility}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    usersVisibility: event.target.value,
-                  }))
-                }
-                className="input"
-              >
-                {visibilityOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">時間記録の表示範囲</label>
-              <select
-                value={formData.timeEntriesVisibility}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    timeEntriesVisibility: event.target.value,
-                  }))
-                }
-                className="input"
-              >
-                {visibilityOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+      {isLoading && <p className="text-gray-500">{t('app.loading')}</p>}
+      {isError && <p className="text-red-600">{t('app.error')}</p>}
 
-          <div>
-            <label className="label">権限</label>
-            <div className="space-y-4">
-              {Object.entries(permissionGroups).map(([moduleName, modulePerms]) => (
-                <div key={moduleName} className="border border-gray-200 rounded-md p-4">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-3">
-                    {moduleName === 'general' ? '全般' : moduleName}
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {(modulePerms as any[]).map((perm) => (
-                      <label key={perm.name} className="flex items-center space-x-2 text-sm text-gray-700">
-                        <input
-                          type="checkbox"
-                          checked={formData.permissions.includes(perm.name)}
-                          onChange={() => togglePermission(perm.name)}
-                        />
-                        <span>{perm.description || perm.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex justify-end space-x-3">
-            {editingId && (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="btn btn-secondary"
-                disabled={saving}
-              >
-                キャンセル
-              </button>
-            )}
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? '保存中...' : editingId ? '更新' : '作成'}
-            </button>
-          </div>
-        </form>
-      </div>
-
-      <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">ロール一覧</h2>
-        {error && (
-          <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
-            {error}
-          </div>
-        )}
-        {loading ? (
-          <Loading />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+      {!isLoading && !isError && (
+        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('roles.roleName')}</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('roles.assignable')}</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('roles.builtin')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {sortedRoles.length === 0 ? (
                 <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ロール名
-                  </th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    割り当て可能
-                  </th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    組み込み
-                  </th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    操作
-                  </th>
+                  <td colSpan={3} className="px-3 py-8 text-center text-gray-500">
+                    {t('app.noData')}
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {roles.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
-                      ロールが見つかりませんでした
+              ) : (
+                sortedRoles.map(r => (
+                  <tr key={r.id} className="cursor-pointer hover:bg-gray-50" onClick={() => openEdit(r)}>
+                    <td className="px-3 py-2 font-medium text-gray-900">{r.name}</td>
+                    <td className="px-3 py-2 text-gray-700">{r.assignable ? t('app.yes') : t('app.no')}</td>
+                    <td className="px-3 py-2">
+                      {r.builtin !== 0 ? (
+                        <span className="rounded bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-800">{t('roles.builtin')}</span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
                     </td>
                   </tr>
-                ) : (
-                  roles.map((role) => (
-                    <tr key={role.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 text-sm text-gray-900">{role.name}</td>
-                      <td className="px-4 py-2 text-sm text-gray-500">
-                        {role.assignable ? 'はい' : 'いいえ'}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-500">
-                        {role.builtin ? 'はい' : 'いいえ'}
-                      </td>
-                      <td className="px-4 py-2 text-right text-sm">
-                        <div className="flex justify-end space-x-2">
-                          <button
-                            onClick={() => handleEdit(role)}
-                            className="btn btn-secondary flex items-center space-x-1"
-                          >
-                            <Edit className="w-4 h-4" />
-                            <span>編集</span>
-                          </button>
-                          <button
-                            onClick={() => handleDelete(role)}
-                            className="btn btn-secondary text-red-600 hover:bg-red-50 flex items-center space-x-1"
-                            disabled={role.builtin}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            <span>削除</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p className="text-xs text-gray-500">{t('roles.permissions')}</p>
+
+      <Dialog open={createOpen} onClose={() => setCreateOpen(false)} className="relative z-50">
+        <div className="fixed inset-0 bg-black/40" aria-hidden />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl bg-white p-6 shadow-xl">
+            <DialogTitle className="text-lg font-semibold text-gray-900">{t('roles.new')}</DialogTitle>
+            <form className="mt-4 flex min-h-0 flex-1 flex-col gap-4" onSubmit={submitCreate}>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">{t('roles.roleName')}</label>
+                <input className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={name} onChange={e => setName(e.target.value)} required />
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={assignable} onChange={e => setAssignable(e.target.checked)} />
+                {t('roles.assignable')}
+              </label>
+              {permissionForm}
+              <div className="flex justify-end gap-2 border-t border-gray-100 pt-4">
+                <button type="button" className="rounded border border-gray-300 px-4 py-2 text-sm" onClick={() => setCreateOpen(false)}>
+                  {t('app.cancel')}
+                </button>
+                <button type="submit" className="rounded bg-primary-600 px-4 py-2 text-sm text-white" disabled={createRole.isPending}>
+                  {t('app.create')}
+                </button>
+              </div>
+            </form>
+          </DialogPanel>
+        </div>
+      </Dialog>
+
+      <Dialog open={!!editRole} onClose={() => setEditRole(null)} className="relative z-50">
+        <div className="fixed inset-0 bg-black/40" aria-hidden />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl bg-white p-6 shadow-xl">
+            <DialogTitle className="text-lg font-semibold text-gray-900">{t('app.edit')}</DialogTitle>
+            <form className="mt-4 flex min-h-0 flex-1 flex-col gap-4" onSubmit={submitEdit}>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">{t('roles.roleName')}</label>
+                <input className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={name} onChange={e => setName(e.target.value)} required disabled={editRole ? editRole.builtin !== 0 : false} />
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={assignable} onChange={e => setAssignable(e.target.checked)} disabled={editRole ? editRole.builtin !== 0 : false} />
+                {t('roles.assignable')}
+              </label>
+              {permissionForm}
+              <div className="flex justify-end gap-2 border-t border-gray-100 pt-4">
+                <button type="button" className="rounded border border-gray-300 px-4 py-2 text-sm" onClick={() => setEditRole(null)}>
+                  {t('app.cancel')}
+                </button>
+                <button type="submit" className="rounded bg-primary-600 px-4 py-2 text-sm text-white" disabled={updateRole.isPending}>
+                  {t('app.save')}
+                </button>
+              </div>
+            </form>
+          </DialogPanel>
+        </div>
+      </Dialog>
     </div>
   );
 }

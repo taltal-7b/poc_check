@@ -1,609 +1,261 @@
-import { useEffect, useState } from 'react';
-import { Edit, Plus, Trash2 } from 'lucide-react';
-import {
-  customFieldsApi,
-  projectsApi,
-  trackersApi,
-} from '../../lib/api';
-import Loading from '../../components/ui/Loading';
+import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
+import { useCustomFields, useTrackers, useCreateCustomField, useUpdateCustomField, useDeleteCustomField } from '../../api/hooks';
+import type { CustomField } from '../../types';
 
-type CustomFieldFormState = {
-  name: string;
-  fieldFormat: string;
-  description: string;
-  possibleValues: string;
-  defaultValue: string;
-  minLength: string;
-  maxLength: string;
-  regexp: string;
-  position: string;
-  isRequired: boolean;
-  isForAll: boolean;
-  isFilter: boolean;
-  searchable: boolean;
-  multiple: boolean;
-  visible: boolean;
-};
-
-const emptyForm = (): CustomFieldFormState => ({
-  name: '',
-  fieldFormat: 'string',
-  description: '',
-  possibleValues: '',
-  defaultValue: '',
-  minLength: '',
-  maxLength: '',
-  regexp: '',
-  position: '1',
-  isRequired: false,
-  isForAll: true,
-  isFilter: true,
-  searchable: true,
-  multiple: false,
-  visible: true,
-});
-
-const fieldFormatOptions = [
-  { value: 'string', label: '文字列' },
-  { value: 'text', label: 'テキスト' },
-  { value: 'int', label: '整数' },
-  { value: 'float', label: '小数' },
-  { value: 'list', label: 'リスト' },
-  { value: 'date', label: '日付' },
-  { value: 'bool', label: '真偽値' },
-];
+const FIELD_FORMATS = ['string', 'text', 'int', 'float', 'list', 'date', 'bool'] as const;
+const CUSTOM_FIELD_TYPES = ['IssueCustomField', 'ProjectCustomField', 'UserCustomField', 'VersionCustomField', 'DocumentCustomField', 'TimeEntryCustomField'] as const;
 
 export default function CustomFieldsPage() {
-  const [customFields, setCustomFields] = useState<any[]>([]);
-  const [projects, setProjects] = useState<any[]>([]);
-  const [trackers, setTrackers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [formError, setFormError] = useState('');
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [formData, setFormData] = useState<CustomFieldFormState>(emptyForm());
+  const { t } = useTranslation();
+  const { data: fieldsRes, isLoading, isError } = useCustomFields();
+  const { data: trackersRes } = useTrackers();
+  const fields = fieldsRes?.data ?? [];
+  const trackers = trackersRes?.data ?? [];
+  const createField = useCreateCustomField();
+  const updateField = useUpdateCustomField();
+  const deleteField = useDeleteCustomField();
 
-  const [associateState, setAssociateState] = useState({
-    customFieldId: '',
-    projectId: '',
-    trackerId: '',
-  });
-  const [associateError, setAssociateError] = useState('');
-  const [associateSaving, setAssociateSaving] = useState(false);
+  const sortedTrackers = useMemo(() => [...trackers].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)), [trackers]);
+  const sortedFields = useMemo(() => [...fields].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)), [fields]);
 
-  useEffect(() => {
-    loadCustomFields();
-    loadMasterData();
-  }, []);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<CustomField | null>(null);
+  const [type, setType] = useState<string>('IssueCustomField');
+  const [name, setName] = useState('');
+  const [fieldFormat, setFieldFormat] = useState<string>('string');
+  const [isRequired, setIsRequired] = useState(false);
+  const [isFilter, setIsFilter] = useState(false);
+  const [searchable, setSearchable] = useState(false);
+  const [multiple, setMultiple] = useState(false);
+  const [position, setPosition] = useState(1);
+  const [defaultValue, setDefaultValue] = useState('');
+  const [possibleValuesText, setPossibleValuesText] = useState('');
+  const [trackerIds, setTrackerIds] = useState<Set<string>>(new Set());
 
-  const loadCustomFields = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const response = await customFieldsApi.getAll();
-      setCustomFields(response.data.data.customFields || []);
-    } catch (err: any) {
-      console.error('Failed to load custom fields:', err);
-      setError(err.response?.data?.message || 'カスタムフィールドの読み込みに失敗しました。');
-    } finally {
-      setLoading(false);
-    }
+  const openCreate = () => {
+    setEditing(null);
+    setType('IssueCustomField');
+    setName('');
+    setFieldFormat('string');
+    setIsRequired(false);
+    setIsFilter(false);
+    setSearchable(false);
+    setMultiple(false);
+    setPosition(sortedFields.length + 1);
+    setDefaultValue('');
+    setPossibleValuesText('');
+    setTrackerIds(new Set());
+    setModalOpen(true);
   };
 
-  const loadMasterData = async () => {
-    try {
-      const [projectsRes, trackersRes] = await Promise.all([
-        projectsApi.getAll(),
-        trackersApi.getAll(),
-      ]);
-      setProjects(projectsRes.data.data.projects || []);
-      setTrackers(trackersRes.data.data.trackers || []);
-    } catch (err) {
-      console.error('Failed to load master data:', err);
-    }
+  const openEdit = (f: CustomField) => {
+    setEditing(f);
+    setType(f.type);
+    setName(f.name);
+    setFieldFormat(f.fieldFormat);
+    setIsRequired(f.isRequired);
+    setIsFilter(!!f.isFilter);
+    setSearchable(!!f.searchable);
+    setMultiple(!!f.multiple);
+    setPosition(f.position);
+    setDefaultValue(f.defaultValue ?? '');
+    setPossibleValuesText(f.possibleValues ? f.possibleValues.split('\n').join('\n') : '');
+    setTrackerIds(new Set(f.trackerIds ?? []));
+    setModalOpen(true);
   };
 
-  const resetForm = () => {
-    setFormData(emptyForm());
-    setEditingId(null);
-    setFormError('');
-  };
-
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setFormError('');
-
-    if (!formData.name.trim()) {
-      setFormError('名前は必須です。');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const payload = {
-        name: formData.name.trim(),
-        fieldFormat: formData.fieldFormat,
-        description: formData.description.trim(),
-        possibleValues: formData.possibleValues.trim(),
-        defaultValue: formData.defaultValue.trim(),
-        minLength: formData.minLength ? Number(formData.minLength) : null,
-        maxLength: formData.maxLength ? Number(formData.maxLength) : null,
-        regexp: formData.regexp.trim(),
-        position: Number(formData.position) || 1,
-        isRequired: formData.isRequired,
-        isForAll: formData.isForAll,
-        isFilter: formData.isFilter,
-        searchable: formData.searchable,
-        multiple: formData.multiple,
-        visible: formData.visible,
-      };
-
-      if (editingId) {
-        await customFieldsApi.update(editingId, payload);
-      } else {
-        await customFieldsApi.create(payload);
-      }
-
-      resetForm();
-      loadCustomFields();
-    } catch (err: any) {
-      console.error('Failed to save custom field:', err);
-      setFormError(err.response?.data?.message || 'カスタムフィールドの保存に失敗しました。');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleEdit = (field: any) => {
-    setEditingId(field.id);
-    setFormData({
-      name: field.name || '',
-      fieldFormat: field.fieldFormat || 'string',
-      description: field.description || '',
-      possibleValues: field.possibleValues || '',
-      defaultValue: field.defaultValue || '',
-      minLength: field.minLength?.toString() || '',
-      maxLength: field.maxLength?.toString() || '',
-      regexp: field.regexp || '',
-      position: field.position?.toString() || '1',
-      isRequired: !!field.isRequired,
-      isForAll: !!field.isForAll,
-      isFilter: !!field.isFilter,
-      searchable: !!field.searchable,
-      multiple: !!field.multiple,
-      visible: !!field.visible,
+  const toggleTracker = (id: string) => {
+    setTrackerIds(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
     });
   };
 
-  const handleDelete = async (fieldId: number) => {
-    if (!confirm('このカスタムフィールドを削除してもよろしいですか？')) return;
-    try {
-      await customFieldsApi.delete(fieldId);
-      loadCustomFields();
-    } catch (err) {
-      console.error('Failed to delete custom field:', err);
-      alert('カスタムフィールドの削除に失敗しました。');
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const possibleValues =
+      fieldFormat === 'list'
+        ? possibleValuesText
+            .split('\n')
+            .map(s => s.trim())
+            .filter(Boolean)
+            .join('\n')
+        : null;
+    const body: Record<string, unknown> = {
+      type,
+      name,
+      fieldFormat,
+      isRequired,
+      isFilter,
+      searchable,
+      multiple,
+      position,
+      defaultValue: defaultValue || null,
+      possibleValues,
+    };
+    if (type === 'IssueCustomField') {
+      body.trackerIds = [...trackerIds];
     }
+    if (editing) {
+      await updateField.mutateAsync({ id: editing.id, ...body });
+    } else {
+      await createField.mutateAsync(body);
+    }
+    setModalOpen(false);
   };
 
-  const handleAssociate = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setAssociateError('');
-
-    if (!associateState.customFieldId || !associateState.projectId || !associateState.trackerId) {
-      setAssociateError('カスタムフィールド、プロジェクト、トラッカーは必須です。');
-      return;
-    }
-
-    setAssociateSaving(true);
-    try {
-      await customFieldsApi.associateWithProject({
-        customFieldId: Number(associateState.customFieldId),
-        projectId: Number(associateState.projectId),
-        trackerId: Number(associateState.trackerId),
-      });
-      setAssociateState({ customFieldId: '', projectId: '', trackerId: '' });
-    } catch (err: any) {
-      console.error('Failed to associate custom field:', err);
-      setAssociateError(err.response?.data?.message || 'カスタムフィールドの関連付けに失敗しました。');
-    } finally {
-      setAssociateSaving(false);
-    }
+  const confirmDelete = async (f: CustomField) => {
+    if (!window.confirm(t('app.confirm'))) return;
+    await deleteField.mutateAsync(f.id);
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900">カスタムフィールド</h1>
-        <button className="btn btn-primary flex items-center space-x-2" onClick={resetForm}>
-          <Plus className="w-4 h-4" />
-          <span>新規フィールド</span>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold text-gray-900">{t('customFields.title')}</h1>
+        <button type="button" onClick={openCreate} className="rounded bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700">
+          {t('customFields.new')}
         </button>
       </div>
 
-      <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          {editingId ? 'カスタムフィールド編集' : 'カスタムフィールド作成'}
-        </h2>
-        {formError && (
-          <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
-            {formError}
-          </div>
-        )}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="label">名前 *</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(event) =>
-                  setFormData((prev) => ({ ...prev, name: event.target.value }))
-                }
-                className="input"
-                required
-              />
-            </div>
-            <div>
-              <label className="label">フィールド形式</label>
-              <select
-                value={formData.fieldFormat}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    fieldFormat: event.target.value,
-                  }))
-                }
-                className="input"
-              >
-                {fieldFormatOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">表示順</label>
-              <input
-                type="number"
-                min={1}
-                value={formData.position}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    position: event.target.value,
-                  }))
-                }
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="label">デフォルト値</label>
-              <input
-                type="text"
-                value={formData.defaultValue}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    defaultValue: event.target.value,
-                  }))
-                }
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="label">選択可能な値（カンマ区切り）</label>
-              <input
-                type="text"
-                value={formData.possibleValues}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    possibleValues: event.target.value,
-                  }))
-                }
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="label">検証用正規表現</label>
-              <input
-                type="text"
-                value={formData.regexp}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    regexp: event.target.value,
-                  }))
-                }
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="label">最小長</label>
-              <input
-                type="number"
-                min={0}
-                value={formData.minLength}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    minLength: event.target.value,
-                  }))
-                }
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="label">最大長</label>
-              <input
-                type="number"
-                min={0}
-                value={formData.maxLength}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    maxLength: event.target.value,
-                  }))
-                }
-                className="input"
-              />
-            </div>
-          </div>
+      {isLoading && <p className="text-gray-500">{t('app.loading')}</p>}
+      {isError && <p className="text-red-600">{t('app.error')}</p>}
 
-          <div>
-            <label className="label">説明</label>
-            <textarea
-              value={formData.description}
-              onChange={(event) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  description: event.target.value,
-                }))
-              }
-              className="input"
-              rows={3}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <label className="flex items-center space-x-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={formData.isRequired}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    isRequired: event.target.checked,
-                  }))
-                }
-              />
-              <span>必須</span>
-            </label>
-            <label className="flex items-center space-x-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={formData.isForAll}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    isForAll: event.target.checked,
-                  }))
-                }
-              />
-              <span>全プロジェクト共通</span>
-            </label>
-            <label className="flex items-center space-x-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={formData.isFilter}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    isFilter: event.target.checked,
-                  }))
-                }
-              />
-              <span>フィルタ可能</span>
-            </label>
-            <label className="flex items-center space-x-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={formData.searchable}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    searchable: event.target.checked,
-                  }))
-                }
-              />
-              <span>検索可能</span>
-            </label>
-            <label className="flex items-center space-x-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={formData.multiple}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    multiple: event.target.checked,
-                  }))
-                }
-              />
-              <span>複数値</span>
-            </label>
-            <label className="flex items-center space-x-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={formData.visible}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    visible: event.target.checked,
-                  }))
-                }
-              />
-              <span>表示</span>
-            </label>
-          </div>
-
-          <div className="flex justify-end space-x-3">
-            {editingId && (
-              <button type="button" onClick={resetForm} className="btn btn-secondary" disabled={saving}>
-                編集キャンセル
-              </button>
-            )}
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? '保存中...' : editingId ? '更新' : '作成'}
-            </button>
-          </div>
-        </form>
-      </div>
-
-      <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">プロジェクトへの関連付け</h2>
-        {associateError && (
-          <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
-            {associateError}
-          </div>
-        )}
-        <form onSubmit={handleAssociate} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <select
-            value={associateState.customFieldId}
-            onChange={(event) =>
-              setAssociateState((prev) => ({
-                ...prev,
-                customFieldId: event.target.value,
-              }))
-            }
-            className="input"
-          >
-            <option value="">カスタムフィールドを選択</option>
-            {customFields.map((field) => (
-              <option key={field.id} value={field.id}>
-                {field.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={associateState.projectId}
-            onChange={(event) =>
-              setAssociateState((prev) => ({
-                ...prev,
-                projectId: event.target.value,
-              }))
-            }
-            className="input"
-          >
-            <option value="">プロジェクトを選択</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={associateState.trackerId}
-            onChange={(event) =>
-              setAssociateState((prev) => ({
-                ...prev,
-                trackerId: event.target.value,
-              }))
-            }
-            className="input"
-          >
-            <option value="">トラッカーを選択</option>
-            {trackers.map((tracker) => (
-              <option key={tracker.id} value={tracker.id}>
-                {tracker.name}
-              </option>
-            ))}
-          </select>
-          <div className="md:col-span-3 flex justify-end">
-            <button type="submit" className="btn btn-primary" disabled={associateSaving}>
-              {associateSaving ? '保存中...' : '関連付け'}
-            </button>
-          </div>
-        </form>
-      </div>
-
-      <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">カスタムフィールド一覧</h2>
-        {error && (
-          <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
-            {error}
-          </div>
-        )}
-        {loading ? (
-          <Loading />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+      {!isLoading && !isError && (
+        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('projects.name')}</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('customFields.type')}</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('customFields.fieldFormat')}</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('customFields.isRequired')}</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('trackers.position')}</th>
+                <th className="px-3 py-2 text-right font-medium text-gray-600">{t('app.actions')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {sortedFields.length === 0 ? (
                 <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    名前
-                  </th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    形式
-                  </th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    必須
-                  </th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    表示順
-                  </th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    アクション
-                  </th>
+                  <td colSpan={6} className="px-3 py-8 text-center text-gray-500">
+                    {t('app.noData')}
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {customFields.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
-                      カスタムフィールドが見つかりません。
+              ) : (
+                sortedFields.map(f => (
+                  <tr key={f.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 font-medium text-gray-900">{f.name}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-gray-700">{f.type}</td>
+                    <td className="px-3 py-2 text-gray-700">{f.fieldFormat}</td>
+                    <td className="px-3 py-2">
+                      <input type="checkbox" checked={f.isRequired} readOnly className="pointer-events-none" />
+                    </td>
+                    <td className="px-3 py-2 text-gray-600">{f.position}</td>
+                    <td className="px-3 py-2 text-right space-x-2 whitespace-nowrap">
+                      <button type="button" className="text-primary-600 hover:underline" onClick={() => openEdit(f)}>
+                        {t('app.edit')}
+                      </button>
+                      <button type="button" className="text-red-600 hover:underline" onClick={() => confirmDelete(f)}>
+                        {t('app.delete')}
+                      </button>
                     </td>
                   </tr>
-                ) : (
-                  customFields.map((field) => (
-                    <tr key={field.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 text-sm text-gray-900">{field.name}</td>
-                      <td className="px-4 py-2 text-sm text-gray-500">
-                        {fieldFormatOptions.find(o => o.value === field.fieldFormat)?.label || field.fieldFormat}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-500">
-                        {field.isRequired ? 'はい' : 'いいえ'}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-500">{field.position}</td>
-                      <td className="px-4 py-2 text-right text-sm">
-                        <div className="flex justify-end space-x-2">
-                          <button
-                            onClick={() => handleEdit(field)}
-                            className="btn btn-secondary flex items-center space-x-1"
-                          >
-                            <Edit className="w-4 h-4" />
-                            <span>編集</span>
-                          </button>
-                          <button
-                            onClick={() => handleDelete(field.id)}
-                            className="btn btn-secondary text-red-600 hover:bg-red-50 flex items-center space-x-1"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            <span>削除</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Dialog open={modalOpen} onClose={() => setModalOpen(false)} className="relative z-50">
+        <div className="fixed inset-0 bg-black/40" aria-hidden />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+            <DialogTitle className="text-lg font-semibold text-gray-900">{editing ? t('app.edit') : t('customFields.new')}</DialogTitle>
+            <form className="mt-4 space-y-3" onSubmit={submit}>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">{t('customFields.type')}</label>
+                <select className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={type} onChange={e => setType(e.target.value)} disabled={!!editing}>
+                  {CUSTOM_FIELD_TYPES.map(ct => (
+                    <option key={ct} value={ct}>
+                      {ct}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">{t('projects.name')}</label>
+                <input className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={name} onChange={e => setName(e.target.value)} required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">{t('customFields.fieldFormat')}</label>
+                <select className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={fieldFormat} onChange={e => setFieldFormat(e.target.value)}>
+                  {FIELD_FORMATS.map(ff => (
+                    <option key={ff} value={ff}>
+                      {ff}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={isRequired} onChange={e => setIsRequired(e.target.checked)} />
+                {t('customFields.isRequired')}
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={isFilter} onChange={e => setIsFilter(e.target.checked)} />
+                {t('customFields.isFilter')}
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={searchable} onChange={e => setSearchable(e.target.checked)} />
+                {t('customFields.searchable')}
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={multiple} onChange={e => setMultiple(e.target.checked)} />
+                {t('customFields.multiple')}
+              </label>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">{t('trackers.position')}</label>
+                <input type="number" className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={position} min={1} onChange={e => setPosition(Number(e.target.value))} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">{t('customFields.defaultValue')}</label>
+                <input className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={defaultValue} onChange={e => setDefaultValue(e.target.value)} />
+              </div>
+              {fieldFormat === 'list' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">{t('customFields.possibleValues')}</label>
+                  <textarea className="mt-1 w-full rounded border border-gray-300 px-3 py-2 font-mono text-sm" rows={5} value={possibleValuesText} onChange={e => setPossibleValuesText(e.target.value)} />
+                </div>
+              )}
+              {type === 'IssueCustomField' && (
+                <fieldset className="rounded border border-gray-200 p-3">
+                  <legend className="px-1 text-sm font-medium text-gray-800">{t('customFields.trackers')}</legend>
+                  <div className="mt-2 max-h-36 space-y-1 overflow-y-auto">
+                    {sortedTrackers.map(tr => (
+                      <label key={tr.id} className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={trackerIds.has(tr.id)} onChange={() => toggleTracker(tr.id)} />
+                        {tr.name}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" className="rounded border border-gray-300 px-4 py-2 text-sm" onClick={() => setModalOpen(false)}>
+                  {t('app.cancel')}
+                </button>
+                <button type="submit" className="rounded bg-primary-600 px-4 py-2 text-sm text-white" disabled={createField.isPending || updateField.isPending}>
+                  {editing ? t('app.save') : t('app.create')}
+                </button>
+              </div>
+            </form>
+          </DialogPanel>
+        </div>
+      </Dialog>
     </div>
   );
 }

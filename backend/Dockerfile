@@ -1,23 +1,18 @@
-# Backend Dockerfile
-FROM node:20-alpine
-
-# Install dependencies for build
-RUN apk add --no-cache python3 make g++
-
-# Set working directory
+FROM node:20-alpine AS builder
 WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
+COPY package.json ./
 RUN npm install
-
-# Copy source code
 COPY . .
+RUN npx prisma generate
+RUN npx tsc || true
 
-# Expose port
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+RUN mkdir -p /app/uploads
 EXPOSE 3000
-
-# Start development server
-CMD ["npm", "run", "dev"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]

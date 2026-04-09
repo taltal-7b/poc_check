@@ -1,35 +1,6 @@
-# Node modules
 node_modules
-npm-debug.log
-
-# Environment files
+dist
+.git
+*.md
 .env
 .env.local
-.env.*.local
-
-# Build output
-dist
-build
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE files
-.vscode
-.idea
-*.swp
-*.swo
-
-# Git
-.git
-.gitignore
-
-# Documentation
-*.md
-docs
-
-# Docker
-Dockerfile
-docker-compose.yml
-.dockerignore

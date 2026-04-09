@@ -1,269 +1,335 @@
-import { useEffect, useState } from 'react';
-import { Edit, Lock, Plus, Trash2, Unlock } from 'lucide-react';
-import { usersApi } from '../../lib/api';
-import Loading from '../../components/ui/Loading';
-import Pagination from '../../components/ui/Pagination';
-import CreateUserModal from '../../components/users/CreateUserModal';
+import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { format } from 'date-fns';
+import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
+import { useUsers, useCreateUser, useUpdateUser, useDeleteUser } from '../../api/hooks';
+import { type User, UserStatusCode } from '../../types';
 
-const statusOptions = [
-  { value: '1', label: '有効' },
-  { value: '2', label: '登録済み' },
-  { value: '3', label: 'ロック' },
-];
+function userDisplayName(u: User) {
+  return [u.firstname, u.lastname].filter(Boolean).join(' ').trim() || u.login;
+}
+
+function statusLabel(status: number, t: (k: string) => string) {
+  if (status === UserStatusCode.Active) return t('users.status.active');
+  if (status === UserStatusCode.Registered) return t('users.status.registered');
+  if (status === UserStatusCode.Locked) return t('users.status.locked');
+  return String(status);
+}
+
+function StatusBadge({ status, t }: { status: number; t: (k: string) => string }) {
+  const base = 'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium';
+  if (status === UserStatusCode.Active) return <span className={`${base} bg-emerald-100 text-emerald-800`}>{statusLabel(status, t)}</span>;
+  if (status === UserStatusCode.Registered) return <span className={`${base} bg-amber-100 text-amber-800`}>{statusLabel(status, t)}</span>;
+  if (status === UserStatusCode.Locked) return <span className={`${base} bg-red-100 text-red-800`}>{statusLabel(status, t)}</span>;
+  return <span className={`${base} bg-gray-100 text-gray-700`}>{statusLabel(status, t)}</span>;
+}
+
+type StatusFilter = 'all' | 'active' | 'registered' | 'locked';
 
 export default function UsersPage() {
-  const [users, setUsers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<any>(null);
+  const { t } = useTranslation();
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const params = useMemo(() => {
+    if (statusFilter === 'all') return undefined;
+    const map: Record<Exclude<StatusFilter, 'all'>, number> = {
+      active: UserStatusCode.Active,
+      registered: UserStatusCode.Registered,
+      locked: UserStatusCode.Locked,
+    };
+    return { status: map[statusFilter] };
+  }, [statusFilter]);
 
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const { data: usersRes, isLoading, isError } = useUsers(params);
+  const users = usersRes?.data ?? [];
+  const createUser = useCreateUser();
+  const updateUser = useUpdateUser();
+  const deleteUser = useDeleteUser();
 
-  useEffect(() => {
-    loadUsers();
-  }, [page, search, statusFilter]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [addOpen, setAddOpen] = useState(false);
+  const [editUser, setEditUser] = useState<User | null>(null);
 
-  const loadUsers = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const params: any = { page, limit: 25 };
-      if (search) params.search = search;
-      if (statusFilter) params.status = statusFilter;
-      const response = await usersApi.getAll(params);
-      const { users: list, pagination } = response.data.data;
-      setUsers(list || []);
-      setTotalPages(pagination.pages || 1);
-    } catch (err: any) {
-      console.error('Failed to load users:', err);
-      setError(err.response?.data?.message || 'ユーザーの読み込みに失敗しました。');
-    } finally {
-      setLoading(false);
-    }
+  const [form, setForm] = useState({
+    login: '',
+    firstname: '',
+    lastname: '',
+    mail: '',
+    password: '',
+    admin: false,
+    language: 'ja',
+  });
+
+  const resetForm = () =>
+    setForm({ login: '', firstname: '', lastname: '', mail: '', password: '', admin: false, language: 'ja' });
+
+  const openEdit = (u: User) => {
+    setEditUser(u);
+    setForm({
+      login: u.login,
+      firstname: u.firstname,
+      lastname: u.lastname,
+      mail: u.mail,
+      password: '',
+      admin: u.admin,
+      language: u.language || 'ja',
+    });
   };
 
-  const handleCreateClick = () => {
-    setEditingUser(null);
-    setIsModalOpen(true);
+  const toggleSelect = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
-  const handleEditClick = (user: any) => {
-    setEditingUser(user);
-    setIsModalOpen(true);
+  const toggleAll = () => {
+    if (selected.size === users.length) setSelected(new Set());
+    else setSelected(new Set(users.map(u => u.id)));
   };
 
-  const handleModalClose = () => {
-    setIsModalOpen(false);
-    setEditingUser(null);
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await createUser.mutateAsync({
+      login: form.login,
+      firstname: form.firstname,
+      lastname: form.lastname,
+      mail: form.mail,
+      password: form.password || undefined,
+      admin: form.admin,
+      language: form.language,
+    });
+    setAddOpen(false);
+    resetForm();
   };
 
-  const handleModalSuccess = () => {
-    loadUsers();
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editUser) return;
+    await updateUser.mutateAsync({
+      id: editUser.id,
+      firstname: form.firstname,
+      lastname: form.lastname,
+      mail: form.mail,
+      admin: form.admin,
+      language: form.language,
+      ...(form.password ? { password: form.password } : {}),
+    });
+    setEditUser(null);
+    resetForm();
   };
 
-  const handleDelete = async (userId: number) => {
-    if (!confirm('このユーザーを削除してもよろしいですか？')) return;
-    try {
-      await usersApi.delete(userId);
-      loadUsers();
-    } catch (err) {
-      console.error('Failed to delete user:', err);
-      alert('ユーザーの削除に失敗しました。');
-    }
+  const setLocked = async (u: User, locked: boolean) => {
+    await updateUser.mutateAsync({
+      id: u.id,
+      status: locked ? UserStatusCode.Locked : UserStatusCode.Active,
+    });
   };
 
-  const handleToggleLock = async (userId: number) => {
-    try {
-      await usersApi.toggleLock(userId);
-      loadUsers();
-    } catch (err) {
-      console.error('Failed to toggle lock:', err);
-      alert('ユーザーのステータス更新に失敗しました。');
-    }
+  const handleDelete = async (id: string) => {
+    if (!window.confirm(t('app.confirm'))) return;
+    await deleteUser.mutateAsync(id);
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   };
 
-  const formatDateTime = (dateString: string) => {
-    if (!dateString) return '-';
-    return new Date(dateString).toLocaleString('ja-JP');
+  const bulkLock = async (locked: boolean) => {
+    const ids = [...selected];
+    await Promise.all(ids.map(id => updateUser.mutateAsync({ id, status: locked ? UserStatusCode.Locked : UserStatusCode.Active })));
+    setSelected(new Set());
   };
+
+  const bulkDelete = async () => {
+    if (!window.confirm(t('app.confirm'))) return;
+    const ids = [...selected];
+    await Promise.all(ids.map(id => deleteUser.mutateAsync(id)));
+    setSelected(new Set());
+  };
+
+  const formFields = (
+    <div className="space-y-3">
+      <div>
+        <label className="block text-sm font-medium text-gray-700">{t('users.login')}</label>
+        <input
+          className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+          value={form.login}
+          disabled={!!editUser}
+          onChange={e => setForm(f => ({ ...f, login: e.target.value }))}
+          required
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-700">{t('auth.firstname')}</label>
+          <input className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={form.firstname} onChange={e => setForm(f => ({ ...f, firstname: e.target.value }))} required />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">{t('auth.lastname')}</label>
+          <input className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={form.lastname} onChange={e => setForm(f => ({ ...f, lastname: e.target.value }))} required />
+        </div>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700">{t('users.email')}</label>
+        <input type="email" className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={form.mail} onChange={e => setForm(f => ({ ...f, mail: e.target.value }))} required />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700">{t('auth.password')}</label>
+        <input type="password" className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder={editUser ? '—' : ''} />
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={form.admin} onChange={e => setForm(f => ({ ...f, admin: e.target.checked }))} />
+        {t('users.admin')}
+      </label>
+    </div>
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900">ユーザー管理</h1>
-        <button
-          onClick={handleCreateClick}
-          className="btn btn-primary flex items-center space-x-2"
-        >
-          <Plus className="w-4 h-4" />
-          <span>新規ユーザー</span>
-        </button>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold text-gray-900">{t('users.title')}</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            className="rounded border border-gray-300 px-3 py-2 text-sm"
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value as StatusFilter)}
+          >
+            <option value="all">{t('search.scope.all')}</option>
+            <option value="active">{t('users.status.active')}</option>
+            <option value="registered">{t('users.status.registered')}</option>
+            <option value="locked">{t('users.status.locked')}</option>
+          </select>
+          <button type="button" onClick={() => { resetForm(); setAddOpen(true); }} className="rounded bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700">
+            {t('users.new')}
+          </button>
+        </div>
       </div>
 
-      <p className="text-sm text-gray-600">
-        システムユーザーの作成・編集・削除
-      </p>
-
-      <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">ユーザー一覧</h2>
-          <div className="flex items-center space-x-3">
-            <input
-              type="text"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="input w-56"
-              placeholder="検索..."
-            />
-            <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-              className="input w-44"
-            >
-              <option value="">すべてのステータス</option>
-              {statusOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+          <span className="text-gray-700">{t('admin.selectedCount', { count: selected.size })}</span>
+          <button type="button" className="rounded bg-gray-800 px-3 py-1 text-white" onClick={() => bulkLock(true)}>
+            {t('users.lock')}
+          </button>
+          <button type="button" className="rounded bg-gray-600 px-3 py-1 text-white" onClick={() => bulkLock(false)}>
+            {t('users.unlock')}
+          </button>
+          <button type="button" className="rounded bg-red-600 px-3 py-1 text-white" onClick={bulkDelete}>
+            {t('app.delete')}
+          </button>
         </div>
+      )}
 
-        {error && (
-          <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
-            {error}
-          </div>
-        )}
+      {isLoading && <p className="text-gray-500">{t('app.loading')}</p>}
+      {isError && <p className="text-red-600">{t('app.error')}</p>}
 
-        {loading ? (
-          <Loading />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+      {!isLoading && !isError && (
+        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="w-10 px-3 py-2">
+                  <input type="checkbox" checked={users.length > 0 && selected.size === users.length} onChange={toggleAll} />
+                </th>
+                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('users.login')}</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('users.name')}</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('users.email')}</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('users.admin')}</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('issues.status')}</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('users.createdAt')}</th>
+                <th className="px-3 py-2 text-right font-medium text-gray-600">{t('app.actions')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {users.length === 0 ? (
                 <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ログインID
-                  </th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    名前
-                  </th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    メールアドレス
-                  </th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ステータス
-                  </th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    グループ
-                  </th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    最終ログイン
-                  </th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    アクション
-                  </th>
+                  <td colSpan={8} className="px-3 py-8 text-center text-gray-500">
+                    {t('app.noData')}
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {users.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={7}
-                      className="px-4 py-8 text-center text-gray-500"
-                    >
-                      ユーザーが見つかりません。
+              ) : (
+                users.map(u => (
+                  <tr key={u.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-2">
+                      <input type="checkbox" checked={selected.has(u.id)} onChange={() => toggleSelect(u.id)} />
+                    </td>
+                    <td className="px-3 py-2 font-mono text-gray-900">{u.login}</td>
+                    <td className="px-3 py-2 text-gray-800">{userDisplayName(u)}</td>
+                    <td className="px-3 py-2 text-gray-700">{u.mail}</td>
+                    <td className="px-3 py-2">
+                      {u.admin ? <span className="rounded bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800">{t('users.admin')}</span> : <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-3 py-2">
+                      <StatusBadge status={u.status} t={t} />
+                    </td>
+                    <td className="px-3 py-2 text-gray-600">{u.createdAt ? format(new Date(u.createdAt), 'yyyy-MM-dd HH:mm') : '—'}</td>
+                    <td className="px-3 py-2 text-right space-x-2 whitespace-nowrap">
+                      <button type="button" className="text-primary-600 hover:underline" onClick={() => openEdit(u)}>
+                        {t('app.edit')}
+                      </button>
+                      {u.status === UserStatusCode.Locked ? (
+                        <button type="button" className="text-gray-700 hover:underline" onClick={() => setLocked(u, false)}>
+                          {t('users.unlock')}
+                        </button>
+                      ) : (
+                        <button type="button" className="text-gray-700 hover:underline" onClick={() => setLocked(u, true)}>
+                          {t('users.lock')}
+                        </button>
+                      )}
+                      <button type="button" className="text-red-600 hover:underline" onClick={() => handleDelete(u.id)}>
+                        {t('app.delete')}
+                      </button>
                     </td>
                   </tr>
-                ) : (
-                  users.map((user) => (
-                    <tr key={user.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 text-sm text-gray-900">
-                        {user.login}
-                        {user.admin && (
-                          <span className="ml-2 px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded">
-                            管理者
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-700">
-                        {user.lastName} {user.firstName}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-500">
-                        {user.email}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-500">
-                        {statusOptions.find((option) => option.value === String(user.status))?.label ||
-                          user.status}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-500">
-                        {(user.groups || []).map((group: any) => group.name).join(', ') ||
-                          '-'}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-500">
-                        {formatDateTime(user.lastLoginOn)}
-                      </td>
-                      <td className="px-4 py-2 text-right text-sm">
-                        <div className="flex justify-end space-x-2">
-                          <button
-                            onClick={() => handleEditClick(user)}
-                            className="btn btn-secondary flex items-center space-x-1"
-                          >
-                            <Edit className="w-4 h-4" />
-                            <span>編集</span>
-                          </button>
-                          <button
-                            onClick={() => handleToggleLock(user.id)}
-                            className="btn btn-secondary flex items-center space-x-1"
-                          >
-                            {user.status === 3 ? (
-                              <>
-                                <Unlock className="w-4 h-4" />
-                                <span>ロック解除</span>
-                              </>
-                            ) : (
-                              <>
-                                <Lock className="w-4 h-4" />
-                                <span>ロック</span>
-                              </>
-                            )}
-                          </button>
-                          <button
-                            onClick={() => handleDelete(user.id)}
-                            className="btn btn-secondary text-red-600 hover:bg-red-50 flex items-center space-x-1"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            <span>削除</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-        {totalPages > 1 && (
-          <div className="border-t border-gray-200">
-            <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
-          </div>
-        )}
-      </div>
+      <Dialog open={addOpen} onClose={() => setAddOpen(false)} className="relative z-50">
+        <div className="fixed inset-0 bg-black/40" aria-hidden />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <DialogTitle className="text-lg font-semibold text-gray-900">{t('users.new')}</DialogTitle>
+            <form className="mt-4 space-y-4" onSubmit={handleCreate}>
+              {formFields}
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" className="rounded border border-gray-300 px-4 py-2 text-sm" onClick={() => setAddOpen(false)}>
+                  {t('app.cancel')}
+                </button>
+                <button type="submit" className="rounded bg-primary-600 px-4 py-2 text-sm text-white" disabled={createUser.isPending}>
+                  {t('app.create')}
+                </button>
+              </div>
+            </form>
+          </DialogPanel>
+        </div>
+      </Dialog>
 
-      {/* User Create/Edit Modal */}
-      <CreateUserModal
-        isOpen={isModalOpen}
-        onClose={handleModalClose}
-        onSuccess={handleModalSuccess}
-        editingUser={editingUser}
-      />
+      <Dialog open={!!editUser} onClose={() => { setEditUser(null); resetForm(); }} className="relative z-50">
+        <div className="fixed inset-0 bg-black/40" aria-hidden />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <DialogTitle className="text-lg font-semibold text-gray-900">{t('app.edit')}</DialogTitle>
+            <form className="mt-4 space-y-4" onSubmit={handleUpdate}>
+              {formFields}
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" className="rounded border border-gray-300 px-4 py-2 text-sm" onClick={() => { setEditUser(null); resetForm(); }}>
+                  {t('app.cancel')}
+                </button>
+                <button type="submit" className="rounded bg-primary-600 px-4 py-2 text-sm text-white" disabled={updateUser.isPending}>
+                  {t('app.save')}
+                </button>
+              </div>
+            </form>
+          </DialogPanel>
+        </div>
+      </Dialog>
     </div>
   );
 }
