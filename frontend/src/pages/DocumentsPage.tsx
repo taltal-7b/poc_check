@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import ProjectSubNav from '../components/ProjectSubNav';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
 import { FileText, Plus } from 'lucide-react';
@@ -68,6 +69,7 @@ export default function DocumentsPage() {
 
   return (
     <div className="space-y-6">
+      {identifier && <ProjectSubNav identifier={identifier} />}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <FileText size={26} />

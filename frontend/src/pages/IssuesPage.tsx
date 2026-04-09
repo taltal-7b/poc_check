@@ -6,6 +6,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { ja, enUS } from 'date-fns/locale';
 import { useIssues, useProjectIssues, useStatuses, useTrackers } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
+import ProjectSubNav from '../components/ProjectSubNav';
 import type { Issue } from '../types';
 
 const PER_PAGE = 20;
@@ -21,9 +22,6 @@ function priorityBadge(p: number) {
   return map[p] ?? 'bg-slate-100 text-slate-700 ring-slate-500/20';
 }
 
-function shortId(id: string) {
-  return id.slice(0, 8);
-}
 
 export default function IssuesPage() {
   const { t, i18n } = useTranslation();
@@ -85,7 +83,8 @@ export default function IssuesPage() {
   const newIssueTo = identifier ? `/projects/${identifier}/issues/new` : '/projects';
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
+    <div className="mx-auto max-w-7xl space-y-6">
+      {identifier && <ProjectSubNav identifier={identifier} />}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-slate-900">{t('issues.title')}</h1>
         {isAuthenticated && (
@@ -164,7 +163,7 @@ export default function IssuesPage() {
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50">
               <tr>
-                <th className="px-3 py-3 text-left font-semibold text-slate-700">#</th>
+                <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.number')}</th>
                 <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.tracker')}</th>
                 <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.subject')}</th>
                 <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.status')}</th>
@@ -183,9 +182,9 @@ export default function IssuesPage() {
                     : `/issues/${issue.id}`;
                 return (
                   <tr key={issue.id} className="hover:bg-slate-50/80">
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-600">
+                    <td className="whitespace-nowrap px-3 py-2 font-mono text-sm text-slate-600">
                       <Link to={to} className="text-primary-600 hover:underline">
-                        {shortId(issue.id)}
+                        #{issue.number || '—'}
                       </Link>
                     </td>
                     <td className="px-3 py-2 text-slate-700">{issue.tracker?.name ?? '—'}</td>

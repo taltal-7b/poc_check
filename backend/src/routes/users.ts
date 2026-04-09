@@ -143,9 +143,6 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     if (!user) {
       throw AppError.notFound('ユーザーが見つかりません');
     }
-    if (!req.user!.admin && req.user!.userId !== id) {
-      throw AppError.forbidden();
-    }
     return sendSuccess(res, serializeUser(user));
   } catch (err) {
     next(err);

@@ -1,18 +1,13 @@
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package.json ./
-RUN npm install
-COPY . .
-RUN npx prisma generate
-RUN npx tsc || true
-
 FROM node:20-alpine
 WORKDIR /app
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+
+COPY package.json ./
+RUN npm install
+
+COPY . .
+RUN npx prisma generate
+
 RUN mkdir -p /app/uploads
 EXPOSE 3000
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+
+CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss && node --import tsx src/index.ts"]

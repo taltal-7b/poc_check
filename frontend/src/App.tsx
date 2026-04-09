@@ -26,6 +26,7 @@ import ActivityPage from './pages/ActivityPage';
 import SearchPage from './pages/SearchPage';
 import MyPagePage from './pages/MyPagePage';
 import MyAccountPage from './pages/MyAccountPage';
+import UserProfilePage from './pages/UserProfilePage';
 
 import AdminUsersPage from './pages/admin/UsersPage';
 import AdminRolesPage from './pages/admin/RolesPage';
@@ -78,6 +79,8 @@ export default function App() {
         <Route path="issues/:issueId" element={<IssueDetailPage />} />
         <Route path="activity" element={<ActivityPage />} />
         <Route path="search" element={<SearchPage />} />
+
+        <Route path="users/:userId" element={<UserProfilePage />} />
 
         <Route path="my/page" element={<ProtectedRoute><MyPagePage /></ProtectedRoute>} />
         <Route path="my/account" element={<ProtectedRoute><MyAccountPage /></ProtectedRoute>} />

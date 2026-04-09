@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import ProjectSubNav from '../components/ProjectSubNav';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { marked } from 'marked';
 import sanitizeHtml from 'sanitize-html';
@@ -92,7 +93,9 @@ export default function WikiPage() {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6">
+    <div className="space-y-6">
+      {identifier && <ProjectSubNav identifier={identifier} />}
+      <div className="flex flex-col lg:flex-row gap-6">
       <aside className="lg:w-64 shrink-0 rounded-lg border border-gray-200 bg-white p-4 shadow-sm h-fit">
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-2">
           <Book size={16} />
@@ -195,6 +198,7 @@ export default function WikiPage() {
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 }

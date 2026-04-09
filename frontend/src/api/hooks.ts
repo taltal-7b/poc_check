@@ -69,6 +69,37 @@ export const useCreateIssue = () => { const qc = useQueryClient(); return useMut
 export const useUpdateIssue = () => { const qc = useQueryClient(); return useMutation({ mutationFn: ({ id, ...body }: { id: string } & Record<string, unknown>) => put<Issue>(`/issues/${id}`, body), onSuccess: (_, v) => { qc.invalidateQueries({ queryKey: ['issues'] }); qc.invalidateQueries({ queryKey: ['issue', v.id] }); } }); };
 export const useDeleteIssue = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (id: string) => del(`/issues/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['issues'] }) }); };
 
+// ========== Attachments ==========
+export const useDeleteAttachment = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/attachments/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['issue'] });
+    },
+  });
+};
+
+export const useUploadAttachments = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ files, issueId, journalId }: { files: File[]; issueId?: string; journalId?: string }) => {
+      const fd = new FormData();
+      files.forEach((f) => fd.append('files', f));
+      const meta: Record<string, string> = {};
+      if (issueId) meta.issueId = issueId;
+      if (journalId) meta.journalId = journalId;
+      if (Object.keys(meta).length) fd.append('meta', JSON.stringify(meta));
+      return api.post<ApiResponse<{ attachments: unknown[] }>>('/attachments/upload', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }).then((r) => r.data);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['issue'] });
+    },
+  });
+};
+
 // ========== Time Entries ==========
 export const useTimeEntries = (params?: Record<string, unknown>) => useQuery({ queryKey: ['timeEntries', params], queryFn: () => get<TimeEntry[]>('/time_entries', params) });
 export const useCreateTimeEntry = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (body: Partial<TimeEntry>) => post<TimeEntry>('/time_entries', body), onSuccess: () => qc.invalidateQueries({ queryKey: ['timeEntries'] }) }); };

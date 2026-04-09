@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import ProjectSubNav from '../components/ProjectSubNav';
 import {
   addMonths,
   differenceInCalendarDays,
@@ -96,6 +97,7 @@ export default function GanttPage() {
 
   return (
     <div className="space-y-4">
+      {identifier && <ProjectSubNav identifier={identifier} />}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold text-gray-900">{t('gantt.title')}</h1>
         <div className="flex rounded-lg border border-gray-200 p-0.5 text-xs">

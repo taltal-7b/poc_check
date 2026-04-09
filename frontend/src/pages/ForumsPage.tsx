@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import ProjectSubNav from '../components/ProjectSubNav';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
 import { MessageSquare, MessagesSquare } from 'lucide-react';
@@ -76,6 +77,7 @@ export default function ForumsPage() {
 
   return (
     <div className="space-y-6">
+      {identifier && <ProjectSubNav identifier={identifier} />}
       <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
         <MessagesSquare size={26} />
         {t('forums.title')}

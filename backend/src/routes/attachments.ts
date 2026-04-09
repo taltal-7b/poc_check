@@ -27,6 +27,7 @@ const optionalLinkSchema = z
     containerId: z.string().uuid().optional(),
     issueId: z.string().uuid().optional(),
     documentId: z.string().uuid().optional(),
+    journalId: z.string().uuid().optional(),
     description: z.string().optional(),
   })
   .optional();
@@ -69,6 +70,7 @@ router.post(
               containerId: meta?.containerId ?? null,
               issueId: meta?.issueId ?? null,
               documentId: meta?.documentId ?? null,
+              journalId: meta?.journalId ?? null,
             },
             select: {
               id: true,

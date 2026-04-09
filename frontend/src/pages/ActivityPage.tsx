@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import ProjectSubNav from '../components/ProjectSubNav';
 import { format, parseISO } from 'date-fns';
 import {
   Activity as ActivityIcon,
@@ -66,6 +67,7 @@ export default function ActivityPage() {
 
   return (
     <div className="space-y-6">
+      {identifier && <ProjectSubNav identifier={identifier} />}
       <h1 className="text-2xl font-bold text-gray-900">{t('activity.title')}</h1>
 
       <div className="flex flex-wrap gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">

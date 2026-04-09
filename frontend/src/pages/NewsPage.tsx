@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import ProjectSubNav from '../components/ProjectSubNav';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
 import { ChevronDown, ChevronUp } from 'lucide-react';
@@ -57,6 +58,7 @@ export default function NewsPage() {
 
   return (
     <div className="space-y-6">
+      {identifier && <ProjectSubNav identifier={identifier} />}
       <h1 className="text-2xl font-bold text-gray-900">{t('news.title')}</h1>
 
       {isLoading ? (

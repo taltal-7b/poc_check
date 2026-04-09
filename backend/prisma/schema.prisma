@@ -318,6 +318,7 @@ model Issue {
   tracker        Tracker   @relation(fields: [trackerId], references: [id])
   statusId       String    @map("status_id")
   status         IssueStatus @relation(fields: [statusId], references: [id])
+  number         Int       @unique @default(0)
   priority       Int       @default(2) // 1=low,2=normal,3=high,4=urgent,5=immediate
   subject        String
   description    String?
@@ -384,15 +385,16 @@ model IssueRelation {
 // ===================== ジャーナル =====================
 
 model Journal {
-  id        String          @id @default(uuid())
-  issueId   String          @map("issue_id")
-  issue     Issue           @relation(fields: [issueId], references: [id], onDelete: Cascade)
-  userId    String          @map("user_id")
-  user      User            @relation(fields: [userId], references: [id])
-  notes     String?
-  private   Boolean         @default(false)
-  createdAt DateTime        @default(now()) @map("created_at")
-  details   JournalDetail[]
+  id          String          @id @default(uuid())
+  issueId     String          @map("issue_id")
+  issue       Issue           @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  userId      String          @map("user_id")
+  user        User            @relation(fields: [userId], references: [id])
+  notes       String?
+  private     Boolean         @default(false)
+  createdAt   DateTime        @default(now()) @map("created_at")
+  details     JournalDetail[]
+  attachments Attachment[]
 
   @@map("journals")
 }
@@ -656,6 +658,8 @@ model Attachment {
   issue          Issue?    @relation(fields: [issueId], references: [id])
   documentId     String?   @map("document_id")
   document       Document? @relation(fields: [documentId], references: [id])
+  journalId      String?   @map("journal_id")
+  journal        Journal?  @relation(fields: [journalId], references: [id], onDelete: SetNull)
   createdAt      DateTime  @default(now()) @map("created_at")
 
   @@index([containerType, containerId])

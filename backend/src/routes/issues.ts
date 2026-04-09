@@ -270,6 +270,16 @@ router.get(
     const assigneeId = req.query.assignee as string | undefined;
     if (assigneeId) where.assigneeId = assigneeId;
 
+    const authorId = req.query.author as string | undefined;
+    if (authorId) where.authorId = authorId;
+
+    const closedParam = req.query.closed as string | undefined;
+    if (closedParam === 'true') {
+      where.status = { isClosed: true };
+    } else if (closedParam === 'false') {
+      where.status = { isClosed: false };
+    }
+
     const priorityRaw = req.query.priority;
     if (priorityRaw !== undefined && priorityRaw !== '') {
       const p = Number(priorityRaw);
@@ -539,8 +549,12 @@ router.post(
     const st = await prisma.issueStatus.findUnique({ where: { id: src.statusId } });
 
     const created = await prisma.$transaction(async (tx) => {
+      const last = await tx.issue.findFirst({ orderBy: { number: 'desc' }, select: { number: true } });
+      const nextNumber = (last?.number ?? 0) + 1;
+
       const issue = await tx.issue.create({
         data: {
+          number: nextNumber,
           projectId: targetProjectId,
           trackerId: src.trackerId,
           statusId: src.statusId,
@@ -736,6 +750,9 @@ router.get(
           include: {
             user: { select: { id: true, login: true, firstname: true, lastname: true } },
             details: true,
+            attachments: {
+              select: { id: true, filename: true, diskFilename: true, filesize: true, contentType: true, createdAt: true },
+            },
           },
         },
         watchers: {
@@ -849,8 +866,9 @@ router.put(
       };
 
       const details = buildJournalDetailsFromDiff(beforePlain, afterPlain, ISSUE_JOURNAL_KEYS);
+      let newJournalId: string | null = null;
       if (details.length || (notes !== undefined && notes.length > 0)) {
-        await tx.journal.create({
+        const journal = await tx.journal.create({
           data: {
             issueId: next.id,
             userId: req.user!.userId,
@@ -858,9 +876,10 @@ router.put(
             details: details.length ? { create: details } : undefined,
           },
         });
+        newJournalId = journal.id;
       }
 
-      return tx.issue.findUniqueOrThrow({
+      const issueResult = await tx.issue.findUniqueOrThrow({
         where: { id: next.id },
         include: {
           project: true,
@@ -870,6 +889,8 @@ router.put(
           assignee: { select: { id: true, login: true, firstname: true, lastname: true } },
         },
       });
+
+      return { ...issueResult, journalId: newJournalId };
     });
 
     return sendSuccess(res, updated);
@@ -915,8 +936,12 @@ router.post(
     if (!st) throw AppError.badRequest('ステータスが存在しません');
 
     const created = await prisma.$transaction(async (tx) => {
+      const last = await tx.issue.findFirst({ orderBy: { number: 'desc' }, select: { number: true } });
+      const nextNumber = (last?.number ?? 0) + 1;
+
       const issue = await tx.issue.create({
         data: {
+          number: nextNumber,
           projectId,
           trackerId: body.trackerId,
           statusId: body.statusId,

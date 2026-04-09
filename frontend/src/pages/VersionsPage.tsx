@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import ProjectSubNav from '../components/ProjectSubNav';
 import { format, parseISO } from 'date-fns';
 import { ChevronDown, ChevronRight, Flag } from 'lucide-react';
 import { useProject, useVersions, useProjectIssues } from '../api/hooks';
@@ -71,6 +72,7 @@ export default function VersionsPage() {
 
   return (
     <div className="space-y-6">
+      {identifier && <ProjectSubNav identifier={identifier} />}
       <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
         <Flag size={26} />
         {t('versions.roadmap')}

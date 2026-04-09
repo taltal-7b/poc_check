@@ -43,6 +43,7 @@ export interface IssueStatus {
 
 export interface Issue {
   id: string;
+  number: number;
   subject: string;
   description: string | null;
   projectId: string;
@@ -78,6 +79,7 @@ export interface Journal {
   createdAt: string;
   user?: User;
   details?: JournalDetail[];
+  attachments?: Attachment[];
 }
 
 export interface JournalDetail {
@@ -222,6 +224,7 @@ export interface Query {
 export interface Attachment {
   id: string;
   filename: string;
+  diskFilename?: string;
   filesize: number;
   contentType: string | null;
   description: string | null;

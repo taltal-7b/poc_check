@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import ProjectSubNav from '../components/ProjectSubNav';
 import {
   addMonths,
   eachDayOfInterval,
@@ -60,6 +61,7 @@ export default function CalendarPage() {
 
   return (
     <div className="space-y-4">
+      {identifier && <ProjectSubNav identifier={identifier} />}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">{t('calendar.title')}</h1>
         <div className="flex items-center gap-2">

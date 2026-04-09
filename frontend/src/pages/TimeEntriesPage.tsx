@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import ProjectSubNav from '../components/ProjectSubNav';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { format, parseISO } from 'date-fns';
 import {
@@ -84,6 +85,7 @@ export default function TimeEntriesPage() {
 
   return (
     <div className="space-y-6">
+      {identifier && <ProjectSubNav identifier={identifier} />}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{t('timeEntries.title')}</h1>

@@ -53,10 +53,8 @@ async function main() {
 
   const statusNew = await prisma.issueStatus.upsert({ where: { name: '新規' }, update: {}, create: { name: '新規', position: 1 } });
   const statusInProgress = await prisma.issueStatus.upsert({ where: { name: '進行中' }, update: {}, create: { name: '進行中', position: 2 } });
-  const statusResolved = await prisma.issueStatus.upsert({ where: { name: '解決' }, update: {}, create: { name: '解決', position: 3 } });
+  await prisma.issueStatus.upsert({ where: { name: '完了' }, update: {}, create: { name: '完了', isClosed: true, position: 3 } });
   await prisma.issueStatus.upsert({ where: { name: 'フィードバック' }, update: {}, create: { name: 'フィードバック', position: 4 } });
-  await prisma.issueStatus.upsert({ where: { name: '終了' }, update: {}, create: { name: '終了', isClosed: true, position: 5 } });
-  await prisma.issueStatus.upsert({ where: { name: '却下' }, update: {}, create: { name: '却下', isClosed: true, position: 6 } });
 
   const trackerBug = await prisma.tracker.upsert({ where: { name: 'バグ' }, update: {}, create: { name: 'バグ', position: 1, defaultStatusId: statusNew.id } });
   const trackerFeature = await prisma.tracker.upsert({ where: { name: '機能' }, update: {}, create: { name: '機能', position: 2, defaultStatusId: statusNew.id } });

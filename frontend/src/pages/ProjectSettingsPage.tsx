@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import ProjectSubNav from '../components/ProjectSubNav';
 import { useDeleteProject, useProject, useProjects, useTrackers, useUpdateProject } from '../api/hooks';
 
 const DEFAULT_MODULES = [
@@ -123,7 +124,8 @@ export default function ProjectSettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-6 text-2xl font-bold text-slate-900">{t('nav.settings')}</h1>
+      {identifier && <ProjectSubNav identifier={identifier} />}
+      <h1 className="mb-6 mt-4 text-2xl font-bold text-slate-900">{t('nav.settings')}</h1>
       <form onSubmit={handleSave} className="space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">{t('projects.name')}</label>
