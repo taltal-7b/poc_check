@@ -10,3 +10,4 @@ coverage/
 uploads/
 *.tsbuildinfo
 package-lock.json
+claude.md
