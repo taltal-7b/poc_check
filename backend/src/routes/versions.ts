@@ -14,6 +14,17 @@ function param(req: Request, key: string): string | undefined {
   return undefined;
 }
 
+/** URL の :projectId が UUID または identifier のどちらでも解決する */
+async function resolveProjectIdFromParam(req: Request): Promise<string | undefined> {
+  const raw = param(req, 'projectId');
+  if (!raw) return undefined;
+  const p = await prisma.project.findFirst({
+    where: { OR: [{ id: raw }, { identifier: raw }] },
+    select: { id: true },
+  });
+  return p?.id;
+}
+
 const createSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
@@ -59,7 +70,7 @@ function aggregateByStatus(issues: IssueWithStatus[]) {
 
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const projectId = param(req, 'projectId');
+    const projectId = await resolveProjectIdFromParam(req);
     const where = projectId ? { projectId } : {};
 
     const versions = await prisma.version.findMany({
@@ -93,7 +104,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 
 router.post('/close_completed', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const projectId = param(req, 'projectId');
+    const projectId = await resolveProjectIdFromParam(req);
     if (!projectId) return next(AppError.badRequest('projectId が必要です'));
 
     const versions = await prisma.version.findMany({
@@ -125,7 +136,7 @@ router.post('/close_completed', authenticate, async (req: Request, res: Response
 
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const projectId = param(req, 'projectId');
+    const projectId = await resolveProjectIdFromParam(req);
     const id = param(req, 'id');
     if (!id) return next(AppError.badRequest('id が必要です'));
 
@@ -167,7 +178,8 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return next(AppError.badRequest(parsed.error.message));
 
-    const projectId = param(req, 'projectId') ?? parsed.data.projectId;
+    const fromParam = await resolveProjectIdFromParam(req);
+    const projectId = fromParam ?? parsed.data.projectId;
     if (!projectId) return next(AppError.badRequest('projectId が必要です'));
 
     const project = await prisma.project.findUnique({ where: { id: projectId } });
@@ -213,7 +225,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
 
 router.put('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const projectId = param(req, 'projectId');
+    const projectId = await resolveProjectIdFromParam(req);
     const id = param(req, 'id');
     if (!id) return next(AppError.badRequest('id が必要です'));
 
@@ -259,7 +271,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
 
 router.delete('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const projectId = param(req, 'projectId');
+    const projectId = await resolveProjectIdFromParam(req);
     const id = param(req, 'id');
     if (!id) return next(AppError.badRequest('id が必要です'));
 

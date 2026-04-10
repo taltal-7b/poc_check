@@ -24,7 +24,18 @@
   "myPage": { "title": "マイページ", "customize": "カスタマイズ" },
   "search": { "title": "検索", "placeholder": "検索キーワード...", "noResults": "検索結果がありません", "scope": { "all": "全プロジェクト" } },
   "activity": { "title": "アクティビティ" },
-  "gantt": { "title": "ガントチャート" },
+  "gantt": {
+    "title": "ガントチャート",
+    "zoomMonth": "月",
+    "zoomWeek": "週",
+    "zoomDay": "日",
+    "subjectColumn": "チケット名",
+    "hint": "開始日・期日のどちらか（または両方）があるチケットはその期間で表示します。どちらもない場合は作成日を1日分として表示します。",
+    "legend": "凡例:",
+    "today": "今日",
+    "versionMilestones": "バージョン（マイルストーン）",
+    "estimatedFromCreated": "日付未設定のため作成日で表示"
+  },
   "calendar": { "title": "カレンダー" },
   "import": { "title": "インポート", "csv": "CSVインポート", "selectFile": "ファイルを選択" },
   "export": { "title": "エクスポート", "csv": "CSV", "pdf": "PDF" }

@@ -24,7 +24,18 @@
   "myPage": { "title": "My page", "customize": "Customize" },
   "search": { "title": "Search", "placeholder": "Search...", "noResults": "No results found", "scope": { "all": "All projects" } },
   "activity": { "title": "Activity" },
-  "gantt": { "title": "Gantt chart" },
+  "gantt": {
+    "title": "Gantt chart",
+    "zoomMonth": "Months",
+    "zoomWeek": "Weeks",
+    "zoomDay": "Days",
+    "subjectColumn": "Subject",
+    "hint": "Issues with a start date, due date, or both are shown across that span. If neither is set, the creation date is shown as a single day.",
+    "legend": "Legend:",
+    "today": "Today",
+    "versionMilestones": "Versions (milestones)",
+    "estimatedFromCreated": "No dates set; shown using creation date"
+  },
   "calendar": { "title": "Calendar" },
   "import": { "title": "Import", "csv": "CSV Import", "selectFile": "Select file" },
   "export": { "title": "Export", "csv": "CSV", "pdf": "PDF" }
