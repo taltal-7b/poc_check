@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { marked } from 'marked';
-import sanitizeHtml from 'sanitize-html';
+import { renderMarkdown } from '../components/RichTextEditor';
 import { format } from 'date-fns';
 import { ja, enUS } from 'date-fns/locale';
-import { Pencil, Paperclip, X as XIcon, FileIcon, Download, Trash2 } from 'lucide-react';
+import { Pencil, FileIcon, Download, Trash2 } from 'lucide-react';
+import RichTextEditor from '../components/RichTextEditor';
 import { useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useTrackers, useStatuses, useMembers } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 import type { Issue, Journal, User, Attachment } from '../types';
@@ -70,7 +70,6 @@ export default function IssueDetailPage() {
   });
   const [note, setNote] = useState('');
   const [attachFiles, setAttachFiles] = useState<File[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [descHtml, setDescHtml] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; filename: string } | null>(null);
 
@@ -87,8 +86,7 @@ export default function IssueDetailPage() {
   useEffect(() => {
     const raw = issue?.description;
     if (!raw) { setDescHtml(''); return; }
-    const parsed = marked.parse(raw);
-    Promise.resolve(parsed).then((html) => setDescHtml(sanitizeHtml(String(html))));
+    setDescHtml(renderMarkdown(raw));
   }, [issue?.description]);
 
   const journals: Journal[] = useMemo(() => issue?.journals ?? [], [issue?.journals]);
@@ -135,15 +133,6 @@ export default function IssueDetailPage() {
   const setField = (key: keyof EditForm, value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
-  const addFiles = (newFiles: FileList | null) => {
-    if (!newFiles) return;
-    setAttachFiles((prev) => [...prev, ...Array.from(newFiles)]);
-  };
-
-  const removeFile = (idx: number) => {
-    setAttachFiles((prev) => prev.filter((_, i) => i !== idx));
-  };
-
   const submitComment = async (e: FormEvent) => {
     e.preventDefault();
     if (!issue || (!note.trim() && attachFiles.length === 0)) return;
@@ -167,7 +156,6 @@ export default function IssueDetailPage() {
     }
     setNote('');
     setAttachFiles([]);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const confirmDelete = () => {
@@ -326,11 +314,15 @@ export default function IssueDetailPage() {
       <div className="mb-6">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('issues.description')}</h2>
         {isEditing ? (
-          <textarea value={form.description} onChange={(e) => setField('description', e.target.value)}
-            rows={8} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
+          <RichTextEditor
+            value={form.description}
+            onChange={(v) => setField('description', v)}
+            rows={8}
+            showAttachments={false}
+          />
         ) : (
           <div
-            className="prose prose-slate max-w-none rounded-xl border border-slate-200 bg-white p-6 shadow-sm prose-headings:font-semibold prose-a:text-primary-600"
+            className="rte-preview rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
             dangerouslySetInnerHTML={{ __html: descHtml || `<p class="text-slate-400">${t('app.noData')}</p>` }}
           />
         )}
@@ -487,34 +479,15 @@ export default function IssueDetailPage() {
         <section className="mb-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="mb-3 text-lg font-semibold text-slate-900">{t('issues.addComment')}</h2>
           <form onSubmit={submitComment} className="space-y-3">
-            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={4}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder={t('issues.addComment')} />
-
-            {/* File attachment area */}
-            <div>
-              <input ref={fileInputRef} type="file" multiple onChange={(e) => addFiles(e.target.files)}
-                className="hidden" id="comment-file-input" />
-              <button type="button" onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50">
-                <Paperclip className="h-4 w-4" />
-                {t('settings.attachments')}
-              </button>
-              {attachFiles.length > 0 && (
-                <ul className="mt-2 space-y-1">
-                  {attachFiles.map((f, idx) => (
-                    <li key={`${f.name}-${idx}`} className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-1.5 text-sm">
-                      <FileIcon className="h-4 w-4 shrink-0 text-slate-400" />
-                      <span className="min-w-0 flex-1 truncate text-slate-700">{f.name}</span>
-                      <span className="shrink-0 text-xs text-slate-400">{(f.size / 1024).toFixed(0)} KB</span>
-                      <button type="button" onClick={() => removeFile(idx)}
-                        className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-red-600">
-                        <XIcon className="h-3.5 w-3.5" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            <RichTextEditor
+              value={note}
+              onChange={setNote}
+              rows={4}
+              placeholder={t('issues.addComment')}
+              files={attachFiles}
+              onFilesChange={setAttachFiles}
+              showAttachments={true}
+            />
 
             <button type="submit"
               disabled={(updateMutation.isPending || uploadMutation.isPending) || (!note.trim() && attachFiles.length === 0)}

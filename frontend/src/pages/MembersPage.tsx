@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import ProjectSubNav from '../components/ProjectSubNav';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { UserPlus, UserMinus } from 'lucide-react';
-import { useProject, useMembers, useUsers, useRoles } from '../api/hooks';
+import { useMembers, useUsers, useRoles } from '../api/hooks';
 import api from '../api/client';
 import type { Member, User, Role } from '../types';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
@@ -23,12 +23,9 @@ export default function MembersPage() {
   const { identifier } = useParams<{ identifier: string }>();
   const qc = useQueryClient();
 
-  const { data: projectRaw } = useProject(identifier ?? '');
-  const project =
-    projectRaw && typeof projectRaw === 'object' && 'id' in projectRaw ? (projectRaw as { id: string }) : null;
-  const projectId = project?.id ?? '';
+  const slug = identifier ?? '';
 
-  const membersRaw = useMembers(projectId);
+  const membersRaw = useMembers(slug);
   const usersRaw = useUsers();
   const rolesRaw = useRoles();
 
@@ -36,19 +33,23 @@ export default function MembersPage() {
   const users = useMemo(() => unwrapList<User>(usersRaw.data), [usersRaw.data]);
   const roles = useMemo(() => unwrapList<Role>(rolesRaw.data).filter((r) => r.assignable), [rolesRaw.data]);
 
+  const existingUserIds = useMemo(() => new Set(members.map((m) => m.userId).filter(Boolean)), [members]);
+  const availableUsers = useMemo(() => users.filter((u) => !existingUserIds.has(u.id)), [users, existingUserIds]);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [userId, setUserId] = useState('');
   const [roleIds, setRoleIds] = useState<Set<string>>(new Set());
+  const [removeTarget, setRemoveTarget] = useState<Member | null>(null);
 
   const addMember = useMutation({
     mutationFn: async () => {
-      await api.post(`/projects/${projectId}/members`, {
+      await api.post(`/projects/${slug}/members`, {
         userId,
         roleIds: Array.from(roleIds),
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['members', projectId] });
+      qc.invalidateQueries({ queryKey: ['members', slug] });
       setModalOpen(false);
       setUserId('');
       setRoleIds(new Set());
@@ -57,9 +58,12 @@ export default function MembersPage() {
 
   const removeMember = useMutation({
     mutationFn: async (memberId: string) => {
-      await api.delete(`/projects/${projectId}/members/${memberId}`);
+      await api.delete(`/projects/${slug}/members/${memberId}`);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['members', projectId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['members', slug] });
+      setRemoveTarget(null);
+    },
   });
 
   const toggleRole = (id: string) => {
@@ -85,14 +89,14 @@ export default function MembersPage() {
     <div className="space-y-6">
       {identifier && <ProjectSubNav identifier={identifier} />}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900">{t('nav.members')}</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t('members.title')}</h1>
         <button
           type="button"
           onClick={() => setModalOpen(true)}
           className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
         >
           <UserPlus size={18} />
-          Add member
+          {t('members.addMember')}
         </button>
       </div>
 
@@ -100,8 +104,8 @@ export default function MembersPage() {
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 text-left text-gray-600">
             <tr>
-              <th className="px-4 py-3 font-medium">Name</th>
-              <th className="px-4 py-3 font-medium">Roles</th>
+              <th className="px-4 py-3 font-medium">{t('members.name')}</th>
+              <th className="px-4 py-3 font-medium">{t('members.roles')}</th>
               <th className="px-4 py-3 font-medium">{t('auth.email')}</th>
               <th className="px-4 py-3 font-medium w-24">{t('app.actions')}</th>
             </tr>
@@ -123,10 +127,10 @@ export default function MembersPage() {
                 <td className="px-4 py-2">
                   <button
                     type="button"
-                    onClick={() => removeMember.mutate(m.id)}
+                    onClick={() => setRemoveTarget(m)}
                     disabled={removeMember.isPending}
                     className="text-rose-600 hover:text-rose-800 p-1 disabled:opacity-50"
-                    title={t('app.delete')}
+                    title={t('members.removeMember')}
                   >
                     <UserMinus size={18} />
                   </button>
@@ -142,17 +146,17 @@ export default function MembersPage() {
         <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-            <DialogTitle className="text-lg font-semibold">Add member</DialogTitle>
+            <DialogTitle className="text-lg font-semibold">{t('members.addMember')}</DialogTitle>
             <div className="mt-4 space-y-4">
               <label className="block text-sm">
-                <span className="text-gray-700">User</span>
+                <span className="text-gray-700">{t('members.user')}</span>
                 <select
                   value={userId}
                   onChange={(e) => setUserId(e.target.value)}
                   className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 >
                   <option value="">—</option>
-                  {users.map((u) => (
+                  {availableUsers.map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.login} ({u.firstname} {u.lastname})
                     </option>
@@ -160,16 +164,29 @@ export default function MembersPage() {
                 </select>
               </label>
               <fieldset>
-                <legend className="text-sm text-gray-700 mb-2">Roles</legend>
+                <legend className="text-sm text-gray-700 mb-2">{t('members.roles')}</legend>
                 <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-100 rounded p-2">
                   {roles.map((r) => (
-                    <label key={r.id} className="flex items-center gap-2 text-sm">
-                      <input type="checkbox" checked={roleIds.has(r.id)} onChange={() => toggleRole(r.id)} />
+                    <label key={r.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={roleIds.has(r.id)}
+                        onChange={() => toggleRole(r.id)}
+                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      />
                       {r.name}
                     </label>
                   ))}
+                  {roles.length === 0 && (
+                    <p className="text-xs text-gray-400 py-2">{t('app.noData')}</p>
+                  )}
                 </div>
               </fieldset>
+              {addMember.isError && (
+                <p className="text-sm text-red-600">
+                  {(addMember.error as Error)?.message ?? t('app.error')}
+                </p>
+              )}
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => setModalOpen(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm">
                   {t('app.cancel')}
@@ -180,9 +197,39 @@ export default function MembersPage() {
                   onClick={() => addMember.mutate()}
                   className="rounded-lg bg-primary-600 px-4 py-2 text-sm text-white hover:bg-primary-700 disabled:opacity-50"
                 >
-                  {t('app.save')}
+                  {addMember.isPending ? t('app.loading') : t('app.save')}
                 </button>
               </div>
+            </div>
+          </DialogPanel>
+        </div>
+      </Dialog>
+
+      {/* Remove confirmation modal */}
+      <Dialog open={removeTarget !== null} onClose={() => setRemoveTarget(null)} className="relative z-50">
+        <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+            <DialogTitle className="text-lg font-semibold text-gray-900">{t('app.confirm')}</DialogTitle>
+            <p className="mt-3 text-sm text-gray-600">
+              <span className="font-medium text-gray-900">{removeTarget ? displayName(removeTarget) : ''}</span> を削除しますか？
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRemoveTarget(null)}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm"
+              >
+                {t('app.cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={removeMember.isPending}
+                onClick={() => removeTarget && removeMember.mutate(removeTarget.id)}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                {removeMember.isPending ? t('app.loading') : t('app.delete')}
+              </button>
             </div>
           </DialogPanel>
         </div>

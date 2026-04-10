@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useCreateIssue, useEnumerations, useProject, useStatuses, useTrackers, useUsers, useVersions } from '../api/hooks';
+import { useCreateIssue, useUploadAttachments, useEnumerations, useProject, useStatuses, useTrackers, useUsers, useVersions } from '../api/hooks';
+import RichTextEditor from '../components/RichTextEditor';
 
 export default function IssueNewPage() {
   const { t } = useTranslation();
@@ -19,6 +20,7 @@ export default function IssueNewPage() {
   const versionsQuery = useVersions(project?.id ?? '');
 
   const createMutation = useCreateIssue();
+  const uploadMutation = useUploadAttachments();
 
   const trackers = trackersQuery.data?.data ?? [];
   const statuses = statusesQuery.data?.data ?? [];
@@ -38,6 +40,7 @@ export default function IssueNewPage() {
   const [dueDate, setDueDate] = useState('');
   const [estimatedHours, setEstimatedHours] = useState('');
   const [doneRatio, setDoneRatio] = useState(0);
+  const [attachFiles, setAttachFiles] = useState<File[]>([]);
 
   useEffect(() => {
     if (trackers.length && !trackerId) setTrackerId(trackers[0].id);
@@ -47,7 +50,7 @@ export default function IssueNewPage() {
     if (statuses.length && !statusId) setStatusId(statuses[0].id);
   }, [statuses, statusId]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!project) return;
     createMutation.mutate(
@@ -67,13 +70,22 @@ export default function IssueNewPage() {
         doneRatio,
       },
       {
-        onSuccess: (res) => {
+        onSuccess: async (res) => {
           const issue = res.data;
+          if (issue?.id && attachFiles.length > 0) {
+            try {
+              await uploadMutation.mutateAsync({ files: attachFiles, issueId: issue.id });
+            } catch {
+              // navigate even if upload fails
+            }
+          }
           if (issue?.id) navigate(`/projects/${project.identifier}/issues/${issue.id}`);
         },
       },
     );
   };
+
+  const isPending = createMutation.isPending || uploadMutation.isPending;
 
   if (projectQuery.isLoading || !project) {
     return (
@@ -116,13 +128,15 @@ export default function IssueNewPage() {
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.description')}</label>
-          <textarea
+          <RichTextEditor
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={6}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
+            onChange={setDescription}
+            rows={8}
+            placeholder={t('issues.description')}
+            files={attachFiles}
+            onFilesChange={setAttachFiles}
+            showAttachments={true}
           />
-          <p className="mt-1 text-xs text-slate-500">Markdown</p>
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.status')}</label>
@@ -246,10 +260,10 @@ export default function IssueNewPage() {
         {createMutation.isError && <p className="text-sm text-red-600">{t('app.error')}</p>}
         <button
           type="submit"
-          disabled={createMutation.isPending}
+          disabled={isPending}
           className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60"
         >
-          {createMutation.isPending ? t('app.loading') : t('app.create')}
+          {isPending ? t('app.loading') : t('app.create')}
         </button>
       </form>
     </div>

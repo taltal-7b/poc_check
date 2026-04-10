@@ -36,6 +36,7 @@
     "versionMilestones": "バージョン（マイルストーン）",
     "estimatedFromCreated": "日付未設定のため作成日で表示"
   },
+  "members": { "title": "メンバー", "addMember": "メンバーを追加", "user": "ユーザー", "roles": "ロール", "name": "名前", "removeMember": "メンバーを削除" },
   "calendar": { "title": "カレンダー" },
   "import": { "title": "インポート", "csv": "CSVインポート", "selectFile": "ファイルを選択" },
   "export": { "title": "エクスポート", "csv": "CSV", "pdf": "PDF" }

@@ -31,10 +31,10 @@ export default function ProjectDetailPage() {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <Link to={`${base}/members`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm block hover:border-primary-300 hover:shadow transition-all">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{t('nav.members')}</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">{membersCount}</p>
-            </div>
+              <p className="mt-2 text-2xl font-semibold text-primary-600">{membersCount}</p>
+            </Link>
             <Link to={`${base}/issues`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm block hover:border-primary-300 hover:shadow transition-all">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.title')}</p>
               <p className="mt-2 text-2xl font-semibold text-primary-600">{openIssueCount}</p>

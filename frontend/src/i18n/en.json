@@ -36,6 +36,7 @@
     "versionMilestones": "Versions (milestones)",
     "estimatedFromCreated": "No dates set; shown using creation date"
   },
+  "members": { "title": "Members", "addMember": "Add member", "user": "User", "roles": "Roles", "name": "Name", "removeMember": "Remove member" },
   "calendar": { "title": "Calendar" },
   "import": { "title": "Import", "csv": "CSV Import", "selectFile": "Select file" },
   "export": { "title": "Export", "csv": "CSV", "pdf": "PDF" }
