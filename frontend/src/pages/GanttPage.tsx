@@ -19,8 +19,8 @@ import {
   subMonths,
 } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { useProject, useProjectIssues, useTrackers, useStatuses, useVersions } from '../api/hooks';
-import type { Issue, Tracker, IssueStatus, Version } from '../types';
+import { useProject, useProjectIssues, useVersions } from '../api/hooks';
+import type { Issue, Version } from '../types';
 
 function unwrapList<T>(raw: unknown): T[] {
   if (raw == null) return [];
@@ -33,10 +33,32 @@ function unwrapList<T>(raw: unknown): T[] {
 
 type Zoom = 'month' | 'week' | 'day';
 
-const trackerColors = ['bg-blue-500', 'bg-violet-500', 'bg-teal-500', 'bg-orange-500', 'bg-pink-500', 'bg-cyan-500'];
-const trackerBarColors = ['#3b82f6', '#8b5cf6', '#14b8a6', '#f97316', '#ec4899', '#06b6d4'];
-const statusColors = ['bg-slate-400', 'bg-amber-500', 'bg-emerald-500', 'bg-rose-500', 'bg-indigo-500'];
-const statusBarColors = ['#94a3b8', '#f59e0b', '#10b981', '#f43f5e', '#6366f1'];
+const BAR_GRAY = '#aab0b8';
+const BAR_GREEN = '#22c55e';
+const BAR_RED = '#ef4444';
+const TEXT_BLUE = '#2563eb';
+const TEXT_ORANGE = '#ea580c';
+const TEXT_RED = '#dc2626';
+const TEXT_CLOSED = '#9ca3af';
+
+function issueTextStyle(issue: Issue, today: Date): { color: string; strikethrough: boolean } {
+  if (issue.status?.isClosed) return { color: TEXT_CLOSED, strikethrough: true };
+
+  const due = parseDateOnly(issue.dueDate);
+  if (due && due < today && !issue.status?.isClosed) return { color: TEXT_RED, strikethrough: false };
+
+  const start = parseDateOnly(issue.startDate);
+  if (start && due && issue.doneRatio < 100) {
+    const totalDays = differenceInCalendarDays(due, start);
+    if (totalDays > 0) {
+      const elapsed = differenceInCalendarDays(today, start);
+      const expectedProgress = Math.min(100, Math.max(0, (elapsed / totalDays) * 100));
+      if (issue.doneRatio < expectedProgress) return { color: TEXT_ORANGE, strikethrough: false };
+    }
+  }
+
+  return { color: TEXT_BLUE, strikethrough: false };
+}
 
 function parseDateOnly(s: string | null | undefined): Date | null {
   if (!s) return null;
@@ -130,17 +152,13 @@ export default function GanttPage() {
 
   const issuesQuery = useProjectIssues(slug, { per_page: 100, page: 1 });
   const versionsQuery = useVersions(slug);
-  const trackersRaw = useTrackers();
-  const statusesRaw = useStatuses();
 
   const issues = useMemo(() => unwrapList<Issue>(issuesQuery.data), [issuesQuery.data]);
   const versions = useMemo(() => unwrapList<Version>(versionsQuery.data), [versionsQuery.data]);
-  const trackers = useMemo(() => unwrapList<Tracker>(trackersRaw.data), [trackersRaw.data]);
-  const statuses = useMemo(() => unwrapList<IssueStatus>(statusesRaw.data), [statusesRaw.data]);
 
-  const [colorMode, setColorMode] = useState<'tracker' | 'status'>('tracker');
   const [zoom, setZoom] = useState<Zoom>('day');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const today = startOfDay(new Date());
 
   const issueRows = useMemo(() => {
     const sorted = [...issues].sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
@@ -203,37 +221,6 @@ export default function GanttPage() {
     [chartStart, chartEnd, zoom],
   );
 
-  const trackerMap = useMemo(() => {
-    const m = new Map<string, string>();
-    trackers.forEach((tr, idx) => m.set(tr.id, trackerColors[idx % trackerColors.length]));
-    return m;
-  }, [trackers]);
-  const trackerBarMap = useMemo(() => {
-    const m = new Map<string, string>();
-    trackers.forEach((tr, idx) => m.set(tr.id, trackerBarColors[idx % trackerBarColors.length]));
-    return m;
-  }, [trackers]);
-
-  const statusMap = useMemo(() => {
-    const m = new Map<string, string>();
-    statuses.forEach((s, idx) => m.set(s.id, statusColors[idx % statusColors.length]));
-    return m;
-  }, [statuses]);
-  const statusBarMap = useMemo(() => {
-    const m = new Map<string, string>();
-    statuses.forEach((s, idx) => m.set(s.id, statusBarColors[idx % statusBarColors.length]));
-    return m;
-  }, [statuses]);
-
-  const barColorCls = (i: Issue) => {
-    if (colorMode === 'status') return statusMap.get(i.statusId) ?? 'bg-gray-400';
-    return trackerMap.get(i.trackerId) ?? 'bg-primary-600';
-  };
-  const barColorHex = (i: Issue) => {
-    if (colorMode === 'status') return statusBarMap.get(i.statusId) ?? '#94a3b8';
-    return trackerBarMap.get(i.trackerId) ?? '#3b82f6';
-  };
-
   const barLayout = (range: { start: Date; end: Date }) => {
     const s = startOfDay(range.start);
     const e = startOfDay(range.end);
@@ -276,22 +263,6 @@ export default function GanttPage() {
               </button>
             ))}
           </div>
-          <div className="flex rounded-lg border border-gray-200 p-0.5 text-xs">
-            <button
-              type="button"
-              onClick={() => setColorMode('tracker')}
-              className={`px-2 py-1 rounded ${colorMode === 'tracker' ? 'bg-primary-600 text-white' : 'text-gray-600'}`}
-            >
-              {t('issues.tracker')}
-            </button>
-            <button
-              type="button"
-              onClick={() => setColorMode('status')}
-              className={`px-2 py-1 rounded ${colorMode === 'status' ? 'bg-primary-600 text-white' : 'text-gray-600'}`}
-            >
-              {t('issues.status')}
-            </button>
-          </div>
         </div>
       </div>
 
@@ -320,21 +291,24 @@ export default function GanttPage() {
               {/* Issue rows */}
               {issueRows.map(({ issue }) => {
                 const hasSchedule = !!(issue.startDate || issue.dueDate);
+                const ts = issueTextStyle(issue, today);
                 return (
                   <div
                     key={issue.id}
-                    className="flex items-center border-b border-gray-100 pr-2 text-xs text-gray-800 truncate"
+                    className="flex items-center border-b border-gray-100 pr-2 text-xs truncate"
                     style={{ height: ROW_H, paddingLeft: 28 }}
                   >
                     <Link
                       to={`/projects/${identifier}/issues/${issue.id}`}
-                      className="text-primary-700 hover:underline font-medium shrink-0"
+                      className="hover:underline font-medium shrink-0"
+                      style={{ color: ts.color, textDecoration: ts.strikethrough ? 'line-through' : undefined }}
                     >
                       #{issue.number}
                     </Link>
                     <Link
                       to={`/projects/${identifier}/issues/${issue.id}`}
-                      className="ml-1.5 truncate text-gray-700 hover:text-primary-700 hover:underline"
+                      className="ml-1.5 truncate hover:underline"
+                      style={{ color: ts.color, textDecoration: ts.strikethrough ? 'line-through' : undefined }}
                     >
                       {issue.subject}
                     </Link>
@@ -443,11 +417,31 @@ export default function GanttPage() {
                     const range = issueEffectiveRange(issue);
                     const { left, width } = barLayout(range);
                     const cy = rowY + ROW_H / 2;
-                    const color = barColorHex(issue);
                     const issueUrl = `/projects/${identifier}/issues/${issue.id}`;
+                    const ts = issueTextStyle(issue, today);
 
                     const projectCy = ROW_H / 2;
                     const branchX = 6;
+
+                    const barH = 14;
+                    const barY = cy - barH / 2;
+                    const barW = Math.max(width, 4);
+
+                    const progressW = barW * (issue.doneRatio / 100);
+
+                    const start = parseDateOnly(issue.startDate);
+                    const due = parseDateOnly(issue.dueDate);
+                    let lateW = 0;
+                    if (start && due && !issue.status?.isClosed) {
+                      const totalSpan = differenceInCalendarDays(due, start);
+                      if (totalSpan > 0) {
+                        const elapsed = differenceInCalendarDays(today, start);
+                        const expectedPct = Math.min(100, Math.max(0, (elapsed / totalSpan) * 100));
+                        if (issue.doneRatio < expectedPct) {
+                          lateW = barW * ((expectedPct - issue.doneRatio) / 100);
+                        }
+                      }
+                    }
 
                     return (
                       <g key={issue.id}>
@@ -455,34 +449,32 @@ export default function GanttPage() {
                         <line x1={branchX} y1={cy} x2={Math.max(left, branchX + 4)} y2={cy} stroke="#c7d2fe" strokeWidth={1} />
 
                         <a href={issueUrl} className="cursor-pointer">
-                          <rect
-                            x={left}
-                            y={cy - 7}
-                            width={Math.max(width, 4)}
-                            height={14}
-                            rx={3}
-                            fill={color}
-                            opacity={0.9}
-                          />
-                          {issue.doneRatio > 0 && width > 6 && (
+                          {/* Gray: full scheduled span */}
+                          <rect x={left} y={barY} width={barW} height={barH} rx={3} fill={BAR_GRAY} />
+                          {/* Red: late portion (progress → expected) */}
+                          {lateW > 0 && (
                             <rect
-                              x={left + 1}
-                              y={cy - 4}
-                              width={Math.max(0, (width - 2) * (issue.doneRatio / 100))}
-                              height={8}
-                              rx={2}
-                              fill="rgba(255,255,255,0.45)"
+                              x={left + progressW}
+                              y={barY}
+                              width={Math.min(lateW, barW - progressW)}
+                              height={barH}
+                              rx={0}
+                              fill={BAR_RED}
                             />
                           )}
-                          <title>{`${issue.tracker?.name} #${issue.number}: ${issue.subject} (${format(range.start, 'yyyy-MM-dd')} → ${format(range.end, 'yyyy-MM-dd')})${issue.doneRatio > 0 ? ` ${issue.doneRatio}%` : ''}`}</title>
+                          {/* Green: progress portion */}
+                          {progressW > 0 && (
+                            <rect x={left} y={barY} width={progressW} height={barH} rx={3} fill={BAR_GREEN} />
+                          )}
+                          <title>{`${issue.tracker?.name} #${issue.number}: ${issue.subject}\n${format(range.start, 'yyyy-MM-dd')} → ${format(range.end, 'yyyy-MM-dd')}\n${isJa ? '進捗' : 'Progress'}: ${issue.doneRatio}%`}</title>
                         </a>
                         <a href={issueUrl}>
                           <text
-                            x={left + width + 4}
+                            x={left + barW + 4}
                             y={cy + 4}
                             fontSize={10}
-                            fill="#4338ca"
-                            className="cursor-pointer hover:underline"
+                            fill={ts.color}
+                            textDecoration={ts.strikethrough ? 'line-through' : undefined}
                           >
                             {issue.tracker?.name} #{issue.number}: {issue.subject}
                             {issue.doneRatio > 0 ? ` ${issue.doneRatio}%` : ''}
@@ -524,23 +516,22 @@ export default function GanttPage() {
           </div>
 
           {/* Legend */}
-          <div className="border-t border-gray-200 bg-gray-50/60 px-4 py-2.5 text-xs text-gray-500 flex flex-wrap items-center gap-x-4 gap-y-1">
+          <div className="border-t border-gray-200 bg-gray-50/60 px-4 py-2.5 text-xs text-gray-500 flex flex-wrap items-center gap-x-5 gap-y-1">
             <span className="font-medium">{t('gantt.legend')}</span>
-            {colorMode === 'tracker'
-              ? trackers.map((tr, idx) => (
-                  <span key={tr.id} className="inline-flex items-center gap-1">
-                    <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: trackerBarColors[idx % trackerBarColors.length] }} />
-                    {tr.name}
-                  </span>
-                ))
-              : statuses.map((s, idx) => (
-                  <span key={s.id} className="inline-flex items-center gap-1">
-                    <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: statusBarColors[idx % statusBarColors.length] }} />
-                    {s.name}
-                  </span>
-                ))}
-            <span className="inline-flex items-center gap-1 ml-2">
-              <span className="inline-block w-4 h-0.5 bg-red-500" style={{ borderTop: '2px dashed #ef4444' }} />
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block w-8 h-3 rounded" style={{ backgroundColor: BAR_GRAY }} />
+              {isJa ? '予定期間' : 'Scheduled'}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block w-8 h-3 rounded" style={{ backgroundColor: BAR_GREEN }} />
+              {isJa ? '進捗' : 'Progress'}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block w-8 h-3 rounded" style={{ backgroundColor: BAR_RED }} />
+              {isJa ? '遅れ' : 'Late'}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block w-4 h-0.5" style={{ borderTop: '2px dashed #ef4444' }} />
               {t('gantt.today')}
             </span>
           </div>
