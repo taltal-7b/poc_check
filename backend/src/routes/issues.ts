@@ -25,6 +25,7 @@ const ISSUE_JOURNAL_KEYS = [
   'dueDate',
   'estimatedHours',
   'doneRatio',
+  'repository',
 ] as const;
 
 function catchAsync(
@@ -190,6 +191,7 @@ const createIssueSchema = z.object({
   startDate: z.coerce.date().nullable().optional(),
   dueDate: z.coerce.date().nullable().optional(),
   estimatedHours: z.number().nullable().optional(),
+  repository: z.string().nullable().optional(),
 });
 
 const updateIssueSchema = z.object({
@@ -207,6 +209,7 @@ const updateIssueSchema = z.object({
   dueDate: z.coerce.date().nullable().optional(),
   estimatedHours: z.number().nullable().optional(),
   doneRatio: z.number().int().min(0).max(100).optional(),
+  repository: z.string().nullable().optional(),
   notes: z.string().optional(),
 });
 
@@ -392,6 +395,7 @@ router.post(
           dueDate: oldIssue.dueDate,
           estimatedHours: oldIssue.estimatedHours,
           doneRatio: oldIssue.doneRatio,
+          repository: oldIssue.repository,
         };
         const afterPlain: Record<string, unknown> = {
           projectId: next.projectId,
@@ -408,6 +412,7 @@ router.post(
           dueDate: next.dueDate,
           estimatedHours: next.estimatedHours,
           doneRatio: next.doneRatio,
+          repository: next.repository,
         };
 
         const details = buildJournalDetailsFromDiff(beforePlain, afterPlain, ISSUE_JOURNAL_KEYS);
@@ -745,6 +750,7 @@ router.get(
         category: true,
         version: true,
         parent: { select: { id: true, subject: true } },
+        children: { select: { id: true, number: true, subject: true } },
         journals: {
           orderBy: { createdAt: 'asc' },
           include: {
@@ -819,6 +825,7 @@ router.put(
     if (body.dueDate !== undefined) data.dueDate = body.dueDate;
     if (body.estimatedHours !== undefined) data.estimatedHours = body.estimatedHours;
     if (body.doneRatio !== undefined) data.doneRatio = body.doneRatio;
+    if (body.repository !== undefined) data.repository = body.repository;
 
     if (body.statusId !== undefined) {
       data.closedOn = st?.isClosed ? oldIssue.closedOn ?? new Date() : null;
@@ -847,6 +854,7 @@ router.put(
         dueDate: oldIssue.dueDate,
         estimatedHours: oldIssue.estimatedHours,
         doneRatio: oldIssue.doneRatio,
+        repository: oldIssue.repository,
       };
       const afterPlain: Record<string, unknown> = {
         projectId: next.projectId,
@@ -863,6 +871,7 @@ router.put(
         dueDate: next.dueDate,
         estimatedHours: next.estimatedHours,
         doneRatio: next.doneRatio,
+        repository: next.repository,
       };
 
       const details = buildJournalDetailsFromDiff(beforePlain, afterPlain, ISSUE_JOURNAL_KEYS);
@@ -956,6 +965,7 @@ router.post(
           startDate: body.startDate ?? null,
           dueDate: body.dueDate ?? null,
           estimatedHours: body.estimatedHours ?? null,
+          repository: body.repository ?? null,
           closedOn: st.isClosed ? new Date() : null,
         },
       });

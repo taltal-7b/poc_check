@@ -31,6 +31,7 @@ import memberRoutes from './routes/members';
 import enumerationRoutes from './routes/enumerations';
 import importExportRoutes from './routes/import-export';
 import myRoutes from './routes/my';
+import journalRoutes from './routes/journals';
 
 const app = express();
 
@@ -63,6 +64,7 @@ api.use('/import', importExportRoutes);
 api.use('/my', myRoutes);
 api.use('/news', newsRoutes);
 api.use('/versions', versionRoutes);
+api.use('/journals', journalRoutes);
 
 app.use('/api/v1', api);
 

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Clock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ja, enUS } from 'date-fns/locale';
-import { useIssues, useProjectIssues, useStatuses, useTrackers } from '../api/hooks';
+import { useIssues, useProjectIssues, useStatuses, useTrackers, useMembers } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 import ProjectSubNav from '../components/ProjectSubNav';
 import type { Issue } from '../types';
@@ -40,8 +40,8 @@ export default function IssuesPage() {
     () => ({
       page,
       perPage: PER_PAGE,
-      ...(trackerId ? { trackerId } : {}),
-      ...(statusId ? { statusId } : {}),
+      ...(trackerId ? { tracker: trackerId } : {}),
+      ...(statusId ? { status: statusId } : {}),
       ...(priority ? { priority: Number(priority) } : {}),
       ...(assignee.trim() ? { assignee: assignee.trim() } : {}),
     }),
@@ -61,6 +61,10 @@ export default function IssuesPage() {
   const statusesQuery = useStatuses();
   const trackers = trackersQuery.data?.data ?? [];
   const statuses = statusesQuery.data?.data ?? [];
+
+  // プロジェクト内のメンバーを取得（プロジェクト検索時のみ）
+  const membersQuery = useMembers(identifier ?? '');
+  const members = identifier ? (membersQuery.data?.data ?? []) : [];
 
   const setFilter = (key: string, value: string) => {
     setSearchParams((prev) => {
@@ -145,13 +149,22 @@ export default function IssuesPage() {
         </div>
         <div className="md:col-span-2 lg:col-span-2">
           <label className="mb-1 block text-xs font-medium text-slate-500">{t('issues.assignee')}</label>
-          <input
-            type="search"
+          <select
             value={assignee}
             onChange={(e) => setFilter('assignee', e.target.value)}
-            placeholder={t('app.search')}
             className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
-          />
+          >
+            <option value="">—</option>
+            {members.map((member) => (
+              <option key={member.userId} value={member.userId || ''}>
+                {member.user
+                  ? (member.user.firstname && member.user.lastname
+                      ? `${member.user.firstname} ${member.user.lastname}`
+                      : member.user.login)
+                  : '—'}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

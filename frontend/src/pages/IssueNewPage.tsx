@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useCreateIssue, useUploadAttachments, useEnumerations, useProject, useStatuses, useTrackers, useUsers, useVersions } from '../api/hooks';
+import { useCreateIssue, useUploadAttachments, useEnumerations, useProject, useStatuses, useTrackers, useUsers, useProjectIssues } from '../api/hooks';
 import RichTextEditor from '../components/RichTextEditor';
+import type { Issue } from '../types';
+
+function RequiredMark() {
+  return <span className="ml-0.5 text-red-500">*</span>;
+}
 
 export default function IssueNewPage() {
   const { t } = useTranslation();
@@ -17,7 +22,7 @@ export default function IssueNewPage() {
   const statusesQuery = useStatuses();
   const usersQuery = useUsers({ limit: 500 });
   const categoriesQuery = useEnumerations('IssueCategory');
-  const versionsQuery = useVersions(project?.id ?? '');
+  const projectIssuesQuery = useProjectIssues(project?.id ?? '', { perPage: 1000 }, { enabled: !!project?.id });
 
   const createMutation = useCreateIssue();
   const uploadMutation = useUploadAttachments();
@@ -26,7 +31,7 @@ export default function IssueNewPage() {
   const statuses = statusesQuery.data?.data ?? [];
   const users = usersQuery.data?.data ?? [];
   const categories = categoriesQuery.data?.data ?? [];
-  const versions = versionsQuery.data?.data ?? [];
+  const projectIssues = (projectIssuesQuery.data?.data ?? []) as Issue[];
 
   const [trackerId, setTrackerId] = useState('');
   const [subject, setSubject] = useState('');
@@ -35,11 +40,12 @@ export default function IssueNewPage() {
   const [priority, setPriority] = useState(2);
   const [assigneeId, setAssigneeId] = useState('');
   const [categoryId, setCategoryId] = useState('');
-  const [versionId, setVersionId] = useState('');
   const [startDate, setStartDate] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [estimatedHours, setEstimatedHours] = useState('');
   const [doneRatio, setDoneRatio] = useState(0);
+  const [repository, setRepository] = useState('');
+  const [parentId, setParentId] = useState('');
   const [attachFiles, setAttachFiles] = useState<File[]>([]);
 
   useEffect(() => {
@@ -63,11 +69,13 @@ export default function IssueNewPage() {
         priority,
         assigneeId: assigneeId || null,
         categoryId: categoryId || null,
-        versionId: versionId || null,
+        versionId: null,
+        parentId: parentId || null,
         startDate: startDate || null,
         dueDate: dueDate || null,
         estimatedHours: estimatedHours === '' ? null : Number(estimatedHours),
         doneRatio,
+        repository: repository.trim() || null,
       },
       {
         onSuccess: async (res) => {
@@ -103,7 +111,9 @@ export default function IssueNewPage() {
       </p>
       <form onSubmit={handleSubmit} className="space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.tracker')}</label>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            {t('issues.tracker')}<RequiredMark />
+          </label>
           <select
             value={trackerId}
             onChange={(e) => setTrackerId(e.target.value)}
@@ -111,14 +121,14 @@ export default function IssueNewPage() {
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           >
             {trackers.map((tr) => (
-              <option key={tr.id} value={tr.id}>
-                {tr.name}
-              </option>
+              <option key={tr.id} value={tr.id}>{tr.name}</option>
             ))}
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.subject')}</label>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            {t('issues.subject')}<RequiredMark />
+          </label>
           <input
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
@@ -139,7 +149,9 @@ export default function IssueNewPage() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.status')}</label>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            {t('issues.status')}<RequiredMark />
+          </label>
           <select
             value={statusId}
             onChange={(e) => setStatusId(e.target.value)}
@@ -147,23 +159,21 @@ export default function IssueNewPage() {
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           >
             {statuses.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
+              <option key={s.id} value={s.id}>{s.name}</option>
             ))}
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.priority')}</label>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            {t('issues.priority')}<RequiredMark />
+          </label>
           <select
             value={priority}
             onChange={(e) => setPriority(Number(e.target.value))}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           >
             {[1, 2, 3, 4, 5].map((n) => (
-              <option key={n} value={n}>
-                {t(`issues.priorities.${n}` as const)}
-              </option>
+              <option key={n} value={n}>{t(`issues.priorities.${n}` as const)}</option>
             ))}
           </select>
         </div>
@@ -176,9 +186,7 @@ export default function IssueNewPage() {
           >
             <option value="">—</option>
             {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.firstname} {u.lastname} ({u.login})
-              </option>
+              <option key={u.id} value={u.id}>{u.firstname} {u.lastname} ({u.login})</option>
             ))}
           </select>
         </div>
@@ -191,23 +199,21 @@ export default function IssueNewPage() {
           >
             <option value="">—</option>
             {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
+              <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.version')}</label>
+          <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.parent')}</label>
           <select
-            value={versionId}
-            onChange={(e) => setVersionId(e.target.value)}
+            value={parentId}
+            onChange={(e) => setParentId(e.target.value)}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           >
             <option value="">—</option>
-            {versions.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.name}
+            {projectIssues.map((iss) => (
+              <option key={iss.id} value={iss.id}>
+                #{iss.number} {iss.subject}
               </option>
             ))}
           </select>
@@ -255,6 +261,15 @@ export default function IssueNewPage() {
             value={doneRatio}
             onChange={(e) => setDoneRatio(Number(e.target.value))}
             className="w-full accent-primary-600"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.repository')}</label>
+          <input
+            value={repository}
+            onChange={(e) => setRepository(e.target.value)}
+            placeholder="https://github.com/..."
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
         {createMutation.isError && <p className="text-sm text-red-600">{t('app.error')}</p>}

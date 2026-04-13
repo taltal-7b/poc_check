@@ -4,16 +4,18 @@ import { useTranslation } from 'react-i18next';
 import { renderMarkdown } from '../components/RichTextEditor';
 import { format } from 'date-fns';
 import { ja, enUS } from 'date-fns/locale';
-import { Pencil, FileIcon, Download, Trash2 } from 'lucide-react';
+import { Pencil, FileIcon, Download, Trash2, Check, X } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
-import { useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useTrackers, useStatuses, useMembers } from '../api/hooks';
+import { useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useUpdateJournal, useDeleteJournal, useTrackers, useStatuses, useMembers, useProjectIssues } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
-import type { Issue, Journal, User, Attachment } from '../types';
+import type { Issue, Journal, JournalDetail, User, Attachment } from '../types';
 
 type IssueWithExtras = Issue & {
   watchers?: { user: User }[];
   relations?: { relationType?: string; issue: Issue }[];
   attachments?: (Attachment & { diskFilename?: string })[];
+  parent?: { id: string; subject: string };
+  children?: { id: string; number: number; subject: string }[];
 };
 
 interface EditForm {
@@ -23,10 +25,12 @@ interface EditForm {
   statusId: string;
   priority: string;
   assigneeId: string;
+  parentId: string;
   startDate: string;
   dueDate: string;
   estimatedHours: string;
   doneRatio: string;
+  repository: string;
 }
 
 function priorityBadgeClass(p: number) {
@@ -52,26 +56,44 @@ function displayDate(d: string | null): string {
 
 export default function IssueDetailPage() {
   const { t, i18n } = useTranslation();
-  const { identifier, issueId } = useParams<{ identifier?: string; issueId?: string }>();
+  const params = useParams<{ identifier?: string; issueId?: string }>();
+  const { identifier, issueId } = params;
   const id = issueId ?? '';
-  const { data, isLoading, isError } = useIssue(id);
+
+  // URLパラメータデバッグ
+  useEffect(() => {
+    console.log('IssueDetailPage params:', { identifier, issueId, id });
+  }, [identifier, issueId, id]);
+
+  const { data, isLoading, isError, error } = useIssue(id);
   const updateMutation = useUpdateIssue();
   const uploadMutation = useUploadAttachments();
   const deleteMutation = useDeleteAttachment();
+  const journalUpdateMutation = useUpdateJournal();
+  const journalDeleteMutation = useDeleteJournal();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const currentUser = useAuthStore((s) => s.user);
 
   const issue = data?.data as IssueWithExtras | undefined;
+
+  // デバッグログ
+  useEffect(() => {
+    console.log('IssueDetailPage:', { id, isLoading, isError, error, issueExists: !!issue });
+  }, [id, isLoading, isError, error, issue]);
 
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState<EditForm>({
     subject: '', description: '', trackerId: '', statusId: '',
-    priority: '2', assigneeId: '', startDate: '', dueDate: '',
-    estimatedHours: '', doneRatio: '0',
+    priority: '2', assigneeId: '', parentId: '', startDate: '', dueDate: '',
+    estimatedHours: '', doneRatio: '0', repository: '',
   });
   const [note, setNote] = useState('');
   const [attachFiles, setAttachFiles] = useState<File[]>([]);
   const [descHtml, setDescHtml] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; filename: string } | null>(null);
+  const [editingJournalId, setEditingJournalId] = useState<string | null>(null);
+  const [editingJournalNote, setEditingJournalNote] = useState('');
+  const [deleteJournalTarget, setDeleteJournalTarget] = useState<{ id: string; userName: string } | null>(null);
 
   const locale = i18n.language?.startsWith('ja') ? ja : enUS;
   const projectSlug = identifier ?? issue?.project?.identifier ?? '';
@@ -79,9 +101,11 @@ export default function IssueDetailPage() {
   const trackersQuery = useTrackers();
   const statusesQuery = useStatuses();
   const membersQuery = useMembers(issue?.project?.id ?? '');
+  const projectIssuesQuery = useProjectIssues(issue?.project?.id ?? '', { perPage: 1000 }, { enabled: !!issue?.project?.id });
   const trackers = trackersQuery.data?.data ?? [];
   const statuses = statusesQuery.data?.data ?? [];
   const members = membersQuery.data?.data ?? [];
+  const projectIssues = (projectIssuesQuery.data?.data ?? []).filter((iss) => iss.id !== id);
 
   useEffect(() => {
     const raw = issue?.description;
@@ -90,6 +114,12 @@ export default function IssueDetailPage() {
   }, [issue?.description]);
 
   const journals: Journal[] = useMemo(() => issue?.journals ?? [], [issue?.journals]);
+
+  if (isLoading) return <div className="mx-auto max-w-5xl px-4 py-8 text-center">{t('app.loading')}</div>;
+  if (isError || !issue) {
+    console.error('IssueDetailPage error:', { isError, isLoading, issue, data, error });
+    return <div className="mx-auto max-w-5xl px-4 py-8 text-center text-red-600">{t('app.error')}</div>;
+  }
 
   const enterEdit = () => {
     if (!issue) return;
@@ -100,10 +130,12 @@ export default function IssueDetailPage() {
       statusId: issue.statusId,
       priority: String(issue.priority),
       assigneeId: issue.assigneeId ?? '',
+      parentId: issue.parentId ?? '',
       startDate: toDateStr(issue.startDate),
       dueDate: toDateStr(issue.dueDate),
       estimatedHours: issue.estimatedHours != null ? String(issue.estimatedHours) : '',
       doneRatio: String(issue.doneRatio),
+      repository: (issue as Issue & { repository?: string }).repository ?? '',
     });
     setIsEditing(true);
   };
@@ -121,10 +153,12 @@ export default function IssueDetailPage() {
         statusId: form.statusId,
         priority: Number(form.priority),
         assigneeId: form.assigneeId || null,
+        parentId: form.parentId || null,
         startDate: form.startDate || null,
         dueDate: form.dueDate || null,
         estimatedHours: form.estimatedHours ? Number(form.estimatedHours) : null,
         doneRatio: Number(form.doneRatio),
+        repository: form.repository.trim() || null,
       },
       { onSuccess: () => setIsEditing(false) },
     );
@@ -162,6 +196,78 @@ export default function IssueDetailPage() {
     if (!deleteTarget) return;
     deleteMutation.mutate(deleteTarget.id, {
       onSuccess: () => setDeleteTarget(null),
+    });
+  };
+
+  const propKeyLabel = (key: string): string => {
+    const map: Record<string, string> = {
+      subject: t('issues.subject'),
+      description: t('issues.description'),
+      trackerId: t('issues.tracker'),
+      statusId: t('issues.status'),
+      priority: t('issues.priority'),
+      assigneeId: t('issues.assignee'),
+      categoryId: t('issues.category'),
+      versionId: t('issues.version'),
+      parentId: t('issues.parent'),
+      startDate: t('issues.startDate'),
+      dueDate: t('issues.dueDate'),
+      estimatedHours: t('issues.estimatedHours'),
+      doneRatio: t('issues.doneRatio'),
+      projectId: t('projects.title'),
+      repository: t('issues.repository'),
+    };
+    return map[key] ?? key;
+  };
+
+  const formatDetailValue = (detail: JournalDetail): string => {
+    if (detail.propKey === 'priority' && detail.newValue) {
+      return t(`issues.priorities.${detail.newValue}` as 'issues.priorities.1') || detail.newValue;
+    }
+    if (detail.propKey === 'doneRatio' && detail.newValue) return `${detail.newValue}%`;
+    if (detail.propKey === 'description') return '（変更あり）';
+    return detail.newValue ?? '';
+  };
+
+  const formatDetailOldValue = (detail: JournalDetail): string => {
+    if (detail.propKey === 'priority' && detail.oldValue) {
+      return t(`issues.priorities.${detail.oldValue}` as 'issues.priorities.1') || detail.oldValue;
+    }
+    if (detail.propKey === 'doneRatio' && detail.oldValue) return `${detail.oldValue}%`;
+    if (detail.propKey === 'description') return '（変更あり）';
+    return detail.oldValue ?? '';
+  };
+
+  const renderDetail = (detail: JournalDetail) => {
+    const label = propKeyLabel(detail.propKey);
+    if (detail.oldValue && detail.newValue) {
+      return <span><strong>{label}</strong> を <del className="text-red-500">{formatDetailOldValue(detail)}</del> から <ins className="text-green-600 no-underline">{formatDetailValue(detail)}</ins> に変更</span>;
+    }
+    if (detail.newValue) {
+      return <span><strong>{label}</strong> を <ins className="text-green-600 no-underline">{formatDetailValue(detail)}</ins> に設定</span>;
+    }
+    if (detail.oldValue) {
+      return <span><strong>{label}</strong>（<del className="text-red-500">{formatDetailOldValue(detail)}</del>）を削除</span>;
+    }
+    return <span><strong>{label}</strong> を変更</span>;
+  };
+
+  const startEditJournal = (j: Journal) => {
+    setEditingJournalId(j.id);
+    setEditingJournalNote(j.notes ?? '');
+  };
+  const cancelEditJournal = () => { setEditingJournalId(null); setEditingJournalNote(''); };
+  const saveEditJournal = () => {
+    if (!editingJournalId || !editingJournalNote.trim()) return;
+    journalUpdateMutation.mutate(
+      { id: editingJournalId, notes: editingJournalNote.trim() },
+      { onSuccess: () => cancelEditJournal() },
+    );
+  };
+  const confirmDeleteJournal = () => {
+    if (!deleteJournalTarget) return;
+    journalDeleteMutation.mutate(deleteJournalTarget.id, {
+      onSuccess: () => setDeleteJournalTarget(null),
     });
   };
 
@@ -245,6 +351,17 @@ export default function IssueDetailPage() {
               </select>
             </div>
             <div>
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.parent')}</label>
+              <select value={form.parentId} onChange={(e) => setField('parentId', e.target.value)} className={selectCls}>
+                <option value="">—</option>
+                {(projectIssues ?? []).map((iss) => (
+                  <option key={iss.id} value={iss.id}>
+                    #{(iss as Issue).number} {iss.subject}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.startDate')}</label>
               <input type="date" value={form.startDate} onChange={(e) => setField('startDate', e.target.value)} className={inputCls} />
             </div>
@@ -264,6 +381,11 @@ export default function IssueDetailPage() {
                   onChange={(e) => setField('doneRatio', e.target.value)} className="flex-1" />
                 <span className="w-12 text-right text-sm font-semibold text-slate-900">{form.doneRatio}%</span>
               </div>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.repository')}</label>
+              <input type="text" value={form.repository}
+                onChange={(e) => setField('repository', e.target.value)} placeholder="https://github.com/..." className={inputCls} />
             </div>
           </div>
         ) : (
@@ -291,6 +413,23 @@ export default function IssueDetailPage() {
                     <span className="text-sm font-medium text-slate-900">{issue.doneRatio}%</span>
                   </div>
                 ) },
+                ...((issue as Issue & { repository?: string }).repository ? [{
+                  label: t('issues.repository'),
+                  value: (() => {
+                    const repo = (issue as Issue & { repository?: string }).repository!;
+                    const isGitHub = /github\.com/i.test(repo);
+                    return (
+                      <span className="inline-flex items-center gap-1.5">
+                        {isGitHub && (
+                          <svg viewBox="0 0 16 16" className="h-4 w-4 shrink-0 text-slate-700" fill="currentColor">
+                            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                          </svg>
+                        )}
+                        <a href={repo} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline break-all">{repo}</a>
+                      </span>
+                    );
+                  })(),
+                }] : []),
               ].map((row, idx, arr) => (
                 <div key={row.label}
                   className={`flex items-center gap-3 px-5 py-3 ${idx < arr.length - (arr.length % 2 === 0 ? 2 : 1) ? 'sm:border-b sm:border-slate-100' : ''} ${idx % 2 === 0 ? 'sm:border-r sm:border-slate-100' : ''}`}>
@@ -359,7 +498,39 @@ export default function IssueDetailPage() {
         </div>
       )}
 
-      {/* Relations */}
+      {/* Parent issue and children */}
+      <div className="mb-6 grid grid-cols-1 gap-6 sm:grid-cols-2">
+        {issue.parent && (
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('issues.parent')}</h2>
+            <Link
+              to={projectSlug || issue.project?.identifier
+                ? `/projects/${projectSlug || issue.project?.identifier}/issues/${issue.parent.id}`
+                : `/issues/${issue.parent.id}`}
+              className="text-primary-600 hover:underline block truncate">
+              {issue.parent.subject}
+            </Link>
+          </div>
+        )}
+        {issue.children && issue.children.length > 0 && (
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('issues.children')}</h2>
+            <ul className="space-y-1">
+              {issue.children.map((child) => (
+                <li key={child.id}>
+                  <Link
+                    to={projectSlug || issue.project?.identifier
+                      ? `/projects/${projectSlug || issue.project?.identifier}/issues/${child.id}`
+                      : `/issues/${child.id}`}
+                    className="text-primary-600 hover:underline text-sm">
+                    #{child.number} {child.subject}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
       {relations.length > 0 && (
         <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('issues.relations')}</h2>
@@ -379,74 +550,173 @@ export default function IssueDetailPage() {
         </div>
       )}
 
-      {/* Activity */}
-      <section className="mb-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">{t('activity.title')}</h2>
-        {journals.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-400">{t('app.noData')}</p>
-        ) : (
-          <ul className="mt-4 space-y-4">
-            {journals.map((j) => {
-              const hasNotes = j.notes && j.notes.trim();
-              const imgs = (j.attachments ?? []).filter((a) => a.contentType?.startsWith('image/'));
-              const nonImgs = (j.attachments ?? []).filter((a) => !a.contentType?.startsWith('image/'));
-              if (!hasNotes && imgs.length === 0 && nonImgs.length === 0) return null;
-              return (
-                <li key={j.id} className="border-b border-slate-100 pb-4 last:border-0">
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                    <span className="font-medium text-slate-700">
-                      {j.user ? `${j.user.firstname} ${j.user.lastname}`.trim() || j.user.login : '—'}
-                    </span>
-                    <time dateTime={j.createdAt}>{format(new Date(j.createdAt), 'PPpp', { locale })}</time>
-                  </div>
-                  {hasNotes && <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">{j.notes}</p>}
-                  {imgs.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-3">
-                      {imgs.map((att) => (
-                        <div key={att.id} className="group/img relative">
-                          <a href={`/uploads/${att.diskFilename}`} target="_blank" rel="noreferrer"
-                            className="block overflow-hidden rounded-lg border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-                            <img src={`/uploads/${att.diskFilename}`} alt={att.filename}
-                              className="h-32 w-auto max-w-[200px] object-cover" loading="lazy" />
-                            <span className="absolute inset-x-0 bottom-0 bg-black/50 px-2 py-1 text-xs text-white truncate">
-                              {att.filename}
-                            </span>
-                          </a>
-                          {isAuthenticated && (
-                            <button type="button"
-                              onClick={() => setDeleteTarget({ id: att.id, filename: att.filename })}
-                              className="absolute -right-2 -top-2 hidden rounded-full bg-white p-1 shadow-md ring-1 ring-slate-200 hover:bg-red-50 hover:text-red-600 group-hover/img:block">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
+      {/* Activity (attribute changes only) */}
+      {(() => {
+        const activityJournals = journals.filter((j, jIdx) => {
+          const details = (j.details ?? []).filter((d) => !(jIdx === 0 && !d.oldValue));
+          return details.length > 0 && !(jIdx === 0 && details.every((d) => !d.oldValue));
+        });
+        if (!activityJournals.length) return null;
+        return (
+          <section className="mb-6 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <h2 className="text-sm font-semibold text-slate-900">{t('activity.title')}</h2>
+            <ul className="mt-1.5 divide-y divide-slate-100">
+              {activityJournals.map((j) => {
+                const details = (j.details ?? []).filter((d) => d.oldValue || d.newValue);
+                const userName = j.user ? `${j.user.firstname} ${j.user.lastname}`.trim() || j.user.login : '—';
+                return (
+                  <li key={j.id} className="py-1.5">
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-400 leading-tight">
+                      <span className="font-medium text-slate-600">{userName}</span>
+                      <span>·</span>
+                      <time dateTime={j.createdAt}>{format(new Date(j.createdAt), 'yyyy-MM-dd HH:mm', { locale })}</time>
                     </div>
-                  )}
-                  {nonImgs.length > 0 && (
-                    <ul className="mt-2 space-y-1">
-                      {nonImgs.map((att) => (
-                        <li key={att.id} className="flex items-center gap-2 text-sm">
-                          <FileIcon className="h-4 w-4 shrink-0 text-slate-400" />
-                          <a href={`/api/v1/attachments/${att.id}/download`} target="_blank" rel="noreferrer"
-                            className="text-primary-600 hover:underline truncate">{att.filename}</a>
-                          <span className="shrink-0 text-xs text-slate-400">{(att.filesize / 1024).toFixed(0)} KB</span>
-                          {isAuthenticated && (
-                            <button type="button" onClick={() => setDeleteTarget({ id: att.id, filename: att.filename })}
-                              className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-red-50 hover:text-red-600">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
+                    <ul className="mt-0.5">
+                      {details.map((d) => (
+                        <li key={d.id} className="flex items-start gap-1 text-[11px] leading-snug text-slate-500">
+                          <span className="mt-[5px] h-1 w-1 shrink-0 rounded-full bg-slate-300" />
+                          {renderDetail(d)}
                         </li>
                       ))}
                     </ul>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })()}
+
+      {/* Comments */}
+      {(() => {
+        const commentJournals = journals.filter((j) => {
+          const hasNotes = j.notes && j.notes.trim();
+          const imgs = (j.attachments ?? []).filter((a) => a.contentType?.startsWith('image/'));
+          const nonImgs = (j.attachments ?? []).filter((a) => !a.contentType?.startsWith('image/'));
+          return hasNotes || imgs.length > 0 || nonImgs.length > 0;
+        });
+        return (
+          <section className="mb-6 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <h2 className="text-sm font-semibold text-slate-900">{t('issues.addComment').replace('を追加', '')}</h2>
+            {commentJournals.length === 0 ? (
+              <p className="mt-1 text-xs text-slate-400">{t('app.noData')}</p>
+            ) : (
+              <ul className="mt-2 divide-y divide-slate-100">
+                {commentJournals.map((j) => {
+                  const hasNotes = j.notes && j.notes.trim();
+                  const imgs = (j.attachments ?? []).filter((a) => a.contentType?.startsWith('image/'));
+                  const nonImgs = (j.attachments ?? []).filter((a) => !a.contentType?.startsWith('image/'));
+                  const userName = j.user ? `${j.user.firstname} ${j.user.lastname}`.trim() || j.user.login : '—';
+                  const canEdit = isAuthenticated && (j.userId === currentUser?.id || currentUser?.admin);
+                  const isEdited = j.updatedAt && j.createdAt !== j.updatedAt;
+
+                  return (
+                    <li key={j.id} className="py-2">
+                      {/* Header row: user/time + edit/delete */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 leading-tight">
+                          <span className="font-medium text-slate-600">{userName}</span>
+                          <span>·</span>
+                          <time dateTime={j.createdAt}>{format(new Date(j.createdAt), 'yyyy-MM-dd HH:mm', { locale })}</time>
+                          {isEdited && <span className="text-slate-400">{t('activity.edited')}</span>}
+                        </div>
+                        {canEdit && hasNotes && editingJournalId !== j.id && (
+                          <div className="flex items-center gap-0.5">
+                            <button type="button" onClick={() => startEditJournal(j)}
+                              title={t('app.edit')}
+                              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button type="button"
+                              onClick={() => setDeleteJournalTarget({ id: j.id, userName })}
+                              title={t('app.delete')}
+                              className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-500">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Comment body */}
+                      {hasNotes && (
+                        editingJournalId === j.id ? (
+                          <div className="mt-1.5 space-y-1.5">
+                            <RichTextEditor
+                              value={editingJournalNote}
+                              onChange={setEditingJournalNote}
+                              rows={3}
+                              showAttachments={false}
+                            />
+                            <div className="flex items-center gap-1.5">
+                              <button type="button" onClick={saveEditJournal}
+                                disabled={journalUpdateMutation.isPending || !editingJournalNote.trim()}
+                                className="inline-flex items-center gap-0.5 rounded bg-primary-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-primary-700 disabled:opacity-50">
+                                <Check className="h-3 w-3" /> {t('app.save')}
+                              </button>
+                              <button type="button" onClick={cancelEditJournal}
+                                className="inline-flex items-center gap-0.5 rounded border border-slate-300 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100">
+                                <X className="h-3 w-3" /> {t('app.cancel')}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            className="rte-preview mt-1 text-xs text-slate-700 leading-relaxed"
+                            dangerouslySetInnerHTML={{ __html: renderMarkdown(j.notes!) }}
+                          />
+                        )
+                      )}
+
+                      {/* Attachment thumbnails */}
+                      {imgs.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-2">
+                          {imgs.map((att) => (
+                            <div key={att.id} className="group/img relative">
+                              <a href={`/uploads/${att.diskFilename}`} target="_blank" rel="noreferrer"
+                                className="block overflow-hidden rounded border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                                <img src={`/uploads/${att.diskFilename}`} alt={att.filename}
+                                  className="h-20 w-auto max-w-[140px] object-cover" loading="lazy" />
+                                <span className="absolute inset-x-0 bottom-0 bg-black/50 px-1.5 py-0.5 text-[10px] text-white truncate">
+                                  {att.filename}
+                                </span>
+                              </a>
+                              {isAuthenticated && (
+                                <button type="button"
+                                  onClick={() => setDeleteTarget({ id: att.id, filename: att.filename })}
+                                  className="absolute -right-1.5 -top-1.5 hidden rounded-full bg-white p-0.5 shadow ring-1 ring-slate-200 hover:bg-red-50 hover:text-red-600 group-hover/img:block">
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {nonImgs.length > 0 && (
+                        <ul className="mt-1 space-y-0">
+                          {nonImgs.map((att) => (
+                            <li key={att.id} className="flex items-center gap-1.5 text-xs">
+                              <FileIcon className="h-3 w-3 shrink-0 text-slate-400" />
+                              <a href={`/api/v1/attachments/${att.id}/download`} target="_blank" rel="noreferrer"
+                                className="text-primary-600 hover:underline truncate text-[11px]">{att.filename}</a>
+                              <span className="shrink-0 text-[10px] text-slate-400">{(att.filesize / 1024).toFixed(0)} KB</span>
+                              {isAuthenticated && (
+                                <button type="button" onClick={() => setDeleteTarget({ id: att.id, filename: att.filename })}
+                                  className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-red-50 hover:text-red-600">
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        );
+      })()}
 
       {/* Attachments */}
       {(issue.attachments?.length ?? 0) > 0 && (
@@ -498,7 +768,7 @@ export default function IssueDetailPage() {
         </section>
       )}
 
-      {/* Delete confirmation modal */}
+      {/* Delete attachment confirmation modal */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setDeleteTarget(null)}>
           <div className="mx-4 w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -515,6 +785,28 @@ export default function IssueDetailPage() {
               <button type="button" onClick={confirmDelete} disabled={deleteMutation.isPending}
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
                 {deleteMutation.isPending ? t('app.loading') : t('app.delete')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete comment confirmation modal */}
+      {deleteJournalTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setDeleteJournalTarget(null)}>
+          <div className="mx-4 w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-900">{t('app.confirm')}</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              このコメントを削除しますか？
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button type="button" onClick={() => setDeleteJournalTarget(null)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                いいえ
+              </button>
+              <button type="button" onClick={confirmDeleteJournal} disabled={journalDeleteMutation.isPending}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+                {journalDeleteMutation.isPending ? t('app.loading') : 'はい'}
               </button>
             </div>
           </div>

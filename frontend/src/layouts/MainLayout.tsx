@@ -2,7 +2,7 @@ import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../stores/auth';
 import { useMe } from '../api/hooks';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Menu, X, Search, User, LogOut, Settings, ChevronDown } from 'lucide-react';
 
 export default function MainLayout() {
@@ -13,7 +13,13 @@ export default function MainLayout() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  useMe();
+  const meQuery = useMe();
+
+  useEffect(() => {
+    if (meQuery.data?.data && isAuthenticated) {
+      setUser(meQuery.data.data as Parameters<typeof setUser>[0]);
+    }
+  }, [meQuery.data, isAuthenticated, setUser]);
 
   const handleLogout = () => {
     logout();
@@ -89,10 +95,6 @@ export default function MainLayout() {
                   />
                 </div>
               </form>
-
-              <button onClick={toggleLang} className="text-xs px-2 py-1 rounded bg-primary-600 hover:bg-primary-500">
-                {i18n.language === 'ja' ? 'EN' : 'JA'}
-              </button>
 
               {isAuthenticated ? (
                 <div className="relative">

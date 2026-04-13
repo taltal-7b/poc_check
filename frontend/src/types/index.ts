@@ -67,6 +67,8 @@ export interface Issue {
   status?: IssueStatus;
   author?: User;
   assignee?: User | null;
+  parent?: { id: string; subject: string };
+  children?: { id: string; number: number; subject: string }[];
   journals?: Journal[];
 }
 
@@ -77,6 +79,7 @@ export interface Journal {
   notes: string | null;
   private: boolean;
   createdAt: string;
+  updatedAt?: string | null;
   user?: User;
   details?: JournalDetail[];
   attachments?: Attachment[];

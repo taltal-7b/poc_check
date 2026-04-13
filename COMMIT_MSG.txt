@@ -1,0 +1,8 @@
+Fix critical bugs: issue detail page rendering and search filters
+
+- Fix missing useProjectIssues import in IssueDetailPage causing ReferenceError
+- Add early loading/error checks to prevent blank page rendering
+- Fix search parameter names (tracker, status) to match backend API expectations
+- Convert assignee filter from text input to dropdown with project members
+- Fix member data mapping (accessing user.id instead of member.id)
+- Add comprehensive debug logging for issue detail page initialization

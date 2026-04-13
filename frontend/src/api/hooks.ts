@@ -69,6 +69,22 @@ export const useCreateIssue = () => { const qc = useQueryClient(); return useMut
 export const useUpdateIssue = () => { const qc = useQueryClient(); return useMutation({ mutationFn: ({ id, ...body }: { id: string } & Record<string, unknown>) => put<Issue>(`/issues/${id}`, body), onSuccess: (_, v) => { qc.invalidateQueries({ queryKey: ['issues'] }); qc.invalidateQueries({ queryKey: ['issue', v.id] }); } }); };
 export const useDeleteIssue = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (id: string) => del(`/issues/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['issues'] }) }); };
 
+// ========== Journals ==========
+export const useUpdateJournal = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, notes }: { id: string; notes: string }) => put(`/journals/${id}`, { notes }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['issue'] }); },
+  });
+};
+export const useDeleteJournal = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/journals/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['issue'] }); },
+  });
+};
+
 // ========== Attachments ==========
 export const useDeleteAttachment = () => {
   const qc = useQueryClient();

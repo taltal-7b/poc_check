@@ -337,6 +337,7 @@ model Issue {
   dueDate        DateTime? @map("due_date")
   estimatedHours Float?    @map("estimated_hours")
   doneRatio      Int       @default(0) @map("done_ratio")
+  repository     String?
   closedOn       DateTime? @map("closed_on")
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
@@ -393,6 +394,7 @@ model Journal {
   notes       String?
   private     Boolean         @default(false)
   createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime?       @updatedAt @map("updated_at")
   details     JournalDetail[]
   attachments Attachment[]
 
