@@ -57,6 +57,7 @@ export default function App() {
         <Route index element={<HomePage />} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/new" element={<ProtectedRoute><ProjectNewPage /></ProtectedRoute>} />
+        <Route path="projects/:identifier/edit" element={<ProtectedRoute><ProjectNewPage isEdit /></ProtectedRoute>} />
         <Route path="projects/:identifier" element={<ProjectDetailPage />} />
         <Route path="projects/:identifier/settings" element={<ProtectedRoute><ProjectSettingsPage /></ProtectedRoute>} />
         <Route path="projects/:identifier/issues" element={<IssuesPage />} />

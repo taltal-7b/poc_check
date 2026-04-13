@@ -19,6 +19,7 @@ export interface Project {
   isPublic: boolean;
   status: number;
   parentId: string | null;
+  createdByUserId?: string;
   bookmarked: boolean;
   createdAt: string;
   updatedAt: string;

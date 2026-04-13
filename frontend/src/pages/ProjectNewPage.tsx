@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useCreateProject, useProjects, useTrackers } from '../api/hooks';
+import { ArrowLeft } from 'lucide-react';
+import { useCreateProject, useProject, useUpdateProject, useProjects, useTrackers } from '../api/hooks';
 
 const DEFAULT_MODULES = [
   'issue_tracking',
@@ -23,10 +24,13 @@ function toKebabIdentifier(name: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-export default function ProjectNewPage() {
+export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { identifier: projectId } = useParams<{ identifier?: string }>();
   const createMutation = useCreateProject();
+  const updateMutation = useUpdateProject();
+  const projectQuery = useProject(isEdit && projectId ? projectId : '');
   const projectsQuery = useProjects();
   const trackersQuery = useTrackers();
 
@@ -41,8 +45,28 @@ export default function ProjectNewPage() {
   );
   const [selectedTrackerIds, setSelectedTrackerIds] = useState<Record<string, boolean>>({});
 
+  const project = projectQuery.data?.data;
   const projects = projectsQuery.data?.data ?? [];
   const trackers = trackersQuery.data?.data ?? [];
+
+  // 編集モード時に既存データをロード
+  useEffect(() => {
+    if (isEdit && project) {
+      setName(project.name);
+      setIdentifier(project.identifier);
+      setIdentifierTouched(true);
+      setDescription(project.description || '');
+      setIsPublic(project.isPublic);
+      setParentId(project.parentId || '');
+      
+      // enabledModulesをセット
+      const modules: Record<string, boolean> = {};
+      DEFAULT_MODULES.forEach((m) => {
+        modules[m] = project.enabledModules?.some((em: any) => em.name === m) ?? true;
+      });
+      setEnabledModules(modules);
+    }
+  }, [isEdit, project]);
 
   useEffect(() => {
     if (trackers.length && Object.keys(selectedTrackerIds).length === 0) {
@@ -73,24 +97,38 @@ export default function ProjectNewPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const idf = identifier.trim() || toKebabIdentifier(name);
-    createMutation.mutate(
-      {
-        name: name.trim(),
-        identifier: idf,
-        description: description.trim() || null,
-        isPublic,
-        parentId: parentId || null,
-        status: 1,
-        enabledModules: moduleList,
-        trackerIds,
-      },
-      {
-        onSuccess: (res) => {
-          const created = res.data;
-          if (created?.identifier) navigate(`/projects/${created.identifier}`);
+    const data = {
+      name: name.trim(),
+      identifier: idf,
+      description: description.trim() || null,
+      isPublic,
+      parentId: parentId || null,
+      status: 1,
+      enabledModules: moduleList,
+      trackerIds,
+    };
+
+    if (isEdit && projectId) {
+      updateMutation.mutate(
+        { id: projectId, ...data },
+        {
+          onSuccess: (res) => {
+            const updated = res.data;
+            if (updated?.identifier) navigate(`/projects/${updated.identifier}`);
+          },
         },
-      },
-    );
+      );
+    } else {
+      createMutation.mutate(
+        data,
+        {
+          onSuccess: (res) => {
+            const created = res.data;
+            if (created?.identifier) navigate(`/projects/${created.identifier}`);
+          },
+        },
+      );
+    }
   };
 
   const toggleModule = (key: string) => {
@@ -103,7 +141,19 @@ export default function ProjectNewPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-6 text-2xl font-bold text-slate-900">{t('projects.new')}</h1>
+      <div className="mb-6 flex items-center gap-4">
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900"
+        >
+          <ArrowLeft className="h-5 w-5" />
+          {t('app.back')}
+        </button>
+      </div>
+      <h1 className="mb-6 text-2xl font-bold text-slate-900">
+        {isEdit ? t('app.edit') : t('projects.new')}
+      </h1>
       <form onSubmit={handleSubmit} className="space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">{t('projects.name')}</label>
@@ -198,10 +248,10 @@ export default function ProjectNewPage() {
         <div className="flex gap-3">
           <button
             type="submit"
-            disabled={createMutation.isPending}
+            disabled={createMutation.isPending || updateMutation.isPending}
             className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60"
           >
-            {createMutation.isPending ? t('app.loading') : t('app.create')}
+            {(createMutation.isPending || updateMutation.isPending) ? t('app.loading') : t('app.save')}
           </button>
         </div>
       </form>

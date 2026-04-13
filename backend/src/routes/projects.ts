@@ -63,6 +63,38 @@ async function userCanAccessProject(
   return !!member;
 }
 
+async function userCanManageProject(
+  userId: string | undefined,
+  isAdmin: boolean | undefined,
+  project: { id: string; createdByUserId?: string | null },
+): Promise<boolean> {
+  // システム管理者は全プロジェクトを管理できる
+  if (isAdmin) return true;
+  if (!userId) return false;
+
+  // プロジェクト作成者は管理できる
+  if (project.createdByUserId === userId) return true;
+
+  // プロジェクト内で「管理者」ロールを持つメンバーは管理できる
+  const adminRole = await prisma.role.findFirst({
+    where: { builtin: true, name: { contains: '管理者' } },
+  });
+
+  if (!adminRole) return false;
+
+  const memberWithAdminRole = await prisma.member.findFirst({
+    where: {
+      projectId: project.id,
+      userId,
+      memberRoles: {
+        some: { roleId: adminRole.id },
+      },
+    },
+  });
+
+  return !!memberWithAdminRole;
+}
+
 const createProjectSchema = z.object({
   name: z.string().min(1),
   identifier: z.string().min(1).regex(/^[a-z0-9_-]+$/i, 'identifier の形式が不正です'),
@@ -133,7 +165,19 @@ router.get(
         orderBy: { name: 'asc' },
         skip,
         take: perPage,
-        include: {
+        select: {
+          id: true,
+          name: true,
+          identifier: true,
+          description: true,
+          isPublic: true,
+          status: true,
+          parentId: true,
+          createdByUserId: true,
+          bookmarked: true,
+          createdAt: true,
+          updatedAt: true,
+          enabledModules: { select: { name: true } },
           _count: {
             select: { projectTrackers: true, members: true },
           },
@@ -158,8 +202,20 @@ router.get(
       where: {
         OR: [{ id: req.params.id }, { identifier: req.params.id }],
       },
-      include: {
-        enabledModules: true,
+      select: {
+        id: true,
+        name: true,
+        identifier: true,
+        description: true,
+        isPublic: true,
+        status: true,
+        parentId: true,
+        createdByUserId: true,
+        bookmarked: true,
+        createdAt: true,
+        updatedAt: true,
+        enabledModules: { select: { name: true } },
+        projectTrackers: { include: { tracker: true } },
         _count: {
           select: { projectTrackers: true, members: true },
         },
@@ -203,6 +259,7 @@ router.post(
           description: body.description ?? null,
           isPublic: body.isPublic ?? true,
           parentId: body.parentId ?? null,
+          createdByUserId: req.user!.userId,
         },
       });
 
@@ -237,6 +294,10 @@ router.put(
   catchAsync(async (req, res) => {
     const current = await resolveProjectRef(req.params.id);
     if (!current) throw AppError.notFound('プロジェクトが見つかりません');
+
+    // 権限チェック
+    const canManage = await userCanManageProject(req.user?.userId, req.user?.admin, current);
+    if (!canManage) throw AppError.forbidden('このプロジェクトを編集する権限がありません');
 
     const parsed = updateProjectSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -307,10 +368,13 @@ router.put(
 router.delete(
   '/:id',
   authenticate,
-  requireAdmin,
   catchAsync(async (req, res) => {
     const project = await resolveProjectRef(req.params.id);
     if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+
+    // 権限チェック
+    const canManage = await userCanManageProject(req.user?.userId, req.user?.admin, project);
+    if (!canManage) throw AppError.forbidden('このプロジェクトを削除する権限がありません');
 
     await prisma.project.delete({ where: { id: project.id } });
     return sendSuccess(res, { deleted: true });

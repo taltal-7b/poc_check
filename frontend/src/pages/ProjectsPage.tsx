@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useProjects } from '../api/hooks';
+import { MoreVertical, Pencil, Trash2 } from 'lucide-react';
+import { useProjects, useDeleteProject } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 import type { Project } from '../types';
 
@@ -25,8 +26,14 @@ function statusBadgeClass(status: number) {
 
 export default function ProjectsPage() {
   const { t } = useTranslation();
+  const user = useAuthStore((s) => s.user);
+  const isAdmin = useAuthStore((s) => s.user?.admin);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [tab, setTab] = useState<Tab>('active');
+  const [deleteMenuOpen, setDeleteMenuOpen] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  const deleteMutation = useDeleteProject();
 
   const params = useMemo(() => {
     if (tab === 'all') return undefined;
@@ -38,6 +45,18 @@ export default function ProjectsPage() {
   const { data, isLoading, isError } = useProjects(params);
 
   const projects: Project[] = data?.data ?? [];
+
+  const canManageProject = (project: Project): boolean => {
+    if (isAdmin) return true;
+    if (!user) return false;
+    return project.createdByUserId === user.id;
+  };
+
+  const handleDelete = async (projectId: string) => {
+    if (!deleteConfirm) return;
+    await deleteMutation.mutateAsync(projectId);
+    setDeleteConfirm(null);
+  };
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'active', label: t('projects.status.active') },
@@ -86,13 +105,15 @@ export default function ProjectsPage() {
 
       <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {projects.map((p) => (
-          <li key={p.id}>
-            <Link
-              to={`/projects/${p.identifier}`}
-              className="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-primary-300 hover:shadow-md"
-            >
+          <li key={p.id} className="relative">
+            <div className="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
               <div className="flex items-start justify-between gap-2">
-                <h2 className="text-lg font-semibold text-slate-900">{p.name}</h2>
+                <Link
+                  to={`/projects/${p.identifier}`}
+                  className="flex-1 hover:text-primary-600"
+                >
+                  <h2 className="text-lg font-semibold text-slate-900">{p.name}</h2>
+                </Link>
                 <span
                   className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${statusBadgeClass(p.status)}`}
                 >
@@ -101,7 +122,61 @@ export default function ProjectsPage() {
               </div>
               <p className="mt-1 font-mono text-xs text-slate-500">{p.identifier}</p>
               {p.description && <p className="mt-3 line-clamp-3 flex-1 text-sm text-slate-600">{p.description}</p>}
-            </Link>
+
+              {/* 権限がある場合のみボタンを表示 */}
+              {canManageProject(p) && (
+                <div className="mt-4 flex gap-2 border-t border-slate-200 pt-3">
+                  <Link
+                    to={`/projects/${p.identifier}/edit`}
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    {t('app.edit')}
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (deleteConfirm === p.id) {
+                        handleDelete(p.id);
+                      } else {
+                        setDeleteConfirm(p.id);
+                      }
+                    }}
+                    className={`inline-flex items-center justify-center rounded-lg px-2 py-1.5 text-sm font-medium transition ${
+                      deleteConfirm === p.id
+                        ? 'bg-red-600 text-white hover:bg-red-700'
+                        : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+
+              {/* 削除確認 */}
+              {deleteConfirm === p.id && (
+                <div className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-sm">
+                  <p className="font-medium text-red-900">本当に削除しますか？</p>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(p.id)}
+                      disabled={deleteMutation.isPending}
+                      className="flex-1 rounded bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {deleteMutation.isPending ? '削除中...' : '削除'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteConfirm(null)}
+                      className="flex-1 rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+                    >
+                      キャンセル
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </li>
         ))}
       </ul>

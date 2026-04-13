@@ -123,6 +123,7 @@ model Project {
   parentId     String?   @map("parent_id")
   parent       Project?  @relation("SubProjects", fields: [parentId], references: [id])
   children     Project[] @relation("SubProjects")
+  createdByUserId String? @map("created_by_user_id")
   status       Int       @default(1) // 1=active, 5=archived, 9=closed
   bookmarked   Boolean   @default(false)
   createdAt    DateTime  @default(now()) @map("created_at")
