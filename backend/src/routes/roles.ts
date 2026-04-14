@@ -15,7 +15,12 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
     const roles = await prisma.role.findMany({
       orderBy: [{ position: 'asc' }, { name: 'asc' }],
     });
-    return sendSuccess(res, roles);
+    // Normalize permissions to array format
+    const normalized = roles.map(r => ({
+      ...r,
+      permissions: Array.isArray(r.permissions) ? r.permissions : [],
+    }));
+    return sendSuccess(res, normalized);
   } catch (err) {
     next(err);
   }
@@ -28,7 +33,12 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     if (!role) {
       throw AppError.notFound('ロールが見つかりません');
     }
-    return sendSuccess(res, role);
+    // Normalize permissions to array format
+    const normalized = {
+      ...role,
+      permissions: Array.isArray(role.permissions) ? role.permissions : [],
+    };
+    return sendSuccess(res, normalized);
   } catch (err) {
     next(err);
   }
@@ -55,7 +65,12 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         permissions: (body.permissions ?? []) as Prisma.InputJsonValue,
       },
     });
-    return sendSuccess(res, role, 201);
+    // Normalize permissions to array format
+    const normalized = {
+      ...role,
+      permissions: Array.isArray(role.permissions) ? role.permissions : [],
+    };
+    return sendSuccess(res, normalized, 201);
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       return next(AppError.conflict('このロール名は既に使用されています'));
@@ -90,7 +105,12 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
       where: { id },
       data,
     });
-    return sendSuccess(res, role);
+    // Normalize permissions to array format
+    const normalized = {
+      ...role,
+      permissions: Array.isArray(role.permissions) ? role.permissions : [],
+    };
+    return sendSuccess(res, normalized);
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       return next(AppError.conflict('このロール名は既に使用されています'));

@@ -1,11 +1,17 @@
-Fix role edit functionality
+Fix permissions data format handling
 
 Issues fixed:
-- useCreateRole and useUpdateRole were converting permissions array to comma-separated string
-- Backend expects array format, not string
-- Improved role type detection logic for exact match comparison
+- JSON.parse error when permissions is already array format
+- Mixed data format (string vs array) causing crashes
+- Type mismatch between backend and frontend
 
 Changes:
-- Remove permissions.join(',') conversion in hooks
-- Send permissions as array directly to backend
-- Update role type detection to compare exact permission sets
+Backend:
+- Normalize permissions to array format in all endpoints
+- Ensure consistent data format in responses
+
+Frontend:
+- Add parsePermissions helper for safe parsing
+- Handle both string (legacy) and array (new) formats
+- Update Role type to accept string | string[]
+- Use parsePermissions in all permission handling code

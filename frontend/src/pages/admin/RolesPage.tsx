@@ -6,6 +6,22 @@ import type { Role } from '../../types';
 
 type RoleType = 'manager' | 'developer' | 'reporter' | 'viewer';
 
+// Helper function to safely parse permissions
+function parsePermissions(raw: any): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      // Fallback: comma-separated string
+      return raw.split(',').map(s => s.trim()).filter(Boolean);
+    }
+  }
+  return [];
+}
+
 const ROLE_TYPES: Record<RoleType, { label: string; description: string; permissions: string[] }> = {
   manager: {
     label: '管理者 (Manager)',
@@ -83,7 +99,7 @@ export default function RolesPage() {
     setEditRole(r);
     setName(r.name);
     // Try to detect role type from permissions by comparing exact match
-    const perms = new Set(r.permissions ? JSON.parse(r.permissions) : []);
+    const perms = new Set(parsePermissions(r.permissions));
     let detectedType: RoleType = 'developer';
     
     // Find exact match by comparing size and contents
@@ -144,7 +160,7 @@ export default function RolesPage() {
                 </tr>
               ) : (
                 sortedRoles.map(r => {
-                  const perms = new Set(r.permissions ? JSON.parse(r.permissions) : []);
+                  const perms = new Set(parsePermissions(r.permissions));
                   let detectedType: RoleType = 'developer';
                   for (const [type, config] of Object.entries(ROLE_TYPES)) {
                     const configPerms = new Set(config.permissions);
