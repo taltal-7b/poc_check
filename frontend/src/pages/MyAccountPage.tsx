@@ -79,22 +79,6 @@ export default function MyAccountPage() {
     onSuccess: (key) => setApiKeyPreview(key),
   });
 
-  const [totpEnabled, setTotpEnabled] = useState(false);
-  useEffect(() => {
-    if (me) setTotpEnabled(!!me.totpEnabled);
-  }, [me]);
-
-  const toggleTotp = useMutation({
-    mutationFn: async (enabled: boolean) => {
-      await api.put('/auth/totp', { enabled });
-      return enabled;
-    },
-    onSuccess: (enabled) => {
-      setTotpEnabled(enabled);
-      qc.invalidateQueries({ queryKey: ['me'] });
-    },
-  });
-
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState('');
 
@@ -229,22 +213,6 @@ export default function MyAccountPage() {
         >
           {t('myAccount.regenerate')}
         </button>
-      </section>
-
-      <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">{t('myAccount.twoFactor')}</h2>
-        <label className="flex items-center gap-3 text-sm">
-          <input
-            type="checkbox"
-            checked={totpEnabled}
-            onChange={(e) => toggleTotp.mutate(e.target.checked)}
-            disabled={toggleTotp.isPending}
-          />
-          <span>{t('myAccount.enableTotp')}</span>
-        </label>
-        <div className="mt-4 flex h-40 w-40 items-center justify-center rounded border-2 border-dashed border-gray-300 bg-gray-50 text-xs text-gray-500 text-center p-2">
-          {t('myAccount.qrCode')}
-        </div>
       </section>
 
       <section className="rounded-lg border border-rose-200 bg-rose-50/50 p-6">

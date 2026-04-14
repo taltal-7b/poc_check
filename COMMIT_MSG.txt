@@ -1,11 +1,5 @@
-Implement project management features: edit and delete
+Remove two-factor authentication feature
 
-- Add project edit page with permission-based access control
-- Add back button to project form for better UX
-- Change submit button text from "create" to "save" for both new and edit modes
-- Implement permission checks: admins and project creators can manage projects
-- Add support for project members with admin role to manage projects
-- Add createdByUserId field to Project model for permission tracking
-- Add project delete functionality with confirmation dialog
-- Fix project list query to include createdByUserId field
-- Update frontend Project type to include optional createdByUserId
+- Remove TOTP section from MyAccount page
+- Remove related state and mutation logic
+- Simplify account settings page
