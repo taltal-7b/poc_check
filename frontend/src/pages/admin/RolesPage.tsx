@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
-import { useRoles, useCreateRole, useUpdateRole } from '../../api/hooks';
+import { Pencil, Trash2 } from 'lucide-react';
+import { useRoles, useCreateRole, useUpdateRole, useDeleteRole } from '../../api/hooks';
 import type { Role } from '../../types';
 
 type RoleType = 'manager' | 'developer' | 'reporter' | 'viewer';
@@ -22,10 +23,17 @@ function parsePermissions(raw: any): string[] {
   return [];
 }
 
-const ROLE_TYPES: Record<RoleType, { label: string; description: string; permissions: string[] }> = {
+const ROLE_TYPES: Record<RoleType, { label: string; description: string; details: string[]; permissions: string[] }> = {
   manager: {
-    label: '管理者 (Manager)',
-    description: 'プロジェクト設定、メンバー管理、すべてのチケット操作が可能',
+    label: '管理者',
+    description: 'プロジェクトの全権限',
+    details: [
+      'プロジェクト設定の編集・削除',
+      'メンバー管理（追加・削除・ロール変更）',
+      'すべてのチケット操作（作成・編集・削除・ステータス変更）',
+      'バージョン、Wiki、フォーラム、文書の管理',
+      '工数・ガントチャート・カレンダーの閲覧・編集',
+    ],
     permissions: [
       'view_project', 'manage_project', 'edit_project', 'delete_project',
       'view_issues', 'add_issues', 'edit_issues', 'delete_issues', 'manage_issue_relations',
@@ -37,8 +45,16 @@ const ROLE_TYPES: Record<RoleType, { label: string; description: string; permiss
     ],
   },
   developer: {
-    label: '開発者 (Developer)',
-    description: 'チケットの作成・編集・削除、Wiki編集、工数登録が可能（メンバー管理は不可）',
+    label: '開発者',
+    description: '開発作業に必要な権限',
+    details: [
+      'チケットの作成・編集・削除',
+      'チケットのステータス・進捗率変更',
+      'すべてのチケットの閲覧とコメント',
+      'Wiki・文書の作成・編集',
+      '工数登録',
+      '※メンバー管理・プロジェクト設定変更は不可',
+    ],
     permissions: [
       'view_project',
       'view_issues', 'add_issues', 'edit_issues', 'edit_own_issues', 'delete_issues',
@@ -50,8 +66,15 @@ const ROLE_TYPES: Record<RoleType, { label: string; description: string; permiss
     ],
   },
   reporter: {
-    label: '報告者 (Reporter)',
-    description: 'チケットの作成・閲覧・コメント追加が可能（編集・削除・進捗率変更は不可）',
+    label: '報告者',
+    description: 'バグ報告・要望起案用の権限',
+    details: [
+      'チケットの作成・閲覧',
+      '自分が作成したチケットの編集',
+      'すべてのチケットへのコメント追加',
+      'Wiki・文書の閲覧',
+      '※他人のチケット編集・削除、進捗率変更は不可',
+    ],
     permissions: [
       'view_project',
       'view_issues', 'add_issues', 'edit_own_issues',
@@ -62,8 +85,13 @@ const ROLE_TYPES: Record<RoleType, { label: string; description: string; permiss
     ],
   },
   viewer: {
-    label: '閲覧者 (Viewer)',
-    description: 'すべてのコンテンツの閲覧とコメント追加のみ可能（作成・編集・削除は不可）',
+    label: '閲覧者',
+    description: '閲覧とコメントのみの権限',
+    details: [
+      'すべてのチケット・Wiki・文書の閲覧',
+      'チケット・フォーラムへのコメント追加',
+      '※チケット作成・編集・削除、ステータス変更は不可',
+    ],
     permissions: [
       'view_project',
       'view_issues',
@@ -81,9 +109,11 @@ export default function RolesPage() {
   const roles = rolesRes?.data ?? [];
   const createRole = useCreateRole();
   const updateRole = useUpdateRole();
+  const deleteRoleMutation = useDeleteRole();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editRole, setEditRole] = useState<Role | null>(null);
+  const [deleteRole, setDeleteRole] = useState<Role | null>(null);
   const [name, setName] = useState('');
   const [roleType, setRoleType] = useState<RoleType>('developer');
 
@@ -129,6 +159,12 @@ export default function RolesPage() {
     setEditRole(null);
   };
 
+  const handleDelete = async () => {
+    if (!deleteRole) return;
+    await deleteRoleMutation.mutateAsync(deleteRole.id);
+    setDeleteRole(null);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -136,6 +172,26 @@ export default function RolesPage() {
         <button type="button" onClick={openCreate} className="rounded bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700">
           {t('roles.new')}
         </button>
+      </div>
+
+      <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-4 space-y-3">
+        <h2 className="text-sm font-semibold text-blue-900">権限タイプについて</h2>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {Object.entries(ROLE_TYPES).map(([type, config]) => (
+            <div key={type} className="rounded-lg border border-blue-100 bg-white p-3">
+              <h3 className="text-sm font-semibold text-gray-900 mb-1">{config.label}</h3>
+              <p className="text-xs text-gray-600 mb-2">{config.description}</p>
+              <ul className="space-y-1">
+                {config.details.map((detail, idx) => (
+                  <li key={idx} className="text-xs text-gray-700 flex items-start gap-1">
+                    <span className="text-blue-600 mt-0.5">•</span>
+                    <span>{detail}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
       </div>
 
       {isLoading && <p className="text-gray-500">{t('app.loading')}</p>}
@@ -147,8 +203,8 @@ export default function RolesPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-3 py-2 text-left font-medium text-gray-600">ロール名</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-600">ロールタイプ</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-600">説明</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-600">権限タイプ</th>
+                <th className="px-3 py-2 text-center font-medium text-gray-600">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -169,15 +225,37 @@ export default function RolesPage() {
                       break;
                     }
                   }
+                  const isDeletable = r.builtin === 0;
                   return (
-                    <tr key={r.id} className="cursor-pointer hover:bg-gray-50" onClick={() => openEdit(r)}>
+                    <tr key={r.id} className="hover:bg-gray-50">
                       <td className="px-3 py-2 font-medium text-gray-900">{r.name}</td>
                       <td className="px-3 py-2">
                         <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
                           {ROLE_TYPES[detectedType].label}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-xs text-gray-600">{ROLE_TYPES[detectedType].description}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openEdit(r)}
+                            className="rounded p-1 text-blue-600 hover:bg-blue-50"
+                            title="編集"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          {isDeletable && (
+                            <button
+                              type="button"
+                              onClick={() => setDeleteRole(r)}
+                              className="rounded p-1 text-red-600 hover:bg-red-50"
+                              title="削除"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })
@@ -204,7 +282,7 @@ export default function RolesPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">ロールタイプ</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">権限タイプ</label>
                 <select
                   className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                   value={roleType}
@@ -250,7 +328,7 @@ export default function RolesPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">ロールタイプ</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">権限タイプ</label>
                 <select
                   className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                   value={roleType}
@@ -276,6 +354,31 @@ export default function RolesPage() {
                 </button>
               </div>
             </form>
+          </DialogPanel>
+        </div>
+      </Dialog>
+
+      <Dialog open={!!deleteRole} onClose={() => setDeleteRole(null)} className="relative z-50">
+        <div className="fixed inset-0 bg-black/40" aria-hidden />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <DialogTitle className="text-lg font-semibold text-gray-900">{t('app.confirm')}</DialogTitle>
+            <p className="mt-2 text-sm text-gray-600">
+              ロール「{deleteRole?.name}」を削除しますか？この操作は取り消せません。
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setDeleteRole(null)} className="rounded border border-gray-300 px-4 py-2 text-sm">
+                {t('app.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleteRoleMutation.isPending}
+                className="rounded bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {t('app.delete')}
+              </button>
+            </div>
           </DialogPanel>
         </div>
       </Dialog>

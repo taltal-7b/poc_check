@@ -201,6 +201,13 @@ export const useUpdateRole = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['roles'] }),
   });
 };
+export const useDeleteRole = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/roles/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['roles'] }),
+  });
+};
 
 // ========== Trackers (admin) ==========
 export const useCreateTracker = () => {

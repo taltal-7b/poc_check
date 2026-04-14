@@ -1,17 +1,21 @@
-Fix permissions data format handling
+Enhance role management UI and functionality
 
-Issues fixed:
-- JSON.parse error when permissions is already array format
-- Mixed data format (string vs array) causing crashes
-- Type mismatch between backend and frontend
+Features added:
+- Add delete functionality for custom roles (builtin roles cannot be deleted)
+- Add edit/delete buttons with modal confirmation
+- Add permission type descriptions at top of page
+- Show detailed permissions for each role type
 
-Changes:
-Backend:
-- Normalize permissions to array format in all endpoints
-- Ensure consistent data format in responses
+UI improvements:
+- Change "ロールタイプ" to "権限タイプ"
+- Remove "(Manager)" etc English labels, use Japanese only
+- Remove description column from table
+- Add action buttons (edit/delete) in table
+- Remove row click to edit, use explicit buttons instead
+- Add permission type details panel with 4 role types explained
 
-Frontend:
-- Add parsePermissions helper for safe parsing
-- Handle both string (legacy) and array (new) formats
-- Update Role type to accept string | string[]
-- Use parsePermissions in all permission handling code
+Role types defined:
+- 管理者: Full project and member management
+- 開発者: Development work permissions
+- 報告者: Bug reporting and viewing
+- 閲覧者: View only with comments
