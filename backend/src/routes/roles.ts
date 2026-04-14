@@ -82,6 +82,13 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = z.string().uuid().parse(req.params.id);
+    
+    // Check if trying to edit 管理者 role
+    const existingRole = await prisma.role.findUnique({ where: { id } });
+    if (existingRole?.name === '管理者') {
+      return next(AppError.forbidden('管理者ロールは編集できません'));
+    }
+    
     const body = z
       .object({
         name: z.string().min(1).max(255).optional(),
@@ -125,6 +132,13 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = z.string().uuid().parse(req.params.id);
+    
+    // Check if trying to delete 管理者 role
+    const existingRole = await prisma.role.findUnique({ where: { id } });
+    if (existingRole?.name === '管理者') {
+      return next(AppError.forbidden('管理者ロールは削除できません'));
+    }
+    
     await prisma.role.delete({ where: { id } });
     return sendSuccess(res, { ok: true });
   } catch (err) {

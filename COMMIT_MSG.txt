@@ -1,5 +1,15 @@
-Remove bullet point for items starting with ※
+Protect 管理者 role from editing and deletion
 
-- Check if detail text starts with ※
-- If yes, don't show bullet point (•)
-- Applied to both create and edit role modals
+Frontend:
+- Hide edit button for 管理者 role in table
+- Add check in openEdit() to prevent editing
+- Show "—" when no actions available
+- Prevent editing/deleting builtin roles and 管理者 role
+
+Backend:
+- Add validation to prevent editing 管理者 role (403 Forbidden)
+- Add validation to prevent deleting 管理者 role (403 Forbidden)
+- Check role name before update/delete operations
+
+This ensures the default 管理者 role cannot be accidentally
+modified or deleted, preventing system lockout scenarios.

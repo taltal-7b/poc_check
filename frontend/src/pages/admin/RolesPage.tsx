@@ -126,6 +126,11 @@ export default function RolesPage() {
   };
 
   const openEdit = (r: Role) => {
+    // 管理者ロールの編集を禁止
+    if (r.name === '管理者') {
+      return;
+    }
+    
     setEditRole(r);
     setName(r.name);
     // Try to detect role type from permissions by comparing exact match
@@ -217,7 +222,8 @@ export default function RolesPage() {
                       break;
                     }
                   }
-                  // 削除可能条件: builtin === 0 かつ 管理者ロールではない
+                  // 編集・削除可能条件: builtin === 0 かつ 管理者ロールではない
+                  const isEditable = r.builtin === 0 && r.name !== '管理者';
                   const isDeletable = r.builtin === 0 && r.name !== '管理者';
                   return (
                     <tr key={r.id} className="hover:bg-gray-50">
@@ -228,26 +234,32 @@ export default function RolesPage() {
                         </span>
                       </td>
                       <td className="px-3 py-2">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openEdit(r)}
-                            className="rounded p-1 text-blue-600 hover:bg-blue-50"
-                            title="編集"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          {isDeletable && (
-                            <button
-                              type="button"
-                              onClick={() => setDeleteRole(r)}
-                              className="rounded p-1 text-red-600 hover:bg-red-50"
-                              title="削除"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          )}
-                        </div>
+                        {(isEditable || isDeletable) ? (
+                          <div className="flex items-center justify-center gap-2">
+                            {isEditable && (
+                              <button
+                                type="button"
+                                onClick={() => openEdit(r)}
+                                className="rounded p-1 text-blue-600 hover:bg-blue-50"
+                                title="編集"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                            )}
+                            {isDeletable && (
+                              <button
+                                type="button"
+                                onClick={() => setDeleteRole(r)}
+                                className="rounded p-1 text-red-600 hover:bg-red-50"
+                                title="削除"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-center text-xs text-gray-400">—</div>
+                        )}
                       </td>
                     </tr>
                   );
