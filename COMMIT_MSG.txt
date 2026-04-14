@@ -1,21 +1,12 @@
-Enhance role management UI and functionality
+Fix role management UI and remove unused roles
 
-Features added:
-- Add delete functionality for custom roles (builtin roles cannot be deleted)
-- Add edit/delete buttons with modal confirmation
-- Add permission type descriptions at top of page
-- Show detailed permissions for each role type
+Changes:
+- Remove permission type description panel from top (already shown in modals)
+- Prevent deletion of "管理者" role (in addition to builtin roles)
+- Delete Non member and Anonymous roles from database
+- Show detailed permission descriptions in create/edit modals
+- Improve modal UX with role type details displayed on selection
 
-UI improvements:
-- Change "ロールタイプ" to "権限タイプ"
-- Remove "(Manager)" etc English labels, use Japanese only
-- Remove description column from table
-- Add action buttons (edit/delete) in table
-- Remove row click to edit, use explicit buttons instead
-- Add permission type details panel with 4 role types explained
-
-Role types defined:
-- 管理者: Full project and member management
-- 開発者: Development work permissions
-- 報告者: Bug reporting and viewing
-- 閲覧者: View only with comments
+Seed changes:
+- Remove Non member and Anonymous role creation
+- Add deletion of these roles for existing databases

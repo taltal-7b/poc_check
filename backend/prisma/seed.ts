@@ -39,17 +39,8 @@ async function main() {
     create: { name: '報告者', position: 3, permissions: JSON.stringify(['add_issues', 'view_issues', 'add_issue_notes', 'view_time_entries', 'view_wiki_pages', 'view_documents', 'view_files', 'view_news', 'view_messages', 'view_calendar', 'view_gantt']) },
   });
 
-  await prisma.role.upsert({
-    where: { name: 'Non member' },
-    update: {},
-    create: { name: 'Non member', position: 4, builtin: 1, permissions: JSON.stringify(['view_issues', 'view_wiki_pages', 'view_documents', 'view_files', 'view_news', 'view_messages', 'view_calendar', 'view_gantt']) },
-  });
-
-  await prisma.role.upsert({
-    where: { name: 'Anonymous' },
-    update: {},
-    create: { name: 'Anonymous', position: 5, builtin: 2, assignable: false, permissions: JSON.stringify(['view_issues', 'view_wiki_pages', 'view_news', 'view_calendar', 'view_gantt']) },
-  });
+  // Delete Non member and Anonymous roles if they exist
+  await prisma.role.deleteMany({ where: { name: { in: ['Non member', 'Anonymous'] } } });
 
   const statusNew = await prisma.issueStatus.upsert({ where: { name: '新規' }, update: {}, create: { name: '新規', position: 1 } });
   const statusInProgress = await prisma.issueStatus.upsert({ where: { name: '進行中' }, update: {}, create: { name: '進行中', position: 2 } });

@@ -174,26 +174,6 @@ export default function RolesPage() {
         </button>
       </div>
 
-      <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-4 space-y-3">
-        <h2 className="text-sm font-semibold text-blue-900">権限タイプについて</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {Object.entries(ROLE_TYPES).map(([type, config]) => (
-            <div key={type} className="rounded-lg border border-blue-100 bg-white p-3">
-              <h3 className="text-sm font-semibold text-gray-900 mb-1">{config.label}</h3>
-              <p className="text-xs text-gray-600 mb-2">{config.description}</p>
-              <ul className="space-y-1">
-                {config.details.map((detail, idx) => (
-                  <li key={idx} className="text-xs text-gray-700 flex items-start gap-1">
-                    <span className="text-blue-600 mt-0.5">•</span>
-                    <span>{detail}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {isLoading && <p className="text-gray-500">{t('app.loading')}</p>}
       {isError && <p className="text-red-600">{t('app.error')}</p>}
 
@@ -225,7 +205,8 @@ export default function RolesPage() {
                       break;
                     }
                   }
-                  const isDeletable = r.builtin === 0;
+                  // 削除可能条件: builtin === 0 かつ 管理者ロールではない
+                  const isDeletable = r.builtin === 0 && r.name !== '管理者';
                   return (
                     <tr key={r.id} className="hover:bg-gray-50">
                       <td className="px-3 py-2 font-medium text-gray-900">{r.name}</td>
@@ -294,9 +275,17 @@ export default function RolesPage() {
                     </option>
                   ))}
                 </select>
-                <p className="mt-2 text-xs text-gray-600">
-                  {ROLE_TYPES[roleType].description}
-                </p>
+                <div className="mt-2 rounded bg-blue-50 p-3 border border-blue-100">
+                  <p className="text-xs font-semibold text-blue-900 mb-1">{ROLE_TYPES[roleType].description}</p>
+                  <ul className="space-y-1">
+                    {ROLE_TYPES[roleType].details.map((detail, idx) => (
+                      <li key={idx} className="text-xs text-gray-700 flex items-start gap-1">
+                        <span className="text-blue-600 mt-0.5">•</span>
+                        <span>{detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
               <div className="flex justify-end gap-2 border-t border-gray-100 pt-4">
                 <button type="button" className="rounded border border-gray-300 px-4 py-2 text-sm" onClick={() => setCreateOpen(false)}>
@@ -341,9 +330,17 @@ export default function RolesPage() {
                     </option>
                   ))}
                 </select>
-                <p className="mt-2 text-xs text-gray-600">
-                  {ROLE_TYPES[roleType].description}
-                </p>
+                <div className="mt-2 rounded bg-blue-50 p-3 border border-blue-100">
+                  <p className="text-xs font-semibold text-blue-900 mb-1">{ROLE_TYPES[roleType].description}</p>
+                  <ul className="space-y-1">
+                    {ROLE_TYPES[roleType].details.map((detail, idx) => (
+                      <li key={idx} className="text-xs text-gray-700 flex items-start gap-1">
+                        <span className="text-blue-600 mt-0.5">•</span>
+                        <span>{detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
               <div className="flex justify-end gap-2 border-t border-gray-100 pt-4">
                 <button type="button" className="rounded border border-gray-300 px-4 py-2 text-sm" onClick={() => setEditRole(null)}>
