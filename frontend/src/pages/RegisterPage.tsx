@@ -55,7 +55,7 @@ export default function RegisterPage() {
           )}
           <div>
             <label htmlFor="reg-login" className="mb-1 block text-sm font-medium text-slate-700">
-              {t('auth.loginName')}
+              {t('auth.loginName')} <span className="text-red-600">*</span>
             </label>
             <input
               id="reg-login"
@@ -64,29 +64,16 @@ export default function RegisterPage() {
               autoComplete="username"
               value={login}
               onChange={(e) => setLogin(e.target.value)}
+              onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('この項目は必須です')}
+              onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
               required
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="firstname" className="mb-1 block text-sm font-medium text-slate-700">
-                {t('auth.firstname')}
-              </label>
-              <input
-                id="firstname"
-                name="firstname"
-                type="text"
-                autoComplete="given-name"
-                value={firstname}
-                onChange={(e) => setFirstname(e.target.value)}
-                required
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
-              />
-            </div>
-            <div>
               <label htmlFor="lastname" className="mb-1 block text-sm font-medium text-slate-700">
-                {t('auth.lastname')}
+                {t('auth.lastname')} <span className="text-red-600">*</span>
               </label>
               <input
                 id="lastname"
@@ -95,6 +82,25 @@ export default function RegisterPage() {
                 autoComplete="family-name"
                 value={lastname}
                 onChange={(e) => setLastname(e.target.value)}
+                onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('この項目は必須です')}
+                onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
+                required
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
+              />
+            </div>
+            <div>
+              <label htmlFor="firstname" className="mb-1 block text-sm font-medium text-slate-700">
+                {t('auth.firstname')} <span className="text-red-600">*</span>
+              </label>
+              <input
+                id="firstname"
+                name="firstname"
+                type="text"
+                autoComplete="given-name"
+                value={firstname}
+                onChange={(e) => setFirstname(e.target.value)}
+                onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('この項目は必須です')}
+                onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
                 required
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
               />
@@ -102,7 +108,7 @@ export default function RegisterPage() {
           </div>
           <div>
             <label htmlFor="email" className="mb-1 block text-sm font-medium text-slate-700">
-              {t('auth.email')}
+              {t('auth.email')} <span className="text-red-600">*</span>
             </label>
             <input
               id="email"
@@ -111,13 +117,22 @@ export default function RegisterPage() {
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              onInvalid={(e) => {
+                const input = e.target as HTMLInputElement;
+                if (input.validity.valueMissing) {
+                  input.setCustomValidity('この項目は必須です');
+                } else if (input.validity.typeMismatch) {
+                  input.setCustomValidity('有効なメールアドレスを入力してください');
+                }
+              }}
+              onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
               required
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
             />
           </div>
           <div>
             <label htmlFor="reg-password" className="mb-1 block text-sm font-medium text-slate-700">
-              {t('auth.password')}
+              {t('auth.password')} <span className="text-red-600">*</span>
             </label>
             <input
               id="reg-password"
@@ -126,6 +141,15 @@ export default function RegisterPage() {
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onInvalid={(e) => {
+                const input = e.target as HTMLInputElement;
+                if (input.validity.valueMissing) {
+                  input.setCustomValidity('この項目は必須です');
+                } else if (input.validity.tooShort) {
+                  input.setCustomValidity('パスワードは8文字以上で入力してください');
+                }
+              }}
+              onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
               required
               minLength={8}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
@@ -133,7 +157,7 @@ export default function RegisterPage() {
           </div>
           <div>
             <label htmlFor="confirmPassword" className="mb-1 block text-sm font-medium text-slate-700">
-              {t('auth.confirmPassword')}
+              {t('auth.confirmPassword')} <span className="text-red-600">*</span>
             </label>
             <input
               id="confirmPassword"
@@ -142,6 +166,8 @@ export default function RegisterPage() {
               autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
+              onInvalid={(e) => (e.target as HTMLInputElement).setCustomValidity('この項目は必須です')}
+              onInput={(e) => (e.target as HTMLInputElement).setCustomValidity('')}
               required
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
             />

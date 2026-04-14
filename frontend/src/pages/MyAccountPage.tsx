@@ -118,22 +118,22 @@ export default function MyAccountPage() {
       <h1 className="text-2xl font-bold text-gray-900">{t('nav.myAccount')}</h1>
 
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Profile</h2>
+        <h2 className="text-lg font-semibold text-gray-800 mb-4">{t('myAccount.profile')}</h2>
         <form onSubmit={saveProfile} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <label className="block text-sm">
-              <span className="text-gray-700">{t('auth.firstname')}</span>
-              <input
-                value={firstname}
-                onChange={(e) => setFirstname(e.target.value)}
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-              />
-            </label>
             <label className="block text-sm">
               <span className="text-gray-700">{t('auth.lastname')}</span>
               <input
                 value={lastname}
                 onChange={(e) => setLastname(e.target.value)}
+                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="text-gray-700">{t('auth.firstname')}</span>
+              <input
+                value={firstname}
+                onChange={(e) => setFirstname(e.target.value)}
                 className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
               />
             </label>
@@ -148,7 +148,7 @@ export default function MyAccountPage() {
             />
           </label>
           <label className="block text-sm">
-            <span className="text-gray-700">Language</span>
+            <span className="text-gray-700">{t('myAccount.language')}</span>
             <select
               value={language}
               onChange={(e) => setLanguage(e.target.value as 'ja' | 'en')}
@@ -179,7 +179,7 @@ export default function MyAccountPage() {
           }}
         >
           <label className="block text-sm">
-            <span className="text-gray-700">Current password</span>
+            <span className="text-gray-700">{t('auth.currentPassword')}</span>
             <input
               type="password"
               value={currentPassword}
@@ -188,7 +188,7 @@ export default function MyAccountPage() {
             />
           </label>
           <label className="block text-sm">
-            <span className="text-gray-700">New password</span>
+            <span className="text-gray-700">{t('auth.newPassword')}</span>
             <input
               type="password"
               value={newPassword}
@@ -216,8 +216,8 @@ export default function MyAccountPage() {
       </section>
 
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">API key</h2>
-        <p className="text-sm text-gray-600 mb-3">Regenerate your personal API access token.</p>
+        <h2 className="text-lg font-semibold text-gray-800 mb-4">{t('myAccount.apiKey')}</h2>
+        <p className="text-sm text-gray-600 mb-3">個人用APIアクセストークンを再生成します。</p>
         {apiKeyPreview && (
           <pre className="mb-3 rounded bg-gray-100 p-3 text-xs break-all">{apiKeyPreview}</pre>
         )}
@@ -227,12 +227,12 @@ export default function MyAccountPage() {
           disabled={regenerateKey.isPending}
           className="rounded-lg border border-amber-600 text-amber-800 px-4 py-2 text-sm font-medium hover:bg-amber-50 disabled:opacity-50"
         >
-          Regenerate
+          {t('myAccount.regenerate')}
         </button>
       </section>
 
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Two-factor authentication</h2>
+        <h2 className="text-lg font-semibold text-gray-800 mb-4">{t('myAccount.twoFactor')}</h2>
         <label className="flex items-center gap-3 text-sm">
           <input
             type="checkbox"
@@ -240,16 +240,16 @@ export default function MyAccountPage() {
             onChange={(e) => toggleTotp.mutate(e.target.checked)}
             disabled={toggleTotp.isPending}
           />
-          <span>Enable 2FA</span>
+          <span>{t('myAccount.enableTotp')}</span>
         </label>
         <div className="mt-4 flex h-40 w-40 items-center justify-center rounded border-2 border-dashed border-gray-300 bg-gray-50 text-xs text-gray-500 text-center p-2">
-          QR code placeholder
+          {t('myAccount.qrCode')}
         </div>
       </section>
 
       <section className="rounded-lg border border-rose-200 bg-rose-50/50 p-6">
-        <h2 className="text-lg font-semibold text-rose-900 mb-2">{t('app.delete')} account</h2>
-        <p className="text-sm text-rose-800/90 mb-4">This action cannot be undone.</p>
+        <h2 className="text-lg font-semibold text-rose-900 mb-2">{t('myAccount.deleteAccount')}</h2>
+        <p className="text-sm text-rose-800/90 mb-4">{t('myAccount.deleteWarning')}</p>
         <button
           type="button"
           onClick={() => setDeleteOpen(true)}
@@ -264,7 +264,7 @@ export default function MyAccountPage() {
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
             <DialogTitle className="text-lg font-semibold text-gray-900">{t('app.confirm')}</DialogTitle>
-            <p className="mt-2 text-sm text-gray-600">Type DELETE to confirm permanent account removal.</p>
+            <p className="mt-2 text-sm text-gray-600">{t('myAccount.deleteConfirm')}</p>
             <input
               value={deleteConfirm}
               onChange={(e) => setDeleteConfirm(e.target.value)}

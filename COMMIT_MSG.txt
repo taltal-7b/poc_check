@@ -1,8 +1,11 @@
-Fix critical bugs: issue detail page rendering and search filters
+Implement project management features: edit and delete
 
-- Fix missing useProjectIssues import in IssueDetailPage causing ReferenceError
-- Add early loading/error checks to prevent blank page rendering
-- Fix search parameter names (tracker, status) to match backend API expectations
-- Convert assignee filter from text input to dropdown with project members
-- Fix member data mapping (accessing user.id instead of member.id)
-- Add comprehensive debug logging for issue detail page initialization
+- Add project edit page with permission-based access control
+- Add back button to project form for better UX
+- Change submit button text from "create" to "save" for both new and edit modes
+- Implement permission checks: admins and project creators can manage projects
+- Add support for project members with admin role to manage projects
+- Add createdByUserId field to Project model for permission tracking
+- Add project delete functionality with confirmation dialog
+- Fix project list query to include createdByUserId field
+- Update frontend Project type to include optional createdByUserId

@@ -11,6 +11,7 @@ export default function MainLayout() {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   const meQuery = useMe();
@@ -68,15 +69,31 @@ export default function MainLayout() {
                   <Link key={l.to} to={l.to} className="px-3 py-1.5 rounded hover:bg-primary-600 text-sm font-medium transition">{l.label}</Link>
                 ))}
                 {adminLinks.length > 0 && (
-                  <div className="relative group">
-                    <button className="px-3 py-1.5 rounded hover:bg-primary-600 text-sm font-medium flex items-center gap-1">
+                  <div className="relative">
+                    <button 
+                      onClick={() => setAdminMenuOpen(!adminMenuOpen)}
+                      onMouseEnter={() => setAdminMenuOpen(true)}
+                      className="px-3 py-1.5 rounded hover:bg-primary-600 text-sm font-medium flex items-center gap-1"
+                    >
                       {t('nav.admin')} <ChevronDown size={14} />
                     </button>
-                    <div className="absolute left-0 top-full mt-1 bg-white text-gray-800 rounded-lg shadow-xl py-1 min-w-48 hidden group-hover:block z-50">
-                      {adminLinks.map(l => (
-                        <Link key={l.to} to={l.to} className="block px-4 py-2 hover:bg-gray-100 text-sm">{l.label}</Link>
-                      ))}
-                    </div>
+                    {adminMenuOpen && (
+                      <div 
+                        onMouseLeave={() => setAdminMenuOpen(false)}
+                        className="absolute left-0 top-full bg-white text-gray-800 rounded-lg shadow-xl py-1 min-w-48 z-50"
+                      >
+                        {adminLinks.map(l => (
+                          <Link 
+                            key={l.to} 
+                            to={l.to} 
+                            onClick={() => setAdminMenuOpen(false)}
+                            className="block px-4 py-2 hover:bg-gray-100 text-sm"
+                          >
+                            {l.label}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </nav>
