@@ -309,4 +309,46 @@ router.get(
   },
 );
 
+router.put(
+  '/password',
+  authenticate,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = z
+        .object({
+          currentPassword: z.string().min(1),
+          newPassword: z.string().min(8).max(128),
+          newPasswordConfirmation: z.string().min(1),
+        })
+        .parse(req.body);
+
+      if (body.newPassword !== body.newPasswordConfirmation) {
+        throw AppError.badRequest('新しいパスワードと確認用パスワードが一致しません');
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: req.user!.userId },
+      });
+      if (!user) {
+        throw AppError.notFound('ユーザーが見つかりません');
+      }
+
+      const ok = await bcrypt.compare(body.currentPassword, user.hashedPassword);
+      if (!ok) {
+        throw AppError.unauthorized('現在のパスワードが正しくありません');
+      }
+
+      const hashedPassword = await bcrypt.hash(body.newPassword, BCRYPT_ROUNDS);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { hashedPassword },
+      });
+
+      return sendSuccess(res, { ok: true, message: 'パスワードを変更しました' });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 export default router;

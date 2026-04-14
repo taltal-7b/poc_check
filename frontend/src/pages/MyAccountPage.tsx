@@ -53,6 +53,7 @@ export default function MyAccountPage() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordMessage, setPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const changePassword = useMutation({
     mutationFn: async () => {
@@ -66,6 +67,13 @@ export default function MyAccountPage() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      setPasswordMessage({ type: 'success', text: 'パスワードを変更しました' });
+      setTimeout(() => setPasswordMessage(null), 5000);
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error?.message || 'パスワードの変更に失敗しました';
+      setPasswordMessage({ type: 'error', text: message });
+      setTimeout(() => setPasswordMessage(null), 5000);
     },
   });
 
@@ -154,11 +162,26 @@ export default function MyAccountPage() {
 
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-800 mb-4">{t('auth.password')}</h2>
+        {passwordMessage && (
+          <div
+            className={`mb-4 rounded-lg px-4 py-3 text-sm ${
+              passwordMessage.type === 'success'
+                ? 'bg-green-50 text-green-800 border border-green-200'
+                : 'bg-red-50 text-red-800 border border-red-200'
+            }`}
+          >
+            {passwordMessage.text}
+          </div>
+        )}
         <form
           className="space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
-            if (newPassword !== confirmPassword) return;
+            if (newPassword !== confirmPassword) {
+              setPasswordMessage({ type: 'error', text: '新しいパスワードと確認用パスワードが一致しません' });
+              setTimeout(() => setPasswordMessage(null), 5000);
+              return;
+            }
             changePassword.mutate();
           }}
         >
@@ -191,7 +214,7 @@ export default function MyAccountPage() {
           </label>
           <button
             type="submit"
-            disabled={changePassword.isPending || !newPassword || newPassword !== confirmPassword}
+            disabled={changePassword.isPending || !newPassword || !currentPassword}
             className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
           >
             {t('app.save')}
