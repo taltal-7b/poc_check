@@ -146,23 +146,35 @@ export default function RolesPage() {
 
   const submitCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    const permissions = ROLE_TYPES[roleType].permissions;
-    await createRole.mutateAsync({ name, assignable: true, permissions });
-    setCreateOpen(false);
+    try {
+      const permissions = ROLE_TYPES[roleType].permissions;
+      await createRole.mutateAsync({ name, assignable: true, permissions });
+      setCreateOpen(false);
+    } catch (error) {
+      console.error('Failed to create role:', error);
+    }
   };
 
   const submitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editRole) return;
-    const permissions = ROLE_TYPES[roleType].permissions;
-    await updateRole.mutateAsync({ id: editRole.id, name, assignable: true, permissions });
-    setEditRole(null);
+    try {
+      const permissions = ROLE_TYPES[roleType].permissions;
+      await updateRole.mutateAsync({ id: editRole.id, name, assignable: true, permissions });
+      setEditRole(null);
+    } catch (error) {
+      console.error('Failed to update role:', error);
+    }
   };
 
   const handleDelete = async () => {
     if (!deleteRole) return;
-    await deleteRoleMutation.mutateAsync(deleteRole.id);
-    setDeleteRole(null);
+    try {
+      await deleteRoleMutation.mutateAsync(deleteRole.id);
+      setDeleteRole(null);
+    } catch (error) {
+      console.error('Failed to delete role:', error);
+    }
   };
 
   return (

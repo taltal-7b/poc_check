@@ -1,12 +1,14 @@
-Fix role management UI and remove unused roles
+Fix redirect issue after role update
+
+Issues fixed:
+- AdminRoute redirecting to "/" when user state temporarily null
+- Role update causing unexpected navigation to home page
 
 Changes:
-- Remove permission type description panel from top (already shown in modals)
-- Prevent deletion of "管理者" role (in addition to builtin roles)
-- Delete Non member and Anonymous roles from database
-- Show detailed permission descriptions in create/edit modals
-- Improve modal UX with role type details displayed on selection
+- Add loading state to AdminRoute when authenticated but user not loaded
+- Add try-catch to role submit handlers to prevent errors from causing redirects
+- Optimize useMe query with staleTime (5 min) and gcTime (10 min)
+- Keep user data cached longer to prevent unnecessary refetches
 
-Seed changes:
-- Remove Non member and Anonymous role creation
-- Add deletion of these roles for existing databases
+This prevents the AdminRoute guard from redirecting during
+role mutations when user state is briefly unavailable.

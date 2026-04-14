@@ -43,7 +43,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { user } = useAuthStore();
+  const { user, isAuthenticated } = useAuthStore();
+  
+  // 認証されているが、userがまだロードされていない場合は待つ
+  if (isAuthenticated && !user) {
+    return <div className="flex items-center justify-center min-h-screen">読み込み中...</div>;
+  }
+  
   return user?.admin ? <>{children}</> : <Navigate to="/" />;
 }
 

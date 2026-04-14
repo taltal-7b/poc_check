@@ -19,7 +19,13 @@ function del<T>(url: string) {
 }
 
 // ========== Auth ==========
-export const useMe = () => useQuery({ queryKey: ['me'], queryFn: () => get<User>('/auth/me'), retry: false });
+export const useMe = () => useQuery({ 
+  queryKey: ['me'], 
+  queryFn: () => get<User>('/auth/me'), 
+  retry: false,
+  staleTime: 5 * 60 * 1000, // 5 minutes - prevent frequent refetches
+  gcTime: 10 * 60 * 1000, // 10 minutes - keep in cache longer
+});
 export const useLogin = () =>
   useMutation({
     mutationFn: (body: { login: string; password: string; totpCode?: string }) =>
