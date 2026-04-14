@@ -1,5 +1,13 @@
-Add validation to prevent same password change
+Simplify role management to 4 role types
 
-- Check if new password is different from current password
-- Add debug logging for password change troubleshooting
-- Return clear error message when passwords match
+Role types:
+- Manager: Full project and member management access
+- Developer: Create/edit/delete tickets, edit wiki, log time
+- Reporter: Create tickets, view all, comment only
+- Viewer: View all content, comment only
+
+Changes:
+- Replace complex permission matrix with simple role type selector
+- Add role type descriptions for clarity
+- Update role list table to show role type and description
+- Auto-assign permissions based on selected role type
