@@ -326,6 +326,10 @@ router.put(
         throw AppError.badRequest('新しいパスワードと確認用パスワードが一致しません');
       }
 
+      if (body.currentPassword === body.newPassword) {
+        throw AppError.badRequest('新しいパスワードは現在のパスワードと異なるものを設定してください');
+      }
+
       const user = await prisma.user.findUnique({
         where: { id: req.user!.userId },
       });
@@ -333,7 +337,18 @@ router.put(
         throw AppError.notFound('ユーザーが見つかりません');
       }
 
+      console.log('[DEBUG] Password change attempt:', {
+        userId: user.id,
+        login: user.login,
+        hasCurrentPassword: !!body.currentPassword,
+        currentPasswordLength: body.currentPassword?.length,
+        hasHashedPassword: !!user.hashedPassword,
+        hashedPasswordPrefix: user.hashedPassword?.substring(0, 10),
+      });
+
       const ok = await bcrypt.compare(body.currentPassword, user.hashedPassword);
+      console.log('[DEBUG] Password comparison result:', ok);
+      
       if (!ok) {
         throw AppError.unauthorized('現在のパスワードが正しくありません');
       }
