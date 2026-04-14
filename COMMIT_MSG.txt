@@ -1,14 +1,5 @@
-Fix redirect issue after role update
+Remove bullet point for items starting with ※
 
-Issues fixed:
-- AdminRoute redirecting to "/" when user state temporarily null
-- Role update causing unexpected navigation to home page
-
-Changes:
-- Add loading state to AdminRoute when authenticated but user not loaded
-- Add try-catch to role submit handlers to prevent errors from causing redirects
-- Optimize useMe query with staleTime (5 min) and gcTime (10 min)
-- Keep user data cached longer to prevent unnecessary refetches
-
-This prevents the AdminRoute guard from redirecting during
-role mutations when user state is briefly unavailable.
+- Check if detail text starts with ※
+- If yes, don't show bullet point (•)
+- Applied to both create and edit role modals

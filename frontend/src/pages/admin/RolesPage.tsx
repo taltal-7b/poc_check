@@ -292,7 +292,7 @@ export default function RolesPage() {
                   <ul className="space-y-1">
                     {ROLE_TYPES[roleType].details.map((detail, idx) => (
                       <li key={idx} className="text-xs text-gray-700 flex items-start gap-1">
-                        <span className="text-blue-600 mt-0.5">•</span>
+                        {!detail.startsWith('※') && <span className="text-blue-600 mt-0.5">•</span>}
                         <span>{detail}</span>
                       </li>
                     ))}
@@ -347,7 +347,7 @@ export default function RolesPage() {
                   <ul className="space-y-1">
                     {ROLE_TYPES[roleType].details.map((detail, idx) => (
                       <li key={idx} className="text-xs text-gray-700 flex items-start gap-1">
-                        <span className="text-blue-600 mt-0.5">•</span>
+                        {!detail.startsWith('※') && <span className="text-blue-600 mt-0.5">•</span>}
                         <span>{detail}</span>
                       </li>
                     ))}
