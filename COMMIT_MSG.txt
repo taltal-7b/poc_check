@@ -1,13 +1,11 @@
-Simplify role management to 4 role types
+Fix role edit functionality
 
-Role types:
-- Manager: Full project and member management access
-- Developer: Create/edit/delete tickets, edit wiki, log time
-- Reporter: Create tickets, view all, comment only
-- Viewer: View all content, comment only
+Issues fixed:
+- useCreateRole and useUpdateRole were converting permissions array to comma-separated string
+- Backend expects array format, not string
+- Improved role type detection logic for exact match comparison
 
 Changes:
-- Replace complex permission matrix with simple role type selector
-- Add role type descriptions for clarity
-- Update role list table to show role type and description
-- Auto-assign permissions based on selected role type
+- Remove permissions.join(',') conversion in hooks
+- Send permissions as array directly to backend
+- Update role type detection to compare exact permission sets

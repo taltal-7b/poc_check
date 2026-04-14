@@ -82,15 +82,19 @@ export default function RolesPage() {
   const openEdit = (r: Role) => {
     setEditRole(r);
     setName(r.name);
-    // Try to detect role type from permissions
+    // Try to detect role type from permissions by comparing exact match
     const perms = new Set(r.permissions ? JSON.parse(r.permissions) : []);
     let detectedType: RoleType = 'developer';
+    
+    // Find exact match by comparing size and contents
     for (const [type, config] of Object.entries(ROLE_TYPES)) {
-      if (config.permissions.every(p => perms.has(p))) {
+      const configPerms = new Set(config.permissions);
+      if (perms.size === configPerms.size && [...perms].every(p => configPerms.has(p))) {
         detectedType = type as RoleType;
         break;
       }
     }
+    
     setRoleType(detectedType);
   };
 

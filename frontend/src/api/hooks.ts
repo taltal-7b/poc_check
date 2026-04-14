@@ -189,18 +189,15 @@ type RoleWriteBody = Omit<Partial<Role>, 'permissions'> & { permissions?: string
 export const useCreateRole = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: RoleWriteBody) => {
-      const { permissions, ...rest } = body;
-      return post<Role>('/roles', { ...rest, ...(permissions !== undefined ? { permissions: permissions.join(',') } : {}) });
-    },
+    mutationFn: (body: RoleWriteBody) => post<Role>('/roles', body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['roles'] }),
   });
 };
 export const useUpdateRole = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, permissions, ...body }: { id: string } & RoleWriteBody) =>
-      put<Role>(`/roles/${id}`, { ...body, ...(permissions !== undefined ? { permissions: permissions.join(',') } : {}) }),
+    mutationFn: ({ id, ...body }: { id: string } & RoleWriteBody) =>
+      put<Role>(`/roles/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['roles'] }),
   });
 };
