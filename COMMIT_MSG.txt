@@ -1,10 +1,6 @@
-Change role permission selection to 3-level system
+Fix permission UI layout and add calendar edit permission
 
-Features:
-- Replace 4 fixed role types with functional 3-level selection
-- Feature categories: Project, Issues, Wiki, News, Boards, Forum, Calendar, Files
-- Permission levels: 閲覧不可, 閲覧可能, 編集可能
-- Project category is always at least "閲覧可能"
-- Update UI to use pill-style selection buttons
-- Map simplified UI levels to detailed backend permissions
-- Maintain protection for default "管理者" role
+- Add 'manage_calendar' permission to Calendar feature
+- Fix permission button positions to be fixed even when buttons are hidden
+- Use fixed widths for permission labels and button containers
+- Ensure consistent vertical alignment across all features

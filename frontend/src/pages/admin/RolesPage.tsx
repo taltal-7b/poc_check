@@ -51,7 +51,7 @@ const FEATURES: FeaturePermission[] = [
     key: 'calendar',
     label: 'カレンダー',
     viewPerms: ['view_calendar'],
-    editPerms: [], // Calendar is usually view only, but linked to issues
+    editPerms: ['manage_calendar'], // カレンダーの編集権限を追加
   },
   {
     key: 'files',
@@ -178,45 +178,55 @@ export default function RolesPage() {
     <div className="space-y-4">
       {FEATURES.map(f => (
         <div key={f.key} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-          <span className="text-sm font-medium text-gray-700">{f.label}</span>
+          <span className="text-sm font-medium text-gray-700 w-24">{f.label}</span>
           <div className="flex gap-2">
-            {f.canDisable !== false && (
+            <div className="w-20 flex justify-center">
+              {f.canDisable !== false ? (
+                <button
+                  type="button"
+                  onClick={() => setFeatureLevels(prev => ({ ...prev, [f.key]: 'none' }))}
+                  className={`w-full py-1 text-xs rounded-full border ${
+                    featureLevels[f.key] === 'none'
+                      ? 'bg-gray-100 border-gray-300 text-gray-700 font-semibold'
+                      : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  閲覧不可
+                </button>
+              ) : (
+                <div className="w-full h-6"></div>
+              )}
+            </div>
+            <div className="w-20 flex justify-center">
               <button
                 type="button"
-                onClick={() => setFeatureLevels(prev => ({ ...prev, [f.key]: 'none' }))}
-                className={`px-3 py-1 text-xs rounded-full border ${
-                  featureLevels[f.key] === 'none'
-                    ? 'bg-gray-100 border-gray-300 text-gray-700 font-semibold'
+                onClick={() => setFeatureLevels(prev => ({ ...prev, [f.key]: 'view' }))}
+                className={`w-full py-1 text-xs rounded-full border ${
+                  featureLevels[f.key] === 'view'
+                    ? 'bg-blue-50 border-blue-300 text-blue-700 font-semibold'
                     : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
                 }`}
               >
-                閲覧不可
+                閲覧可能
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setFeatureLevels(prev => ({ ...prev, [f.key]: 'view' }))}
-              className={`px-3 py-1 text-xs rounded-full border ${
-                featureLevels[f.key] === 'view'
-                  ? 'bg-blue-50 border-blue-300 text-blue-700 font-semibold'
-                  : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-              }`}
-            >
-              閲覧可能
-            </button>
-            {f.editPerms.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setFeatureLevels(prev => ({ ...prev, [f.key]: 'edit' }))}
-                className={`px-3 py-1 text-xs rounded-full border ${
-                  featureLevels[f.key] === 'edit'
-                    ? 'bg-green-50 border-green-300 text-green-700 font-semibold'
-                    : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                }`}
-              >
-                編集可能
-              </button>
-            )}
+            </div>
+            <div className="w-20 flex justify-center">
+              {f.editPerms.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setFeatureLevels(prev => ({ ...prev, [f.key]: 'edit' }))}
+                  className={`w-full py-1 text-xs rounded-full border ${
+                    featureLevels[f.key] === 'edit'
+                      ? 'bg-green-50 border-green-300 text-green-700 font-semibold'
+                      : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  編集可能
+                </button>
+              ) : (
+                <div className="w-full h-6"></div>
+              )}
+            </div>
           </div>
         </div>
       ))}
