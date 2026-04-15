@@ -1,15 +1,10 @@
-Protect 管理者 role from editing and deletion
+Change role permission selection to 3-level system
 
-Frontend:
-- Hide edit button for 管理者 role in table
-- Add check in openEdit() to prevent editing
-- Show "—" when no actions available
-- Prevent editing/deleting builtin roles and 管理者 role
-
-Backend:
-- Add validation to prevent editing 管理者 role (403 Forbidden)
-- Add validation to prevent deleting 管理者 role (403 Forbidden)
-- Check role name before update/delete operations
-
-This ensures the default 管理者 role cannot be accidentally
-modified or deleted, preventing system lockout scenarios.
+Features:
+- Replace 4 fixed role types with functional 3-level selection
+- Feature categories: Project, Issues, Wiki, News, Boards, Forum, Calendar, Files
+- Permission levels: 閲覧不可, 閲覧可能, 編集可能
+- Project category is always at least "閲覧可能"
+- Update UI to use pill-style selection buttons
+- Map simplified UI levels to detailed backend permissions
+- Maintain protection for default "管理者" role
