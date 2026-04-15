@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { renderMarkdown } from '../components/RichTextEditor';
@@ -376,6 +376,91 @@ export default function IssueDetailPage() {
 
   const selectCls = 'w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500';
   const inputCls = selectCls;
+  const issueDetailBase = projectSlug || issue.project?.identifier
+    ? `/projects/${projectSlug || issue.project?.identifier}/issues`
+    : '/issues';
+  const repositoryValue = (issue as Issue & { repository?: string }).repository;
+  const propertyRows: Array<{ key: string; label: string; value: ReactNode }> = [
+    { key: 'tracker', label: t('issues.tracker'), value: <span className="font-medium text-slate-900">{issue.tracker?.name ?? '—'}</span> },
+    { key: 'status', label: t('issues.status'), value: <span className="font-medium text-slate-900">{issue.status?.name ?? '—'}</span> },
+    {
+      key: 'priority',
+      label: t('issues.priority'),
+      value: (
+        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${priorityBadgeClass(issue.priority)}`}>
+          {t(`issues.priorities.${issue.priority}` as 'issues.priorities.1')}
+        </span>
+      ),
+    },
+    {
+      key: 'assignee',
+      label: t('issues.assignee'),
+      value: issue.assignee
+        ? <Link to={`/users/${issue.assignee.id}`} className="font-medium text-primary-600 hover:underline">{assigneeName}</Link>
+        : <span className="font-medium text-slate-900">—</span>,
+    },
+    { key: 'startDate', label: t('issues.startDate'), value: <span className="text-slate-900">{displayDate(issue.startDate)}</span> },
+    { key: 'dueDate', label: t('issues.dueDate'), value: <span className="text-slate-900">{displayDate(issue.dueDate)}</span> },
+    { key: 'estimatedHours', label: t('issues.estimatedHours'), value: <span className="text-slate-900">{issue.estimatedHours != null ? `${issue.estimatedHours}h` : '—'}</span> },
+    {
+      key: 'doneRatio',
+      label: t('issues.doneRatio'),
+      value: (
+        <div className="flex items-center gap-3">
+          <div className="h-2 w-32 overflow-hidden rounded-full bg-slate-200">
+            <div className="h-full rounded-full bg-primary-500 transition-all" style={{ width: `${issue.doneRatio}%` }} />
+          </div>
+          <span className="text-sm font-medium text-slate-900">{issue.doneRatio}%</span>
+        </div>
+      ),
+    },
+    {
+      key: 'parent',
+      label: t('issues.parent'),
+      value: issue.parent
+        ? (
+          <Link to={`${issueDetailBase}/${issue.parent.id}`} className="text-primary-600 hover:underline">
+            {issue.parent.subject}
+          </Link>
+        )
+        : <span className="text-slate-900">—</span>,
+    },
+    ...(repositoryValue ? [{
+      key: 'repository',
+      label: t('issues.repository'),
+      value: (() => {
+        const repo = repositoryValue;
+        const isGitHub = /github\.com/i.test(repo);
+        return (
+          <span className="inline-flex items-center gap-1.5">
+            {isGitHub && (
+              <svg viewBox="0 0 16 16" className="h-4 w-4 shrink-0 text-slate-700" fill="currentColor">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+              </svg>
+            )}
+            <a href={repo} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline break-all">{repo}</a>
+          </span>
+        );
+      })(),
+    }] : []),
+    {
+      key: 'children',
+      label: t('issues.children'),
+      value: issue.children && issue.children.length > 0
+        ? (
+          <ul className="space-y-0.5">
+            {issue.children.map((child) => (
+              <li key={child.id}>
+                <Link to={`${issueDetailBase}/${child.id}`} className="text-primary-600 hover:underline text-sm">
+                  #{child.number} {child.subject}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )
+        : <span className="text-slate-900">—</span>,
+    },
+  ];
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
@@ -445,17 +530,6 @@ export default function IssueDetailPage() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.parent')}</label>
-              <select value={form.parentId} onChange={(e) => setField('parentId', e.target.value)} className={selectCls}>
-                <option value="">—</option>
-                {(projectIssues ?? []).map((iss) => (
-                  <option key={iss.id} value={iss.id}>
-                    #{(iss as Issue).number} {iss.subject}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.startDate')}</label>
               <input type="date" value={form.startDate} onChange={(e) => setField('startDate', e.target.value)} className={inputCls} />
             </div>
@@ -476,7 +550,18 @@ export default function IssueDetailPage() {
                 <span className="w-12 text-right text-sm font-semibold text-slate-900">{form.doneRatio}%</span>
               </div>
             </div>
-            <div className="sm:col-span-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.parent')}</label>
+              <select value={form.parentId} onChange={(e) => setField('parentId', e.target.value)} className={selectCls}>
+                <option value="">—</option>
+                {(projectIssues ?? []).map((iss) => (
+                  <option key={iss.id} value={iss.id}>
+                    #{(iss as Issue).number} {iss.subject}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.repository')}</label>
               <input type="text" value={form.repository}
                 onChange={(e) => setField('repository', e.target.value)} placeholder="https://github.com/..." className={inputCls} />
@@ -485,47 +570,8 @@ export default function IssueDetailPage() {
         ) : (
           <>
             <div className="grid grid-cols-1 divide-y divide-slate-100 sm:grid-cols-2 sm:divide-y-0">
-              {[
-                { label: t('issues.tracker'), value: <span className="font-medium text-slate-900">{issue.tracker?.name ?? '—'}</span> },
-                { label: t('issues.status'), value: <span className="font-medium text-slate-900">{issue.status?.name ?? '—'}</span> },
-                { label: t('issues.priority'), value: (
-                  <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${priorityBadgeClass(issue.priority)}`}>
-                    {t(`issues.priorities.${issue.priority}` as 'issues.priorities.1')}
-                  </span>
-                ) },
-                { label: t('issues.assignee'), value: issue.assignee
-                  ? <Link to={`/users/${issue.assignee.id}`} className="font-medium text-primary-600 hover:underline">{assigneeName}</Link>
-                  : <span className="font-medium text-slate-900">—</span> },
-                { label: t('issues.startDate'), value: <span className="text-slate-900">{displayDate(issue.startDate)}</span> },
-                { label: t('issues.dueDate'), value: <span className="text-slate-900">{displayDate(issue.dueDate)}</span> },
-                { label: t('issues.estimatedHours'), value: <span className="text-slate-900">{issue.estimatedHours != null ? `${issue.estimatedHours}h` : '—'}</span> },
-                { label: t('issues.doneRatio'), value: (
-                  <div className="flex items-center gap-3">
-                    <div className="h-2 w-32 overflow-hidden rounded-full bg-slate-200">
-                      <div className="h-full rounded-full bg-primary-500 transition-all" style={{ width: `${issue.doneRatio}%` }} />
-                    </div>
-                    <span className="text-sm font-medium text-slate-900">{issue.doneRatio}%</span>
-                  </div>
-                ) },
-                ...((issue as Issue & { repository?: string }).repository ? [{
-                  label: t('issues.repository'),
-                  value: (() => {
-                    const repo = (issue as Issue & { repository?: string }).repository!;
-                    const isGitHub = /github\.com/i.test(repo);
-                    return (
-                      <span className="inline-flex items-center gap-1.5">
-                        {isGitHub && (
-                          <svg viewBox="0 0 16 16" className="h-4 w-4 shrink-0 text-slate-700" fill="currentColor">
-                            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
-                          </svg>
-                        )}
-                        <a href={repo} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline break-all">{repo}</a>
-                      </span>
-                    );
-                  })(),
-                }] : []),
-              ].map((row, idx, arr) => (
-                <div key={row.label}
+              {propertyRows.map((row, idx, arr) => (
+                <div key={row.key}
                   className={`flex items-center gap-3 px-5 py-3 ${idx < arr.length - (arr.length % 2 === 0 ? 2 : 1) ? 'sm:border-b sm:border-slate-100' : ''} ${idx % 2 === 0 ? 'sm:border-r sm:border-slate-100' : ''}`}>
                   <dt className="w-24 shrink-0 text-xs font-medium uppercase tracking-wide text-slate-500">{row.label}</dt>
                   <dd className="min-w-0 flex-1 text-sm">{row.value}</dd>
@@ -592,39 +638,6 @@ export default function IssueDetailPage() {
         </div>
       )}
 
-      {/* Parent issue and children */}
-      <div className="mb-6 grid grid-cols-1 gap-6 sm:grid-cols-2">
-        {issue.parent && (
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('issues.parent')}</h2>
-            <Link
-              to={projectSlug || issue.project?.identifier
-                ? `/projects/${projectSlug || issue.project?.identifier}/issues/${issue.parent.id}`
-                : `/issues/${issue.parent.id}`}
-              className="text-primary-600 hover:underline block truncate">
-              {issue.parent.subject}
-            </Link>
-          </div>
-        )}
-        {issue.children && issue.children.length > 0 && (
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('issues.children')}</h2>
-            <ul className="space-y-1">
-              {issue.children.map((child) => (
-                <li key={child.id}>
-                  <Link
-                    to={projectSlug || issue.project?.identifier
-                      ? `/projects/${projectSlug || issue.project?.identifier}/issues/${child.id}`
-                      : `/issues/${child.id}`}
-                    className="text-primary-600 hover:underline text-sm">
-                    #{child.number} {child.subject}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
       {relations.length > 0 && (
         <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('issues.relations')}</h2>
