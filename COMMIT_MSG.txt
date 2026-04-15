@@ -1,6 +1,7 @@
-Fix permission UI layout and add calendar edit permission
+Fix role sorting order and add error messages
 
-- Add 'manage_calendar' permission to Calendar feature
-- Fix permission button positions to be fixed even when buttons are hidden
-- Use fixed widths for permission labels and button containers
-- Ensure consistent vertical alignment across all features
+Changes:
+- Fix role list sorting: "管理者", "開発者", "報告者" are always at the top, followed by other roles in chronological order (oldest first).
+- Remove default backend sorting to allow frontend-side custom sorting logic.
+- Add error message display in create and edit role modals (e.g., for duplicate role names).
+- Reset error state when opening modals.

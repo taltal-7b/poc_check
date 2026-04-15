@@ -89,6 +89,7 @@ export default function RolesPage() {
   const [deleteRole, setDeleteRole] = useState<Role | null>(null);
   const [name, setName] = useState('');
   const [featureLevels, setFeatureLevels] = useState<Record<string, PermissionLevel>>({});
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const initial: Record<string, PermissionLevel> = {};
@@ -98,10 +99,30 @@ export default function RolesPage() {
     setFeatureLevels(initial);
   }, []);
 
-  const sortedRoles = useMemo(() => [...roles].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)), [roles]);
+  const sortedRoles = useMemo(() => {
+    const defaultRoleNames = ['管理者', '開発者', '報告者'];
+    
+    // 1. デフォルトロールを抽出
+    const defaultRoles = defaultRoleNames
+      .map(name => roles.find(r => r.name === name))
+      .filter((r): r is Role => !!r);
+    
+    // 2. それ以外のロールを抽出して作成日時順にソート
+    const otherRoles = roles
+      .filter(r => !defaultRoleNames.includes(r.name))
+      .sort((a, b) => {
+        const dateA = new Date(a.createdAt || 0).getTime();
+        const dateB = new Date(b.createdAt || 0).getTime();
+        return dateA - dateB;
+      });
+    
+    // 3. 結合
+    return [...defaultRoles, ...otherRoles];
+  }, [roles]);
 
   const openCreate = () => {
     setName('');
+    setError(null);
     const initial: Record<string, PermissionLevel> = {};
     FEATURES.forEach(f => {
       initial[f.key] = f.canDisable === false ? 'view' : 'none';
@@ -113,8 +134,9 @@ export default function RolesPage() {
   const openEdit = (r: Role) => {
     if (r.name === '管理者') return;
     
-    setEditRole(r);
     setName(r.name);
+    setError(null);
+    setEditRole(r);
     const perms = new Set(parsePermissions(r.permissions));
     
     const levels: Record<string, PermissionLevel> = {};
@@ -145,22 +167,28 @@ export default function RolesPage() {
 
   const submitCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     try {
       await createRole.mutateAsync({ name, assignable: true, permissions: getPermissionsFromLevels() });
       setCreateOpen(false);
-    } catch (error) {
-      console.error('Failed to create role:', error);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || 'ロールの作成に失敗しました';
+      setError(msg);
+      console.error('Failed to create role:', err);
     }
   };
 
   const submitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editRole) return;
+    setError(null);
     try {
       await updateRole.mutateAsync({ id: editRole.id, name, assignable: true, permissions: getPermissionsFromLevels() });
       setEditRole(null);
-    } catch (error) {
-      console.error('Failed to update role:', error);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || 'ロールの更新に失敗しました';
+      setError(msg);
+      console.error('Failed to update role:', err);
     }
   };
 
@@ -310,6 +338,11 @@ export default function RolesPage() {
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <DialogPanel className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
             <DialogTitle className="text-lg font-semibold text-gray-900">{t('roles.new')}</DialogTitle>
+            {error && (
+              <div className="mt-2 rounded bg-red-50 p-2 text-xs text-red-600 border border-red-100">
+                {error}
+              </div>
+            )}
             <form className="mt-4 space-y-4" onSubmit={submitCreate}>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">ロール名</label>
@@ -345,6 +378,11 @@ export default function RolesPage() {
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <DialogPanel className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
             <DialogTitle className="text-lg font-semibold text-gray-900">ロールを編集</DialogTitle>
+            {error && (
+              <div className="mt-2 rounded bg-red-50 p-2 text-xs text-red-600 border border-red-100">
+                {error}
+              </div>
+            )}
             <form className="mt-4 space-y-4" onSubmit={submitEdit}>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">ロール名</label>

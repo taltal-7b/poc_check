@@ -196,6 +196,7 @@ export interface Role {
   assignable: boolean;
   builtin: number;
   permissions: string | string[]; // Can be string (old data) or array (new data)
+  createdAt?: string;
 }
 
 export interface Group {

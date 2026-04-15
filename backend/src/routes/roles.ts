@@ -12,9 +12,7 @@ router.use(authenticate, requireAdmin);
 
 router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const roles = await prisma.role.findMany({
-      orderBy: [{ position: 'asc' }, { name: 'asc' }],
-    });
+    const roles = await prisma.role.findMany();
     // Normalize permissions to array format
     const normalized = roles.map(r => ({
       ...r,
