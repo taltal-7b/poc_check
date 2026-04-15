@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft } from 'lucide-react';
 import { useCreateProject, useProject, useUpdateProject, useProjects, useTrackers } from '../api/hooks';
+import type { Project } from '../types';
 
 const DEFAULT_MODULES = [
   'issue_tracking',
@@ -15,6 +16,18 @@ const DEFAULT_MODULES = [
   'calendar',
   'gantt',
 ];
+
+const MODULE_LABELS: Record<string, string> = {
+  issue_tracking: 'チケットトラッキング',
+  time_tracking: '時間管理',
+  news: 'ニュース',
+  documents: '文書',
+  wiki: 'Wiki',
+  repository: 'リポジトリ',
+  boards: 'フォーラム',
+  calendar: 'カレンダー',
+  gantt: 'ガントチャート',
+};
 
 function toKebabIdentifier(name: string): string {
   return name
@@ -31,7 +44,7 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
   const createMutation = useCreateProject();
   const updateMutation = useUpdateProject();
   const projectQuery = useProject(isEdit && projectId ? projectId : '');
-  const projectsQuery = useProjects();
+  const projectsQuery = useProjects({ perPage: 1000 });
   const trackersQuery = useTrackers();
 
   const [name, setName] = useState('');
@@ -40,33 +53,51 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
   const [description, setDescription] = useState('');
   const [isPublic, setIsPublic] = useState(true);
   const [parentId, setParentId] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
   const [enabledModules, setEnabledModules] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(DEFAULT_MODULES.map((m) => [m, true])),
   );
   const [selectedTrackerIds, setSelectedTrackerIds] = useState<Record<string, boolean>>({});
+  const [initializedProjectId, setInitializedProjectId] = useState<string | null>(null);
+  const [trackersInitializedProjectId, setTrackersInitializedProjectId] = useState<string | null>(null);
 
   const project = projectQuery.data?.data;
   const projects = projectsQuery.data?.data ?? [];
   const trackers = trackersQuery.data?.data ?? [];
 
-  // 編集モード時に既存データをロード
+  // 編集モード時の初期値は、対象プロジェクトが切り替わったときだけロードする
   useEffect(() => {
-    if (isEdit && project) {
+    if (isEdit && project && project.id !== initializedProjectId) {
       setName(project.name);
       setIdentifier(project.identifier);
       setIdentifierTouched(true);
       setDescription(project.description || '');
       setIsPublic(project.isPublic);
       setParentId(project.parentId || '');
-      
+      setInitializedProjectId(project.id);
+
       // enabledModulesをセット
       const modules: Record<string, boolean> = {};
       DEFAULT_MODULES.forEach((m) => {
         modules[m] = project.enabledModules?.some((em: any) => em.name === m) ?? true;
       });
       setEnabledModules(modules);
+
+      setTrackersInitializedProjectId(null);
     }
-  }, [isEdit, project]);
+  }, [isEdit, project, initializedProjectId]);
+
+  useEffect(() => {
+    if (!isEdit || !project || !trackers.length) return;
+    if (trackersInitializedProjectId === project.id) return;
+    const trackersSelected: Record<string, boolean> = {};
+    trackers.forEach((tr) => {
+      trackersSelected[tr.id] =
+        ((project as any).projectTrackers ?? []).some((pt: any) => pt.trackerId === tr.id);
+    });
+    setSelectedTrackerIds(trackersSelected);
+    setTrackersInitializedProjectId(project.id);
+  }, [isEdit, project, trackers, trackersInitializedProjectId]);
 
   useEffect(() => {
     if (trackers.length && Object.keys(selectedTrackerIds).length === 0) {
@@ -77,6 +108,13 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
       setSelectedTrackerIds(init);
     }
   }, [trackers, selectedTrackerIds]);
+
+  useEffect(() => {
+    if (!isEdit) {
+      setInitializedProjectId(null);
+      setTrackersInitializedProjectId(null);
+    }
+  }, [isEdit]);
 
   useEffect(() => {
     if (!identifierTouched) {
@@ -94,11 +132,82 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
     [enabledModules],
   );
 
+  const childMap = useMemo(() => {
+    const map = new Map<string, Project[]>();
+    projects.forEach((p) => {
+      if (!p.parentId) return;
+      const arr = map.get(p.parentId) ?? [];
+      arr.push(p);
+      map.set(p.parentId, arr);
+    });
+    return map;
+  }, [projects]);
+
+  const descendantIds = useMemo(() => {
+    if (!isEdit || !project?.id) return new Set<string>();
+    const result = new Set<string>();
+    const walk = (id: string) => {
+      const children = childMap.get(id) ?? [];
+      for (const child of children) {
+        if (!result.has(child.id)) {
+          result.add(child.id);
+          walk(child.id);
+        }
+      }
+    };
+    walk(project.id);
+    return result;
+  }, [isEdit, project?.id, childMap]);
+
+  const parentCandidates = useMemo(
+    () =>
+      projects.filter((p) => {
+        if (!isEdit || !project?.id) return true;
+        return p.id !== project.id && !descendantIds.has(p.id);
+      }),
+    [projects, isEdit, project?.id, descendantIds],
+  );
+
+  const parentOptions = useMemo(() => {
+    const byParent = new Map<string | null, Project[]>();
+    parentCandidates.forEach((p) => {
+      const key = p.parentId ?? null;
+      const arr = byParent.get(key) ?? [];
+      arr.push(p);
+      byParent.set(key, arr);
+    });
+    for (const arr of byParent.values()) {
+      arr.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+    }
+
+    const flat: Array<{ id: string; label: string }> = [];
+    const walk = (parentKey: string | null, depth: number) => {
+      const nodes = byParent.get(parentKey) ?? [];
+      for (const node of nodes) {
+        const prefix = depth > 0 ? `${'　'.repeat(depth)}» ` : '';
+        flat.push({ id: node.id, label: `${prefix}${node.name}` });
+        walk(node.id, depth + 1);
+      }
+    };
+    walk(null, 0);
+    return flat;
+  }, [parentCandidates]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const idf = identifier.trim() || toKebabIdentifier(name);
+    setFormError(null);
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setFormError('プロジェクト名は必須です。');
+      return;
+    }
+    const idf = identifier.trim() || toKebabIdentifier(trimmedName);
+    if (!idf) {
+      setFormError('識別子は必須です。');
+      return;
+    }
     const data = {
-      name: name.trim(),
+      name: trimmedName,
       identifier: idf,
       description: description.trim() || null,
       isPublic,
@@ -160,7 +269,6 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            required
             className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
           />
         </div>
@@ -172,7 +280,6 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
               setIdentifierTouched(true);
               setIdentifier(e.target.value);
             }}
-            required
             className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
           />
         </div>
@@ -205,9 +312,9 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
             className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
           >
             <option value="">—</option>
-            {projects.map((p) => (
+            {parentOptions.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name} ({p.identifier})
+                {p.label}
               </option>
             ))}
           </select>
@@ -223,7 +330,7 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
                   onChange={() => toggleModule(m)}
                   className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                 />
-                <span className="font-mono text-xs">{m}</span>
+                <span className="text-sm">{MODULE_LABELS[m] ?? m}</span>
               </label>
             ))}
           </div>
@@ -244,6 +351,7 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
             ))}
           </div>
         </fieldset>
+        {formError && <p className="text-sm text-red-600">{formError}</p>}
         {createMutation.isError && <p className="text-sm text-red-600">{t('app.error')}</p>}
         <div className="flex gap-3">
           <button

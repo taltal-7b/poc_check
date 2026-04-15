@@ -124,6 +124,39 @@ export default function IssueDetailPage() {
   const members = membersQuery.data?.data ?? [];
   const projectIssues = (projectIssuesQuery.data?.data ?? []).filter((iss) => iss.id !== id);
 
+  const trackerNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    trackers.forEach((tr) => map.set(tr.id, tr.name));
+    return map;
+  }, [trackers]);
+
+  const statusNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    statuses.forEach((st) => map.set(st.id, st.name));
+    return map;
+  }, [statuses]);
+
+  const assigneeNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    members.forEach((m) => {
+      if (!m.user) return;
+      const label = `${m.user.lastname} ${m.user.firstname}`.trim() || m.user.login;
+      map.set(m.user.id, label);
+    });
+    return map;
+  }, [members]);
+
+  const issueNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    projectIssues.forEach((iss) => {
+      map.set(iss.id, `#${iss.number} ${iss.subject}`);
+    });
+    if (issue) {
+      map.set(issue.id, `#${issue.number} ${issue.subject}`);
+    }
+    return map;
+  }, [projectIssues, issue]);
+
   const permissionSet = useMemo(() => {
     const set = new Set<string>();
     if (!currentUser?.id) return set;
@@ -270,21 +303,33 @@ export default function IssueDetailPage() {
   };
 
   const formatDetailValue = (detail: JournalDetail): string => {
+    if (!detail.newValue) return '';
     if (detail.propKey === 'priority' && detail.newValue) {
       return t(`issues.priorities.${detail.newValue}` as 'issues.priorities.1') || detail.newValue;
     }
+    if (detail.propKey === 'trackerId') return trackerNameMap.get(detail.newValue) ?? detail.newValue;
+    if (detail.propKey === 'statusId') return statusNameMap.get(detail.newValue) ?? detail.newValue;
+    if (detail.propKey === 'assigneeId') return assigneeNameMap.get(detail.newValue) ?? detail.newValue;
+    if (detail.propKey === 'parentId') return issueNameMap.get(detail.newValue) ?? detail.newValue;
+    if (detail.propKey === 'projectId') return issue?.project?.name ?? detail.newValue;
     if (detail.propKey === 'doneRatio' && detail.newValue) return `${detail.newValue}%`;
     if (detail.propKey === 'description') return '（変更あり）';
-    return detail.newValue ?? '';
+    return detail.newValue;
   };
 
   const formatDetailOldValue = (detail: JournalDetail): string => {
+    if (!detail.oldValue) return '';
     if (detail.propKey === 'priority' && detail.oldValue) {
       return t(`issues.priorities.${detail.oldValue}` as 'issues.priorities.1') || detail.oldValue;
     }
+    if (detail.propKey === 'trackerId') return trackerNameMap.get(detail.oldValue) ?? detail.oldValue;
+    if (detail.propKey === 'statusId') return statusNameMap.get(detail.oldValue) ?? detail.oldValue;
+    if (detail.propKey === 'assigneeId') return assigneeNameMap.get(detail.oldValue) ?? detail.oldValue;
+    if (detail.propKey === 'parentId') return issueNameMap.get(detail.oldValue) ?? detail.oldValue;
+    if (detail.propKey === 'projectId') return issue?.project?.name ?? detail.oldValue;
     if (detail.propKey === 'doneRatio' && detail.oldValue) return `${detail.oldValue}%`;
     if (detail.propKey === 'description') return '（変更あり）';
-    return detail.oldValue ?? '';
+    return detail.oldValue;
   };
 
   const renderDetail = (detail: JournalDetail) => {
