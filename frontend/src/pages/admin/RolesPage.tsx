@@ -26,7 +26,7 @@ const FEATURES: FeaturePermission[] = [
   {
     key: 'issues',
     label: 'チケット',
-    viewPerms: ['view_issues'],
+    viewPerms: ['view_issues', 'add_issue_notes'],
     editPerms: ['add_issues', 'edit_issues', 'delete_issues', 'manage_issue_relations', 'add_issue_notes', 'edit_issue_notes'],
   },
   {

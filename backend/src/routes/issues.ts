@@ -118,22 +118,121 @@ async function getUserGroupIds(userId: string): Promise<string[]> {
   return rows.map((r) => r.groupId);
 }
 
+function parseRolePermissions(raw: unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return raw
+        .split(/[,\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+}
+
+async function getUserProjectPermissions(
+  userId: string,
+  projectId: string,
+): Promise<Set<string> | null> {
+  const groupIds = await getUserGroupIds(userId);
+  const members = await prisma.member.findMany({
+    where: {
+      projectId,
+      OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
+    },
+    include: {
+      memberRoles: {
+        include: {
+          role: { select: { permissions: true } },
+        },
+      },
+    },
+  });
+
+  if (!members.length) return null;
+
+  const perms = new Set<string>();
+  for (const m of members) {
+    for (const mr of m.memberRoles) {
+      for (const p of parseRolePermissions(mr.role.permissions)) {
+        perms.add(p);
+      }
+    }
+  }
+  return perms;
+}
+
 async function userCanAccessProject(
   userId: string | undefined,
   isAdmin: boolean | undefined,
   project: { id: string; isPublic: boolean },
 ): Promise<boolean> {
   if (isAdmin) return true;
-  if (project.isPublic) return true;
+  if (!userId) return project.isPublic;
+  const perms = await getUserProjectPermissions(userId, project.id);
+  if (perms) return perms.has('view_issues');
+  return project.isPublic;
+}
+
+async function userCanCreateIssue(
+  userId: string | undefined,
+  isAdmin: boolean | undefined,
+  project: { id: string },
+): Promise<boolean> {
+  if (isAdmin) return true;
   if (!userId) return false;
-  const groupIds = await getUserGroupIds(userId);
-  const member = await prisma.member.findFirst({
-    where: {
-      projectId: project.id,
-      OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
-    },
-  });
-  return !!member;
+  const perms = await getUserProjectPermissions(userId, project.id);
+  if (!perms) return false;
+  return perms.has('add_issues') || perms.has('edit_issues');
+}
+
+async function userCanEditIssue(
+  userId: string | undefined,
+  isAdmin: boolean | undefined,
+  project: { id: string },
+  issueAuthorId: string,
+): Promise<boolean> {
+  if (isAdmin) return true;
+  if (!userId) return false;
+  const perms = await getUserProjectPermissions(userId, project.id);
+  if (!perms) return false;
+  if (perms.has('edit_issues')) return true;
+  return perms.has('edit_own_issues') && issueAuthorId === userId;
+}
+
+async function userCanDeleteIssue(
+  userId: string | undefined,
+  isAdmin: boolean | undefined,
+  project: { id: string },
+): Promise<boolean> {
+  if (isAdmin) return true;
+  if (!userId) return false;
+  const perms = await getUserProjectPermissions(userId, project.id);
+  if (!perms) return false;
+  return perms.has('delete_issues');
+}
+
+async function userCanAddIssueNotes(
+  userId: string | undefined,
+  isAdmin: boolean | undefined,
+  project: { id: string },
+): Promise<boolean> {
+  if (isAdmin) return true;
+  if (!userId) return false;
+  const perms = await getUserProjectPermissions(userId, project.id);
+  if (!perms) return false;
+  return (
+    perms.has('view_issues') ||
+    perms.has('add_issue_notes') ||
+    perms.has('edit_issue_notes') ||
+    perms.has('edit_own_issue_notes') ||
+    perms.has('edit_issues')
+  );
 }
 
 async function resolveProjectId(ref: string | undefined): Promise<string | undefined> {
@@ -168,9 +267,14 @@ async function getVisibleProjectIds(userId: string | undefined, isAdmin: boolean
         },
       ],
     },
-    select: { id: true },
+    select: { id: true, isPublic: true },
   });
-  return rows.map((r) => r.id);
+  const visible: string[] = [];
+  for (const p of rows) {
+    const can = await userCanAccessProject(userId, isAdmin, p);
+    if (can) visible.push(p.id);
+  }
+  return visible;
 }
 
 async function resolveIssueByParam(id: string) {
@@ -343,6 +447,13 @@ router.post(
       if (!project) continue;
       const can = await userCanAccessProject(req.user?.userId, req.user?.admin, project);
       if (!can) throw AppError.forbidden();
+      const canEdit = await userCanEditIssue(
+        req.user?.userId,
+        req.user?.admin,
+        project,
+        oldIssue.authorId,
+      );
+      if (!canEdit) throw AppError.forbidden('チケットを編集する権限がありません');
 
       const effectiveStatusId = changes.statusId ?? oldIssue.statusId;
       const st = await prisma.issueStatus.findUnique({ where: { id: effectiveStatusId } });
@@ -448,6 +559,8 @@ router.get(
     if (!project) throw AppError.notFound();
     const can = await userCanAccessProject(req.user?.userId, req.user?.admin, project);
     if (!can) throw AppError.forbidden();
+    const canEdit = await userCanEditIssue(req.user?.userId, req.user?.admin, project, issue.authorId);
+    if (!canEdit) throw AppError.forbidden('関連を編集する権限がありません');
 
     const relations = await prisma.issueRelation.findMany({
       where: {
@@ -479,6 +592,8 @@ router.post(
     if (!project) throw AppError.notFound();
     const can = await userCanAccessProject(req.user?.userId, req.user?.admin, project);
     if (!can) throw AppError.forbidden();
+    const canEdit = await userCanEditIssue(req.user?.userId, req.user?.admin, project, issue.authorId);
+    if (!canEdit) throw AppError.forbidden('関連を編集する権限がありません');
 
     const { issueToId, relationType, delay } = parsed.data;
     if (issueToId === issue.id) throw AppError.badRequest('同一チケットには関連付けできません');
@@ -520,6 +635,8 @@ router.delete(
     if (!project) throw AppError.notFound();
     const can = await userCanAccessProject(req.user?.userId, req.user?.admin, project);
     if (!can) throw AppError.forbidden();
+    const canEdit = await userCanEditIssue(req.user?.userId, req.user?.admin, project, issue.authorId);
+    if (!canEdit) throw AppError.forbidden('関連を編集する権限がありません');
 
     const rel = await prisma.issueRelation.findUnique({ where: { id: req.params.relationId } });
     if (!rel || (rel.issueFromId !== issue.id && rel.issueToId !== issue.id)) {
@@ -548,6 +665,8 @@ router.post(
     if (!project) throw AppError.badRequest('プロジェクトが存在しません');
     const can = await userCanAccessProject(req.user?.userId, req.user?.admin, project);
     if (!can) throw AppError.forbidden();
+    const canCreate = await userCanCreateIssue(req.user?.userId, req.user?.admin, project);
+    if (!canCreate) throw AppError.forbidden('チケットを作成する権限がありません');
 
     const subject = parsed.data.subject ?? `Copy: ${src.subject}`;
 
@@ -799,6 +918,15 @@ router.put(
     const can = await userCanAccessProject(req.user?.userId, req.user?.admin, proj);
     if (!can) throw AppError.forbidden();
 
+    const onlyNotesUpdate = Object.keys(body).length === 1 && body.notes !== undefined;
+    if (onlyNotesUpdate) {
+      const canAddNotes = await userCanAddIssueNotes(req.user?.userId, req.user?.admin, proj);
+      if (!canAddNotes) throw AppError.forbidden('コメントを追加する権限がありません');
+    } else {
+      const canEdit = await userCanEditIssue(req.user?.userId, req.user?.admin, proj, oldIssue.authorId);
+      if (!canEdit) throw AppError.forbidden('チケットを編集する権限がありません');
+    }
+
     const nextStatusId = body.statusId ?? oldIssue.statusId;
     const st = await prisma.issueStatus.findUnique({ where: { id: nextStatusId } });
 
@@ -917,6 +1045,8 @@ router.delete(
     if (!proj) throw AppError.notFound();
     const can = await userCanAccessProject(req.user?.userId, req.user?.admin, proj);
     if (!can) throw AppError.forbidden();
+    const canDelete = await userCanDeleteIssue(req.user?.userId, req.user?.admin, proj);
+    if (!canDelete) throw AppError.forbidden('チケットを削除する権限がありません');
 
     await prisma.issue.delete({ where: { id: issue.id } });
     return sendSuccess(res, { deleted: true });
@@ -940,6 +1070,8 @@ router.post(
     if (!project) throw AppError.badRequest('プロジェクトが存在しません');
     const can = await userCanAccessProject(req.user?.userId, req.user?.admin, project);
     if (!can) throw AppError.forbidden();
+    const canCreate = await userCanCreateIssue(req.user?.userId, req.user?.admin, project);
+    if (!canCreate) throw AppError.forbidden('チケットを作成する権限がありません');
 
     const st = await prisma.issueStatus.findUnique({ where: { id: body.statusId } });
     if (!st) throw AppError.badRequest('ステータスが存在しません');

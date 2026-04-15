@@ -6,7 +6,7 @@ import { useUsers, useCreateUser, useUpdateUser, useDeleteUser } from '../../api
 import { type User, UserStatusCode } from '../../types';
 
 function userDisplayName(u: User) {
-  return [u.firstname, u.lastname].filter(Boolean).join(' ').trim() || u.login;
+  return [u.lastname, u.firstname].filter(Boolean).join(' ').trim() || u.login;
 }
 
 function statusLabel(status: number, t: (k: string) => string) {
@@ -25,6 +25,8 @@ function StatusBadge({ status, t }: { status: number; t: (k: string) => string }
 }
 
 type StatusFilter = 'all' | 'active' | 'registered' | 'locked';
+const PASSWORD_MIN = 8;
+const PASSWORD_MAX = 128;
 
 export default function UsersPage() {
   const { t } = useTranslation();
@@ -55,12 +57,35 @@ export default function UsersPage() {
     lastname: '',
     mail: '',
     password: '',
+    confirmPassword: '',
     admin: false,
     language: 'ja',
   });
+  const [passwordError, setPasswordError] = useState('');
+
+  const validatePasswordPair = (password: string, confirmPassword: string, required: boolean) => {
+    if (required && !password) return '新しいパスワードを入力してください';
+    if (!password && !confirmPassword) return '';
+    if (!password) return '新しいパスワードを入力してください';
+    if (password.length < PASSWORD_MIN) return `パスワードは${PASSWORD_MIN}文字以上で入力してください`;
+    if (password.length > PASSWORD_MAX) return `パスワードは${PASSWORD_MAX}文字以内で入力してください`;
+    if (password !== confirmPassword) return '新しいパスワードと確認用パスワードが一致しません';
+    return '';
+  };
+
+  const getLivePasswordError = (password: string, confirmPassword: string, required: boolean) => {
+    if (!password && !confirmPassword) return required ? '新しいパスワードを入力してください' : '';
+    if (password.length > 0 && password.length < PASSWORD_MIN) return `パスワードは${PASSWORD_MIN}文字以上で入力してください`;
+    if (password.length > PASSWORD_MAX) return `パスワードは${PASSWORD_MAX}文字以内で入力してください`;
+    if (confirmPassword.length > 0 && password !== confirmPassword) return '新しいパスワードと確認用パスワードが一致しません';
+    return '';
+  };
+
+  const livePasswordError = getLivePasswordError(form.password, form.confirmPassword, !editUser);
+  const hasBlockingPasswordError = !!livePasswordError;
 
   const resetForm = () =>
-    setForm({ login: '', firstname: '', lastname: '', mail: '', password: '', admin: false, language: 'ja' });
+    setForm({ login: '', firstname: '', lastname: '', mail: '', password: '', confirmPassword: '', admin: false, language: 'ja' });
 
   const openEdit = (u: User) => {
     setEditUser(u);
@@ -70,9 +95,11 @@ export default function UsersPage() {
       lastname: u.lastname,
       mail: u.mail,
       password: '',
+      confirmPassword: '',
       admin: u.admin,
       language: u.language || 'ja',
     });
+    setPasswordError('');
   };
 
   const toggleSelect = (id: string) => {
@@ -91,33 +118,57 @@ export default function UsersPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    await createUser.mutateAsync({
-      login: form.login,
-      firstname: form.firstname,
-      lastname: form.lastname,
-      mail: form.mail,
-      password: form.password || undefined,
-      admin: form.admin,
-      language: form.language,
-    });
-    setAddOpen(false);
-    resetForm();
+    const validationError = validatePasswordPair(form.password, form.confirmPassword, true);
+    if (validationError) {
+      setPasswordError(validationError);
+      return;
+    }
+    setPasswordError('');
+    try {
+      await createUser.mutateAsync({
+        login: form.login,
+        firstname: form.firstname,
+        lastname: form.lastname,
+        mail: form.mail,
+        password: form.password || undefined,
+        admin: form.admin,
+        language: form.language,
+      });
+      setAddOpen(false);
+      resetForm();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || 'ユーザー作成に失敗しました';
+      setPasswordError(msg);
+    }
   };
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editUser) return;
-    await updateUser.mutateAsync({
-      id: editUser.id,
-      firstname: form.firstname,
-      lastname: form.lastname,
-      mail: form.mail,
-      admin: form.admin,
-      language: form.language,
-      ...(form.password ? { password: form.password } : {}),
-    });
-    setEditUser(null);
-    resetForm();
+    if (form.password || form.confirmPassword) {
+      const validationError = validatePasswordPair(form.password, form.confirmPassword, false);
+      if (validationError) {
+        setPasswordError(validationError);
+        return;
+      }
+    }
+    setPasswordError('');
+    try {
+      await updateUser.mutateAsync({
+        id: editUser.id,
+        firstname: form.firstname,
+        lastname: form.lastname,
+        mail: form.mail,
+        admin: form.admin,
+        language: form.language,
+        ...(form.password ? { password: form.password } : {}),
+      });
+      setEditUser(null);
+      resetForm();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || 'ユーザー更新に失敗しました';
+      setPasswordError(msg);
+    }
   };
 
   const setLocked = async (u: User, locked: boolean) => {
@@ -164,12 +215,12 @@ export default function UsersPage() {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm font-medium text-gray-700">{t('auth.firstname')}</label>
-          <input className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={form.firstname} onChange={e => setForm(f => ({ ...f, firstname: e.target.value }))} required />
-        </div>
-        <div>
           <label className="block text-sm font-medium text-gray-700">{t('auth.lastname')}</label>
           <input className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={form.lastname} onChange={e => setForm(f => ({ ...f, lastname: e.target.value }))} required />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">{t('auth.firstname')}</label>
+          <input className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={form.firstname} onChange={e => setForm(f => ({ ...f, firstname: e.target.value }))} required />
         </div>
       </div>
       <div>
@@ -177,13 +228,36 @@ export default function UsersPage() {
         <input type="email" className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={form.mail} onChange={e => setForm(f => ({ ...f, mail: e.target.value }))} required />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700">{t('auth.password')}</label>
-        <input type="password" className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder={editUser ? '—' : ''} />
+        <label className="block text-sm font-medium text-gray-700">{editUser ? t('auth.newPassword') : t('auth.password')}</label>
+        <input
+          type="password"
+          className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+          value={form.password}
+          onChange={e => {
+            setForm(f => ({ ...f, password: e.target.value }));
+            if (passwordError) setPasswordError('');
+          }}
+        />
+        <p className="mt-1 text-xs text-gray-500">条件: 8文字以上128文字以内（確認用パスワードと一致）</p>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700">{t('auth.confirmPassword')}</label>
+        <input
+          type="password"
+          className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+          value={form.confirmPassword}
+          onChange={e => {
+            setForm(f => ({ ...f, confirmPassword: e.target.value }));
+            if (passwordError) setPasswordError('');
+          }}
+        />
       </div>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={form.admin} onChange={e => setForm(f => ({ ...f, admin: e.target.checked }))} />
         {t('users.admin')}
       </label>
+      {livePasswordError && <p className="text-sm text-red-600">{livePasswordError}</p>}
+      {passwordError && <p className="text-sm text-red-600">{passwordError}</p>}
     </div>
   );
 
@@ -202,7 +276,7 @@ export default function UsersPage() {
             <option value="registered">{t('users.status.registered')}</option>
             <option value="locked">{t('users.status.locked')}</option>
           </select>
-          <button type="button" onClick={() => { resetForm(); setAddOpen(true); }} className="rounded bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700">
+          <button type="button" onClick={() => { resetForm(); setPasswordError(''); setAddOpen(true); }} className="rounded bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700">
             {t('users.new')}
           </button>
         </div>
@@ -291,7 +365,7 @@ export default function UsersPage() {
         </div>
       )}
 
-      <Dialog open={addOpen} onClose={() => setAddOpen(false)} className="relative z-50">
+      <Dialog open={addOpen} onClose={() => { setAddOpen(false); setPasswordError(''); }} className="relative z-50">
         <div className="fixed inset-0 bg-black/40" aria-hidden />
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
@@ -299,10 +373,10 @@ export default function UsersPage() {
             <form className="mt-4 space-y-4" onSubmit={handleCreate}>
               {formFields}
               <div className="flex justify-end gap-2 pt-2">
-                <button type="button" className="rounded border border-gray-300 px-4 py-2 text-sm" onClick={() => setAddOpen(false)}>
+                <button type="button" className="rounded border border-gray-300 px-4 py-2 text-sm" onClick={() => { setAddOpen(false); setPasswordError(''); }}>
                   {t('app.cancel')}
                 </button>
-                <button type="submit" className="rounded bg-primary-600 px-4 py-2 text-sm text-white" disabled={createUser.isPending}>
+                <button type="submit" className="rounded bg-primary-600 px-4 py-2 text-sm text-white disabled:opacity-50" disabled={createUser.isPending || hasBlockingPasswordError}>
                   {t('app.create')}
                 </button>
               </div>
@@ -311,7 +385,7 @@ export default function UsersPage() {
         </div>
       </Dialog>
 
-      <Dialog open={!!editUser} onClose={() => { setEditUser(null); resetForm(); }} className="relative z-50">
+      <Dialog open={!!editUser} onClose={() => { setEditUser(null); resetForm(); setPasswordError(''); }} className="relative z-50">
         <div className="fixed inset-0 bg-black/40" aria-hidden />
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
@@ -319,10 +393,10 @@ export default function UsersPage() {
             <form className="mt-4 space-y-4" onSubmit={handleUpdate}>
               {formFields}
               <div className="flex justify-end gap-2 pt-2">
-                <button type="button" className="rounded border border-gray-300 px-4 py-2 text-sm" onClick={() => { setEditUser(null); resetForm(); }}>
+                <button type="button" className="rounded border border-gray-300 px-4 py-2 text-sm" onClick={() => { setEditUser(null); resetForm(); setPasswordError(''); }}>
                   {t('app.cancel')}
                 </button>
-                <button type="submit" className="rounded bg-primary-600 px-4 py-2 text-sm text-white" disabled={updateUser.isPending}>
+                <button type="submit" className="rounded bg-primary-600 px-4 py-2 text-sm text-white disabled:opacity-50" disabled={updateUser.isPending || hasBlockingPasswordError}>
                   {t('app.save')}
                 </button>
               </div>

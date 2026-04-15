@@ -54,7 +54,7 @@ export default function NewsPage() {
   const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
 
   const authorName = (author?: { firstname: string; lastname: string; login: string }) =>
-    author ? `${author.firstname} ${author.lastname}`.trim() || author.login : '—';
+    author ? `${author.lastname} ${author.firstname}`.trim() || author.login : '—';
 
   return (
     <div className="space-y-6">

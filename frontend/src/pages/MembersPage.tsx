@@ -3,11 +3,12 @@ import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import ProjectSubNav from '../components/ProjectSubNav';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { UserPlus, UserMinus } from 'lucide-react';
-import { useMembers, useUsers, useRoles } from '../api/hooks';
+import { UserPlus, UserMinus, Pencil } from 'lucide-react';
+import { useMembers, useUsers, useRoles, useProject } from '../api/hooks';
 import api from '../api/client';
 import type { Member, User, Role } from '../types';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
+import { useAuthStore } from '../stores/auth';
 
 function unwrapList<T>(raw: unknown): T[] {
   if (raw == null) return [];
@@ -16,6 +17,14 @@ function unwrapList<T>(raw: unknown): T[] {
     return (raw as { data: T[] }).data;
   }
   return [];
+}
+
+function unwrapObject<T>(raw: unknown): T | null {
+  if (raw == null) return null;
+  if (typeof raw === 'object' && raw !== null && 'data' in raw) {
+    return ((raw as { data?: T }).data ?? null) as T | null;
+  }
+  return raw as T;
 }
 
 export default function MembersPage() {
@@ -28,10 +37,14 @@ export default function MembersPage() {
   const membersRaw = useMembers(slug);
   const usersRaw = useUsers();
   const rolesRaw = useRoles();
+  const projectRaw = useProject(slug);
+  const currentUser = useAuthStore((s) => s.user);
+  const isSystemAdmin = useAuthStore((s) => !!s.user?.admin);
 
   const members = useMemo(() => unwrapList<Member>(membersRaw.data), [membersRaw.data]);
   const users = useMemo(() => unwrapList<User>(usersRaw.data), [usersRaw.data]);
   const roles = useMemo(() => unwrapList<Role>(rolesRaw.data).filter((r) => r.assignable), [rolesRaw.data]);
+  const project = useMemo(() => unwrapObject<{ id: string; createdByUserId?: string | null }>(projectRaw.data), [projectRaw.data]);
 
   const existingUserIds = useMemo(() => new Set(members.map((m) => m.userId).filter(Boolean)), [members]);
   const availableUsers = useMemo(() => users.filter((u) => !existingUserIds.has(u.id)), [users, existingUserIds]);
@@ -39,6 +52,8 @@ export default function MembersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [userId, setUserId] = useState('');
   const [roleIds, setRoleIds] = useState<Set<string>>(new Set());
+  const [editTarget, setEditTarget] = useState<Member | null>(null);
+  const [editRoleIds, setEditRoleIds] = useState<Set<string>>(new Set());
   const [removeTarget, setRemoveTarget] = useState<Member | null>(null);
 
   const addMember = useMutation({
@@ -66,6 +81,17 @@ export default function MembersPage() {
     },
   });
 
+  const updateMember = useMutation({
+    mutationFn: async ({ memberId, nextRoleIds }: { memberId: string; nextRoleIds: string[] }) => {
+      await api.put(`/projects/${slug}/members/${memberId}`, { roleIds: nextRoleIds });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['members', slug] });
+      setEditTarget(null);
+      setEditRoleIds(new Set());
+    },
+  });
+
   const toggleRole = (id: string) => {
     setRoleIds((prev) => {
       const next = new Set(prev);
@@ -75,13 +101,31 @@ export default function MembersPage() {
     });
   };
 
+  const toggleEditRole = (id: string) => {
+    setEditRoleIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const displayName = (m: Member) => {
-    if (m.user) return `${m.user.firstname} ${m.user.lastname}`.trim() || m.user.login;
+    if (m.user) return `${m.user.lastname} ${m.user.firstname}`.trim() || m.user.login;
     if (m.group) return m.group.name;
     return m.userId ?? m.groupId ?? '—';
   };
 
   const emailOf = (m: Member) => m.user?.mail ?? '—';
+
+  const canManageMembers = useMemo(() => {
+    if (isSystemAdmin) return true;
+    if (!currentUser) return false;
+    if (project?.createdByUserId && project.createdByUserId === currentUser.id) return true;
+    const selfMember = members.find((m) => m.userId === currentUser.id);
+    if (!selfMember) return false;
+    return (selfMember.memberRoles ?? []).some((mr) => (mr.role?.name ?? '') === '管理者');
+  }, [isSystemAdmin, currentUser, project, members]);
 
   if (!identifier) return <p className="text-gray-500">{t('app.noData')}</p>;
 
@@ -90,14 +134,16 @@ export default function MembersPage() {
       {identifier && <ProjectSubNav identifier={identifier} />}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="text-2xl font-bold text-gray-900">{t('members.title')}</h1>
-        <button
-          type="button"
-          onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
-        >
-          <UserPlus size={18} />
-          {t('members.addMember')}
-        </button>
+        {canManageMembers && (
+          <button
+            type="button"
+            onClick={() => setModalOpen(true)}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+          >
+            <UserPlus size={18} />
+            {t('members.addMember')}
+          </button>
+        )}
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -125,15 +171,34 @@ export default function MembersPage() {
                 </td>
                 <td className="px-4 py-2 text-gray-600">{emailOf(m)}</td>
                 <td className="px-4 py-2">
-                  <button
-                    type="button"
-                    onClick={() => setRemoveTarget(m)}
-                    disabled={removeMember.isPending}
-                    className="text-rose-600 hover:text-rose-800 p-1 disabled:opacity-50"
-                    title={t('members.removeMember')}
-                  >
-                    <UserMinus size={18} />
-                  </button>
+                  {canManageMembers ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditTarget(m);
+                          const existing = new Set((m.memberRoles ?? []).map((mr) => mr.role?.id).filter(Boolean) as string[]);
+                          setEditRoleIds(existing);
+                        }}
+                        disabled={updateMember.isPending}
+                        className="text-blue-600 hover:text-blue-800 p-1 disabled:opacity-50"
+                        title={t('app.edit')}
+                      >
+                        <Pencil size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRemoveTarget(m)}
+                        disabled={removeMember.isPending}
+                        className="text-rose-600 hover:text-rose-800 p-1 disabled:opacity-50"
+                        title={t('members.removeMember')}
+                      >
+                        <UserMinus size={18} />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
                 </td>
               </tr>
             ))}
@@ -158,7 +223,7 @@ export default function MembersPage() {
                   <option value="">—</option>
                   {availableUsers.map((u) => (
                     <option key={u.id} value={u.id}>
-                      {u.login} ({u.firstname} {u.lastname})
+                      {u.login} ({u.lastname} {u.firstname})
                     </option>
                   ))}
                 </select>
@@ -198,6 +263,57 @@ export default function MembersPage() {
                   className="rounded-lg bg-primary-600 px-4 py-2 text-sm text-white hover:bg-primary-700 disabled:opacity-50"
                 >
                   {addMember.isPending ? t('app.loading') : t('app.save')}
+                </button>
+              </div>
+            </div>
+          </DialogPanel>
+        </div>
+      </Dialog>
+
+      <Dialog open={editTarget !== null} onClose={() => setEditTarget(null)} className="relative z-50">
+        <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+            <DialogTitle className="text-lg font-semibold">{t('app.edit')}</DialogTitle>
+            <div className="mt-4 space-y-4">
+              <p className="text-sm text-gray-700">
+                <span className="font-medium">{editTarget ? displayName(editTarget) : ''}</span> のロールを編集
+              </p>
+              <fieldset>
+                <legend className="text-sm text-gray-700 mb-2">{t('members.roles')}</legend>
+                <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-100 rounded p-2">
+                  {roles.map((r) => (
+                    <label key={r.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editRoleIds.has(r.id)}
+                        onChange={() => toggleEditRole(r.id)}
+                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      />
+                      {r.name}
+                    </label>
+                  ))}
+                  {roles.length === 0 && (
+                    <p className="text-xs text-gray-400 py-2">{t('app.noData')}</p>
+                  )}
+                </div>
+              </fieldset>
+              {updateMember.isError && (
+                <p className="text-sm text-red-600">
+                  {(updateMember.error as Error)?.message ?? t('app.error')}
+                </p>
+              )}
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setEditTarget(null)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm">
+                  {t('app.cancel')}
+                </button>
+                <button
+                  type="button"
+                  disabled={!editTarget || editRoleIds.size === 0 || updateMember.isPending}
+                  onClick={() => editTarget && updateMember.mutate({ memberId: editTarget.id, nextRoleIds: Array.from(editRoleIds) })}
+                  className="rounded-lg bg-primary-600 px-4 py-2 text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {updateMember.isPending ? t('app.loading') : t('app.save')}
                 </button>
               </div>
             </div>

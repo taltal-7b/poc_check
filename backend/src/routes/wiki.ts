@@ -30,6 +30,69 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
+function parseRolePermissions(raw: unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return raw
+        .split(/[,\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+}
+
+async function getUserGroupIds(userId: string): Promise<string[]> {
+  const rows = await prisma.groupUser.findMany({
+    where: { userId },
+    select: { groupId: true },
+  });
+  return rows.map((r) => r.groupId);
+}
+
+async function getUserProjectPermissions(userId: string, projectId: string): Promise<Set<string> | null> {
+  const groupIds = await getUserGroupIds(userId);
+  const members = await prisma.member.findMany({
+    where: {
+      projectId,
+      OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
+    },
+    include: {
+      memberRoles: {
+        include: {
+          role: { select: { permissions: true } },
+        },
+      },
+    },
+  });
+
+  if (!members.length) return null;
+  const perms = new Set<string>();
+  for (const m of members) {
+    for (const mr of m.memberRoles ?? []) {
+      for (const p of parseRolePermissions(mr.role?.permissions)) perms.add(p);
+    }
+  }
+  return perms;
+}
+
+async function userCanEditWiki(
+  userId: string | undefined,
+  isAdmin: boolean | undefined,
+  projectId: string,
+): Promise<boolean> {
+  if (isAdmin) return true;
+  if (!userId) return false;
+  const perms = await getUserProjectPermissions(userId, projectId);
+  if (!perms) return false;
+  return perms.has('edit_wiki_pages');
+}
+
 async function ensureWiki(projectId: string) {
   let wiki = await prisma.wiki.findUnique({ where: { projectId } });
   if (!wiki) {
@@ -184,6 +247,9 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
     const parsed = createPageSchema.safeParse(req.body);
     if (!parsed.success) return next(AppError.badRequest(parsed.error.message));
 
+    const canEdit = await userCanEditWiki(req.user?.userId, req.user?.admin, projectId);
+    if (!canEdit) return next(AppError.forbidden('Wikiを編集する権限がありません'));
+
     const wiki = await ensureWiki(projectId);
 
     const existing = await prisma.wikiPage.findUnique({
@@ -337,6 +403,9 @@ router.post('/:title/protect', authenticate, async (req: Request, res: Response,
     if (!rawTitle) return next(AppError.badRequest('title が必要です'));
     const title = decodeTitle(rawTitle);
 
+    const canEdit = await userCanEditWiki(req.user?.userId, req.user?.admin, projectId);
+    if (!canEdit) return next(AppError.forbidden('Wikiを編集する権限がありません'));
+
     const wiki = await prisma.wiki.findUnique({ where: { projectId } });
     if (!wiki) return next(AppError.notFound('Wiki が見つかりません'));
 
@@ -391,6 +460,9 @@ router.put('/:title', authenticate, async (req: Request, res: Response, next: Ne
     const parsed = updatePageSchema.safeParse(req.body);
     if (!parsed.success) return next(AppError.badRequest(parsed.error.message));
 
+    const canEdit = await userCanEditWiki(req.user?.userId, req.user?.admin, projectId);
+    if (!canEdit) return next(AppError.forbidden('Wikiを編集する権限がありません'));
+
     const wiki = await prisma.wiki.findUnique({ where: { projectId } });
     if (!wiki) return next(AppError.notFound('Wiki が見つかりません'));
 
@@ -443,6 +515,9 @@ router.delete('/:title', authenticate, async (req: Request, res: Response, next:
     if (!projectId) return next(AppError.badRequest('projectId が必要です'));
     if (!rawTitle) return next(AppError.badRequest('title が必要です'));
     const title = decodeTitle(rawTitle);
+
+    const canEdit = await userCanEditWiki(req.user?.userId, req.user?.admin, projectId);
+    if (!canEdit) return next(AppError.forbidden('Wikiを編集する権限がありません'));
 
     const wiki = await prisma.wiki.findUnique({ where: { projectId } });
     if (!wiki) return next(AppError.notFound('Wiki が見つかりません'));

@@ -20,7 +20,7 @@ function unwrapList<T>(raw: unknown): T[] {
 
 function authorLabel(m: Message) {
   const u = m.author;
-  return u ? `${u.firstname} ${u.lastname}`.trim() || u.login : m.authorId;
+  return u ? `${u.lastname} ${u.firstname}`.trim() || u.login : m.authorId;
 }
 
 export default function ForumsPage() {

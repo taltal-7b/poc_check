@@ -186,7 +186,7 @@ export default function IssueNewPage() {
           >
             <option value="">—</option>
             {users.map((u) => (
-              <option key={u.id} value={u.id}>{u.firstname} {u.lastname} ({u.login})</option>
+              <option key={u.id} value={u.id}>{u.lastname} {u.firstname} ({u.login})</option>
             ))}
           </select>
         </div>

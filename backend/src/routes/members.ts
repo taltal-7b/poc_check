@@ -18,9 +18,45 @@ function catchAsync(
 async function resolveProjectIdParam(projectId: string) {
   const p = await prisma.project.findFirst({
     where: { OR: [{ id: projectId }, { identifier: projectId }] },
-    select: { id: true },
+    select: { id: true, createdByUserId: true },
   });
-  return p?.id;
+  return p;
+}
+
+async function getUserGroupIds(userId: string): Promise<string[]> {
+  const rows = await prisma.groupUser.findMany({
+    where: { userId },
+    select: { groupId: true },
+  });
+  return rows.map((r) => r.groupId);
+}
+
+async function userCanManageProject(
+  userId: string | undefined,
+  isAdmin: boolean | undefined,
+  project: { id: string; createdByUserId?: string | null },
+): Promise<boolean> {
+  if (isAdmin) return true;
+  if (!userId) return false;
+  if (project.createdByUserId === userId) return true;
+
+  const groupIds = await getUserGroupIds(userId);
+  const member = await prisma.member.findFirst({
+    where: {
+      projectId: project.id,
+      OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
+    },
+    include: {
+      memberRoles: {
+        include: {
+          role: { select: { name: true } },
+        },
+      },
+    },
+  });
+
+  if (!member) return false;
+  return (member.memberRoles ?? []).some((mr) => (mr.role?.name ?? '') === '管理者');
 }
 
 const addMemberSchema = z.object({
@@ -36,8 +72,9 @@ router.get(
   '/',
   authenticate,
   catchAsync(async (req, res) => {
-    const projectId = await resolveProjectIdParam(req.params.projectId);
-    if (!projectId) throw AppError.notFound('プロジェクトが見つかりません');
+    const project = await resolveProjectIdParam(req.params.projectId);
+    if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+    const projectId = project.id;
 
     const members = await prisma.member.findMany({
       where: { projectId },
@@ -63,6 +100,7 @@ router.get(
                 position: true,
                 assignable: true,
                 builtin: true,
+                permissions: true,
               },
             },
           },
@@ -78,8 +116,11 @@ router.post(
   '/',
   authenticate,
   catchAsync(async (req, res) => {
-    const projectId = await resolveProjectIdParam(req.params.projectId);
-    if (!projectId) throw AppError.notFound('プロジェクトが見つかりません');
+    const project = await resolveProjectIdParam(req.params.projectId);
+    if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+    const projectId = project.id;
+    const canManage = await userCanManageProject(req.user?.userId, req.user?.admin, project);
+    if (!canManage) throw AppError.forbidden('このプロジェクトのメンバーを編集する権限がありません');
 
     const parsed = addMemberSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -137,8 +178,11 @@ router.put(
   '/:id',
   authenticate,
   catchAsync(async (req, res) => {
-    const projectId = await resolveProjectIdParam(req.params.projectId);
-    if (!projectId) throw AppError.notFound('プロジェクトが見つかりません');
+    const project = await resolveProjectIdParam(req.params.projectId);
+    if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+    const projectId = project.id;
+    const canManage = await userCanManageProject(req.user?.userId, req.user?.admin, project);
+    if (!canManage) throw AppError.forbidden('このプロジェクトのメンバーを編集する権限がありません');
 
     const parsed = updateMemberRolesSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -188,8 +232,11 @@ router.delete(
   '/:id',
   authenticate,
   catchAsync(async (req, res) => {
-    const projectId = await resolveProjectIdParam(req.params.projectId);
-    if (!projectId) throw AppError.notFound('プロジェクトが見つかりません');
+    const project = await resolveProjectIdParam(req.params.projectId);
+    if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+    const projectId = project.id;
+    const canManage = await userCanManageProject(req.user?.userId, req.user?.admin, project);
+    if (!canManage) throw AppError.forbidden('このプロジェクトのメンバーを編集する権限がありません');
 
     const member = await prisma.member.findFirst({
       where: { id: req.params.id, projectId },

@@ -159,7 +159,7 @@ export default function IssuesPage() {
               <option key={member.userId} value={member.userId || ''}>
                 {member.user
                   ? (member.user.firstname && member.user.lastname
-                      ? `${member.user.firstname} ${member.user.lastname}`
+                      ? `${member.user.lastname} ${member.user.firstname}`
                       : member.user.login)
                   : '—'}
               </option>
@@ -216,7 +216,7 @@ export default function IssuesPage() {
                     </td>
                     <td className="px-3 py-2 text-slate-700">
                       {issue.assignee
-                        ? `${issue.assignee.firstname} ${issue.assignee.lastname}`.trim() || issue.assignee.login
+                        ? `${issue.assignee.lastname} ${issue.assignee.firstname}`.trim() || issue.assignee.login
                         : '—'}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">

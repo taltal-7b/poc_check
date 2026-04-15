@@ -146,7 +146,7 @@ export default function TimeEntriesPage() {
                     {row.spentOn ? format(parseISO(row.spentOn), 'yyyy-MM-dd') : '—'}
                   </td>
                   <td className="px-4 py-2">
-                    {row.user ? `${row.user.firstname} ${row.user.lastname}`.trim() || row.user.login : row.userId}
+                    {row.user ? `${row.user.lastname} ${row.user.firstname}`.trim() || row.user.login : row.userId}
                   </td>
                   <td className="px-4 py-2">{row.activity?.name ?? row.activityId}</td>
                   <td className="px-4 py-2 font-mono text-xs">{row.issueId ?? '—'}</td>

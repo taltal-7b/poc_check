@@ -54,6 +54,23 @@ function displayDate(d: string | null): string {
   try { return format(new Date(d), 'yyyy-MM-dd'); } catch { return d; }
 }
 
+function parsePermissions(raw: unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return raw
+        .split(/[,\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+}
+
 export default function IssueDetailPage() {
   const { t, i18n } = useTranslation();
   const params = useParams<{ identifier?: string; issueId?: string }>();
@@ -107,6 +124,36 @@ export default function IssueDetailPage() {
   const members = membersQuery.data?.data ?? [];
   const projectIssues = (projectIssuesQuery.data?.data ?? []).filter((iss) => iss.id !== id);
 
+  const permissionSet = useMemo(() => {
+    const set = new Set<string>();
+    if (!currentUser?.id) return set;
+    const meMember = members.find((m) => m.userId === currentUser.id);
+    if (!meMember) return set;
+    for (const mr of meMember.memberRoles ?? []) {
+      for (const p of parsePermissions(mr.role?.permissions)) set.add(p);
+    }
+    return set;
+  }, [members, currentUser?.id]);
+
+  const canEditIssue = useMemo(() => {
+    if (!isAuthenticated || !issue) return false;
+    if (currentUser?.admin) return true;
+    if (permissionSet.has('edit_issues')) return true;
+    return permissionSet.has('edit_own_issues') && issue.authorId === currentUser?.id;
+  }, [isAuthenticated, currentUser, permissionSet, issue]);
+
+  const canComment = useMemo(() => {
+    if (!isAuthenticated) return false;
+    if (currentUser?.admin) return true;
+    return (
+      permissionSet.has('view_issues') ||
+      permissionSet.has('add_issue_notes') ||
+      permissionSet.has('edit_issue_notes') ||
+      permissionSet.has('edit_own_issue_notes') ||
+      permissionSet.has('edit_issues')
+    );
+  }, [isAuthenticated, currentUser, permissionSet]);
+
   useEffect(() => {
     const raw = issue?.description;
     if (!raw) { setDescHtml(''); return; }
@@ -123,6 +170,7 @@ export default function IssueDetailPage() {
 
   const enterEdit = () => {
     if (!issue) return;
+    if (!canEditIssue) return;
     setForm({
       subject: issue.subject,
       description: issue.description ?? '',
@@ -144,6 +192,7 @@ export default function IssueDetailPage() {
 
   const saveEdit = () => {
     if (!issue || !form.subject.trim()) return;
+    if (!canEditIssue) return;
     updateMutation.mutate(
       {
         id: issue.id,
@@ -277,7 +326,7 @@ export default function IssueDetailPage() {
   const watchers = issue.watchers ?? [];
   const relations = issue.relations ?? [];
   const assigneeName = issue.assignee
-    ? `${issue.assignee.firstname} ${issue.assignee.lastname}`.trim() || issue.assignee.login
+    ? `${issue.assignee.lastname} ${issue.assignee.firstname}`.trim() || issue.assignee.login
     : '—';
 
   const selectCls = 'w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500';
@@ -308,7 +357,7 @@ export default function IssueDetailPage() {
             {issue.subject}
           </h1>
         )}
-        {isAuthenticated && !isEditing && (
+        {canEditIssue && !isEditing && (
           <button type="button" onClick={enterEdit}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
             <Pencil className="h-4 w-4" />
@@ -346,7 +395,7 @@ export default function IssueDetailPage() {
                 {members.map((m) => {
                   const u = m.user;
                   if (!u) return null;
-                  return <option key={u.id} value={u.id}>{`${u.firstname} ${u.lastname}`.trim() || u.login}</option>;
+                  return <option key={u.id} value={u.id}>{`${u.lastname} ${u.firstname}`.trim() || u.login}</option>;
                 })}
               </select>
             </div>
@@ -439,7 +488,7 @@ export default function IssueDetailPage() {
               ))}
             </div>
             <div className="border-t border-slate-100 px-5 py-2 text-xs text-slate-400">
-              {t('issues.author')}: {issue.author ? <Link to={`/users/${issue.author.id}`} className="text-primary-600 hover:underline">{`${issue.author.firstname} ${issue.author.lastname}`.trim() || issue.author.login}</Link> : '—'}
+              {t('issues.author')}: {issue.author ? <Link to={`/users/${issue.author.id}`} className="text-primary-600 hover:underline">{`${issue.author.lastname} ${issue.author.firstname}`.trim() || issue.author.login}</Link> : '—'}
               <span className="mx-2">|</span>
               {t('app.create')}: {format(new Date(issue.createdAt), 'yyyy-MM-dd HH:mm', { locale })}
               <span className="mx-2">|</span>
@@ -490,7 +539,7 @@ export default function IssueDetailPage() {
               const u = w.user ?? (w as unknown as User);
               return (
                 <span key={u.id} className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                  {u.firstname} {u.lastname}
+                  {u.lastname} {u.firstname}
                 </span>
               );
             })}
@@ -563,7 +612,7 @@ export default function IssueDetailPage() {
             <ul className="mt-1.5 divide-y divide-slate-100">
               {activityJournals.map((j) => {
                 const details = (j.details ?? []).filter((d) => d.oldValue || d.newValue);
-                const userName = j.user ? `${j.user.firstname} ${j.user.lastname}`.trim() || j.user.login : '—';
+                const userName = j.user ? `${j.user.lastname} ${j.user.firstname}`.trim() || j.user.login : '—';
                 return (
                   <li key={j.id} className="py-1.5">
                     <div className="flex items-center gap-1.5 text-[11px] text-slate-400 leading-tight">
@@ -606,7 +655,7 @@ export default function IssueDetailPage() {
                   const hasNotes = j.notes && j.notes.trim();
                   const imgs = (j.attachments ?? []).filter((a) => a.contentType?.startsWith('image/'));
                   const nonImgs = (j.attachments ?? []).filter((a) => !a.contentType?.startsWith('image/'));
-                  const userName = j.user ? `${j.user.firstname} ${j.user.lastname}`.trim() || j.user.login : '—';
+                  const userName = j.user ? `${j.user.lastname} ${j.user.firstname}`.trim() || j.user.login : '—';
                   const canEdit = isAuthenticated && (j.userId === currentUser?.id || currentUser?.admin);
                   const isEdited = j.updatedAt && j.createdAt !== j.updatedAt;
 
@@ -745,7 +794,7 @@ export default function IssueDetailPage() {
       )}
 
       {/* Add comment with file attachment */}
-      {isAuthenticated && !isEditing && (
+      {canComment && !isEditing && (
         <section className="mb-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="mb-3 text-lg font-semibold text-slate-900">{t('issues.addComment')}</h2>
           <form onSubmit={submitComment} className="space-y-3">
@@ -762,7 +811,7 @@ export default function IssueDetailPage() {
             <button type="submit"
               disabled={(updateMutation.isPending || uploadMutation.isPending) || (!note.trim() && attachFiles.length === 0)}
               className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50">
-              {(updateMutation.isPending || uploadMutation.isPending) ? t('app.loading') : t('app.save')}
+              {(updateMutation.isPending || uploadMutation.isPending) ? t('app.loading') : '送信'}
             </button>
           </form>
         </section>

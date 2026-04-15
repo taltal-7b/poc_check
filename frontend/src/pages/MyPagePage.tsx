@@ -131,7 +131,7 @@ export default function MyPagePage() {
         <h1 className="text-2xl font-bold text-slate-900">{t('myPage.title')}</h1>
         {me && (
           <p className="text-sm text-slate-500">
-            {me.firstname} {me.lastname} ({me.login})
+            {me.lastname} {me.firstname} ({me.login})
           </p>
         )}
       </div>

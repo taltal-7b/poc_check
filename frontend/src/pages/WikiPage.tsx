@@ -6,8 +6,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { marked } from 'marked';
 import sanitizeHtml from 'sanitize-html';
 import { Book, History, Lock, LockOpen, Pencil } from 'lucide-react';
-import { useProject, useWikiPage, useWikiPages } from '../api/hooks';
+import { useProject, useWikiPage, useWikiPages, useMembers } from '../api/hooks';
 import api from '../api/client';
+import { useAuthStore } from '../stores/auth';
 import type { WikiPage as WikiPageType } from '../types';
 
 function unwrap<T>(raw: unknown): T | undefined {
@@ -43,11 +44,29 @@ function buildTree(pages: WikiPageType[]): { name: string; full: string; childre
   return Array.from(roots.values());
 }
 
+function parsePermissions(raw: unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return raw
+        .split(/[,\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+}
+
 export default function WikiPage() {
   const { t } = useTranslation();
   const { identifier, title: titleParam } = useParams<{ identifier: string; title?: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const currentUser = useAuthStore((s) => s.user);
 
   const { data: projectRaw } = useProject(identifier ?? '');
   const project =
@@ -55,6 +74,8 @@ export default function WikiPage() {
       ? (projectRaw as { id: string; identifier?: string })
       : null;
   const projectId = project?.id ?? '';
+  const membersQuery = useMembers(projectId);
+  const members = membersQuery.data?.data ?? [];
 
   const pagesRaw = useWikiPages(projectId);
   const pages = useMemo(() => unwrapList<WikiPageType>(pagesRaw.data), [pagesRaw.data]);
@@ -85,6 +106,17 @@ export default function WikiPage() {
   });
 
   const tree = useMemo(() => buildTree(pages), [pages]);
+  const canEditWiki = useMemo(() => {
+    if (currentUser?.admin) return true;
+    if (!currentUser?.id) return false;
+    const meMember = members.find((m) => m.userId === currentUser.id);
+    if (!meMember) return false;
+    const perms = new Set<string>();
+    for (const mr of meMember.memberRoles ?? []) {
+      for (const p of parsePermissions(mr.role?.permissions)) perms.add(p);
+    }
+    return perms.has('edit_wiki_pages');
+  }, [members, currentUser]);
 
   const base = `/projects/${identifier}/wiki`;
 
@@ -129,12 +161,14 @@ export default function WikiPage() {
           <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <h1 className="text-2xl font-bold text-gray-900">{t('wiki.title')}</h1>
-              <Link
-                to={`${base}/new/edit`}
-                className="rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
-              >
-                {t('wiki.newPage')}
-              </Link>
+              {canEditWiki && (
+                <Link
+                  to={`${base}/new/edit`}
+                  className="rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
+                >
+                  {t('wiki.newPage')}
+                </Link>
+              )}
             </div>
             <ul className="divide-y divide-gray-100">
               {pages.length === 0 ? (
@@ -159,14 +193,16 @@ export default function WikiPage() {
           <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
             <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-4 py-3 bg-gray-50">
               <h1 className="text-xl font-bold text-gray-900 flex-1 min-w-[12rem]">{decodedTitle}</h1>
-              <button
-                type="button"
-                onClick={() => navigate(`${base}/${encodeURIComponent(decodedTitle)}/edit`)}
-                className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
-              >
-                <Pencil size={14} />
-                {t('wiki.editPage')}
-              </button>
+              {canEditWiki && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`${base}/${encodeURIComponent(decodedTitle)}/edit`)}
+                  className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
+                >
+                  <Pencil size={14} />
+                  {t('wiki.editPage')}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => navigate(`${base}/${encodeURIComponent(decodedTitle)}/history`)}
@@ -175,15 +211,17 @@ export default function WikiPage() {
                 <History size={14} />
                 {t('wiki.history')}
               </button>
-              <button
-                type="button"
-                disabled={toggleProtect.isPending || !wikiPage}
-                onClick={() => toggleProtect.mutate()}
-                className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                {wikiPage?.protected ? <LockOpen size={14} /> : <Lock size={14} />}
-                {wikiPage?.protected ? t('wiki.unprotect') : t('wiki.protect')}
-              </button>
+              {canEditWiki && (
+                <button
+                  type="button"
+                  disabled={toggleProtect.isPending || !wikiPage}
+                  onClick={() => toggleProtect.mutate()}
+                  className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {wikiPage?.protected ? <LockOpen size={14} /> : <Lock size={14} />}
+                  {wikiPage?.protected ? t('wiki.unprotect') : t('wiki.protect')}
+                </button>
+              )}
             </div>
             {pageQuery.isLoading ? (
               <div className="p-8 text-center text-gray-500">{t('app.loading')}</div>

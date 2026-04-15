@@ -28,7 +28,7 @@ export default function UserProfilePage() {
   if (isLoading) return <div className="px-4 py-8"><p className="text-slate-500">{t('app.loading')}</p></div>;
   if (isError || !user) return <div className="px-4 py-8"><p className="text-red-600">{t('app.error')}</p></div>;
 
-  const fullName = `${user.firstname} ${user.lastname}`.trim() || user.login;
+  const fullName = `${user.lastname} ${user.firstname}`.trim() || user.login;
 
   const groupByDate = (items: Activity[]) => {
     const groups: Record<string, Activity[]> = {};
