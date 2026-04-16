@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "python3 .cursor/hooks/chat_timestamp_logger.py --event beforeSubmitPrompt",
+        "timeout": 10,
+        "failClosed": false
+      }
+    ],
+    "afterAgentResponse": [
+      {
+        "command": "python3 .cursor/hooks/chat_timestamp_logger.py --event afterAgentResponse",
+        "timeout": 10,
+        "failClosed": false
+      }
+    ]
+  }
+}
