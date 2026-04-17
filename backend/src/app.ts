@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import path from 'path';
 import { config } from './config';
 import { errorHandler } from './middleware/error-handler';
+import { requireProjectModule } from './middleware/project-module';
 
 import authRoutes from './routes/auth';
 import projectRoutes from './routes/projects';
@@ -69,14 +70,14 @@ api.use('/journals', journalRoutes);
 app.use('/api/v1', api);
 
 // Nested project routes
-api.use('/projects/:projectId/issues', issueRoutes);
-api.use('/projects/:projectId/wiki', wikiRoutes);
-api.use('/projects/:projectId/documents', documentRoutes);
-api.use('/projects/:projectId/news', newsRoutes);
-api.use('/projects/:projectId/boards', boardRoutes);
+api.use('/projects/:projectId/issues', requireProjectModule('issue_tracking'), issueRoutes);
+api.use('/projects/:projectId/wiki', requireProjectModule('wiki'), wikiRoutes);
+api.use('/projects/:projectId/documents', requireProjectModule('documents'), documentRoutes);
+api.use('/projects/:projectId/news', requireProjectModule('news'), newsRoutes);
+api.use('/projects/:projectId/boards', requireProjectModule('boards'), boardRoutes);
 api.use('/projects/:projectId/versions', versionRoutes);
 api.use('/projects/:projectId/members', memberRoutes);
-api.use('/projects/:projectId/time_entries', timeEntryRoutes);
+api.use('/projects/:projectId/time_entries', requireProjectModule('time_tracking'), timeEntryRoutes);
 api.use('/projects/:projectId/files', attachmentRoutes);
 
 app.get('/up', (_req, res) => res.json({ status: 'ok' }));

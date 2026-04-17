@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Clock } from 'lucide-react';
+import { Clock, Rss } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ja, enUS } from 'date-fns/locale';
 import { useIssues, useProjectIssues, useStatuses, useTrackers, useMembers } from '../api/hooks';
@@ -47,6 +47,20 @@ export default function IssuesPage() {
     }),
     [page, trackerId, statusId, priority, assignee],
   );
+
+  const atomUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (trackerId) params.set('tracker', trackerId);
+    if (statusId) params.set('status', statusId);
+    if (priority) params.set('priority', priority);
+    if (assignee.trim()) params.set('assignee', assignee.trim());
+    params.set('limit', '100');
+    const qs = params.toString();
+    const base = identifier
+      ? `/api/v1/projects/${identifier}/issues/atom`
+      : '/api/v1/issues/atom';
+    return `${base}${qs ? `?${qs}` : ''}`;
+  }, [identifier, trackerId, statusId, priority, assignee]);
 
   const globalQuery = useIssues(queryParams, { enabled: !identifier });
   const projectQuery = useProjectIssues(identifier ?? '', queryParams, { enabled: !!identifier });
@@ -256,6 +270,16 @@ export default function IssuesPage() {
           </button>
         </div>
       )}
+
+      <div className="flex justify-end pt-2">
+        <a
+          href={atomUrl}
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+        >
+          <Rss className="h-4 w-4" />
+          Atom
+        </a>
+      </div>
     </div>
   );
 }

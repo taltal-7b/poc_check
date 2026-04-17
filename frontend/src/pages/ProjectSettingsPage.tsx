@@ -16,9 +16,29 @@ const DEFAULT_MODULES = [
   'gantt',
 ];
 
+const MODULE_LABELS: Record<string, string> = {
+  issue_tracking: 'チケット',
+  time_tracking: '時間管理',
+  news: 'ニュース',
+  documents: '文書',
+  wiki: 'Wiki',
+  repository: 'リポジトリ',
+  boards: 'フォーラム',
+  calendar: 'カレンダー',
+  gantt: 'ガントチャート',
+};
+
 const STATUS_ACTIVE = 1;
 const STATUS_ARCHIVED = 2;
-const STATUS_CLOSED = 3;
+
+type ConfirmAction = 'save' | 'archive' | 'unarchive' | 'delete' | null;
+
+function normalizeSelectedKeys(selected: Record<string, boolean>): string[] {
+  return Object.entries(selected)
+    .filter(([, v]) => v)
+    .map(([k]) => k)
+    .sort();
+}
 
 export default function ProjectSettingsPage() {
   const { t } = useTranslation();
@@ -41,6 +61,16 @@ export default function ProjectSettingsPage() {
   const [parentId, setParentId] = useState('');
   const [enabledModules, setEnabledModules] = useState<Record<string, boolean>>({});
   const [selectedTrackerIds, setSelectedTrackerIds] = useState<Record<string, boolean>>({});
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
+  const [initialSnapshot, setInitialSnapshot] = useState<{
+    name: string;
+    slug: string;
+    description: string;
+    isPublic: boolean;
+    parentId: string;
+    modules: string[];
+    trackers: string[];
+  } | null>(null);
 
   const projects = projectsQuery.data?.data ?? [];
   const trackers = trackersQuery.data?.data ?? [];
@@ -62,6 +92,15 @@ export default function ProjectSettingsPage() {
       tr[x.id] = true;
     });
     setSelectedTrackerIds(tr);
+    setInitialSnapshot({
+      name: project.name.trim(),
+      slug: project.identifier.trim(),
+      description: (project.description ?? '').trim(),
+      isPublic: project.isPublic,
+      parentId: project.parentId ?? '',
+      modules: normalizeSelectedKeys(mods),
+      trackers: normalizeSelectedKeys(tr),
+    });
   }, [project, trackers]);
 
   const moduleList = useMemo(
@@ -73,10 +112,34 @@ export default function ProjectSettingsPage() {
     [selectedTrackerIds],
   );
 
+  const currentSnapshot = useMemo(
+    () => ({
+      name: name.trim(),
+      slug: slug.trim(),
+      description: description.trim(),
+      isPublic,
+      parentId,
+      modules: normalizeSelectedKeys(enabledModules),
+      trackers: normalizeSelectedKeys(selectedTrackerIds),
+    }),
+    [name, slug, description, isPublic, parentId, enabledModules, selectedTrackerIds],
+  );
+
+  const hasChanges = useMemo(() => {
+    if (!initialSnapshot) return false;
+    return JSON.stringify(currentSnapshot) !== JSON.stringify(initialSnapshot);
+  }, [currentSnapshot, initialSnapshot]);
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!project || !hasChanges) return;
+    setConfirmAction('save');
+  };
+
+  const executeSave = () => {
     if (!project) return;
-    updateMutation.mutate({
+    updateMutation.mutate(
+      {
       id: project.id,
       name: name.trim(),
       identifier: slug.trim(),
@@ -85,22 +148,44 @@ export default function ProjectSettingsPage() {
       parentId: parentId || null,
       enabledModules: moduleList,
       trackerIds,
-    });
+      },
+      { onSuccess: () => setConfirmAction(null) },
+    );
   };
 
   const handleArchive = () => {
     if (!project) return;
-    updateMutation.mutate({ id: project.id, status: STATUS_ARCHIVED });
+    setConfirmAction('archive');
   };
 
-  const handleClose = () => {
+  const handleUnarchive = () => {
     if (!project) return;
-    updateMutation.mutate({ id: project.id, status: STATUS_CLOSED });
+    setConfirmAction('unarchive');
   };
 
   const handleDelete = () => {
     if (!project) return;
-    if (!window.confirm(t('app.confirm'))) return;
+    setConfirmAction('delete');
+  };
+
+  const executeArchive = () => {
+    if (!project) return;
+    updateMutation.mutate(
+      { id: project.id, status: STATUS_ARCHIVED },
+      { onSuccess: () => setConfirmAction(null) },
+    );
+  };
+
+  const executeUnarchive = () => {
+    if (!project) return;
+    updateMutation.mutate(
+      { id: project.id, status: STATUS_ACTIVE },
+      { onSuccess: () => setConfirmAction(null) },
+    );
+  };
+
+  const executeDelete = () => {
+    if (!project) return;
     deleteMutation.mutate(project.id, {
       onSuccess: () => navigate('/projects'),
     });
@@ -194,7 +279,7 @@ export default function ProjectSettingsPage() {
                   onChange={() => toggleModule(m)}
                   className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                 />
-                <span className="font-mono text-xs">{m}</span>
+                <span className="text-sm">{MODULE_LABELS[m] ?? m}</span>
               </label>
             ))}
           </div>
@@ -218,25 +303,28 @@ export default function ProjectSettingsPage() {
         <div className="flex flex-wrap gap-3">
           <button
             type="submit"
-            disabled={updateMutation.isPending}
+            disabled={updateMutation.isPending || !hasChanges}
             className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60"
           >
             {updateMutation.isPending ? t('app.loading') : t('app.save')}
           </button>
-          <button
-            type="button"
-            onClick={handleArchive}
-            className="rounded-lg border border-amber-300 bg-amber-50 px-5 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100"
-          >
-            {t('projects.archive')}
-          </button>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="rounded-lg border border-slate-300 bg-slate-50 px-5 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100"
-          >
-            {t('projects.close')}
-          </button>
+          {project.status === STATUS_ARCHIVED ? (
+            <button
+              type="button"
+              onClick={handleUnarchive}
+              className="rounded-lg border border-emerald-300 bg-emerald-50 px-5 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100"
+            >
+              {t('projects.unarchive')}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleArchive}
+              className="rounded-lg border border-amber-300 bg-amber-50 px-5 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100"
+            >
+              {t('projects.archive')}
+            </button>
+          )}
           <button
             type="button"
             onClick={handleDelete}
@@ -255,6 +343,42 @@ export default function ProjectSettingsPage() {
           </button>
         </div>
       </form>
+
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setConfirmAction(null)}>
+          <div className="mx-4 w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-900">{t('app.confirm')}</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              {confirmAction === 'save' && '変更内容を保存します。よろしいですか？'}
+              {confirmAction === 'archive' && 'このプロジェクトをアーカイブします。よろしいですか？'}
+              {confirmAction === 'unarchive' && 'このプロジェクトのアーカイブを解除します。よろしいですか？'}
+              {confirmAction === 'delete' && 'このプロジェクトを削除します。よろしいですか？'}
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirmAction === 'save') executeSave();
+                  if (confirmAction === 'archive') executeArchive();
+                  if (confirmAction === 'unarchive') executeUnarchive();
+                  if (confirmAction === 'delete') executeDelete();
+                }}
+                disabled={updateMutation.isPending || deleteMutation.isPending}
+                className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
+              >
+                {(updateMutation.isPending || deleteMutation.isPending) ? t('app.loading') : 'はい'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmAction(null)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                {t('app.cancel')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
