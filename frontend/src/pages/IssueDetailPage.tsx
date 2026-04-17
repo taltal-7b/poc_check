@@ -663,12 +663,13 @@ export default function IssueDetailPage() {
           const details = (j.details ?? []).filter((d) => !(jIdx === 0 && !d.oldValue));
           return details.length > 0 && !(jIdx === 0 && details.every((d) => !d.oldValue));
         });
-        if (!activityJournals.length) return null;
+        const latestFiveActivityJournals = activityJournals.slice(-5);
+        if (!latestFiveActivityJournals.length) return null;
         return (
           <section className="mb-6 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <h2 className="text-sm font-semibold text-slate-900">{t('activity.title')}</h2>
+            <h2 className="text-sm font-semibold text-slate-900">{t('activity.title')}（最新5件）</h2>
             <ul className="mt-1.5 divide-y divide-slate-100">
-              {activityJournals.map((j) => {
+              {latestFiveActivityJournals.map((j) => {
                 const details = (j.details ?? []).filter((d) => d.oldValue || d.newValue);
                 const userName = j.user ? `${j.user.lastname} ${j.user.firstname}`.trim() || j.user.login : '—';
                 return (

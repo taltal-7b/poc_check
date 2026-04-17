@@ -265,21 +265,27 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
       </h1>
       <form onSubmit={handleSubmit} className="space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">{t('projects.name')}</label>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            {t('projects.name')}<span className="ml-1 text-red-500">*</span>
+          </label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
+            required
             className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
           />
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">{t('projects.identifier')}</label>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            {t('projects.identifier')}<span className="ml-1 text-red-500">*</span>
+          </label>
           <input
             value={identifier}
             onChange={(e) => {
               setIdentifierTouched(true);
               setIdentifier(e.target.value);
             }}
+            required
             className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
           />
         </div>

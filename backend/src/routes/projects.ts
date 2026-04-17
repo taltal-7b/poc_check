@@ -95,6 +95,15 @@ async function userCanManageProject(
   return !!memberWithAdminRole;
 }
 
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 const createProjectSchema = z.object({
   name: z.string().min(1),
   identifier: z.string().min(1).regex(/^[a-z0-9_-]+$/i, 'identifier の形式が不正です'),
@@ -191,6 +200,141 @@ router.get(
       perPage,
       totalPages: Math.ceil(total / perPage) || 1,
     });
+  }),
+);
+
+router.get(
+  '/atom',
+  optionalAuth,
+  catchAsync(async (req, res) => {
+    let feedUser = req.user;
+    const key = typeof req.query.key === 'string' ? req.query.key : '';
+    if (!feedUser && key) {
+      const user = await prisma.user.findFirst({
+        where: { apiKey: key, status: 1 },
+        select: { id: true, login: true, admin: true, language: true },
+      });
+      if (user) {
+        feedUser = { userId: user.id, login: user.login, admin: user.admin };
+      }
+    }
+
+    const limitRaw = Number(req.query.limit ?? 20);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100, Math.trunc(limitRaw))) : 20;
+    const statusRaw = req.query.status;
+    const statusFilter =
+      statusRaw !== undefined && statusRaw !== ''
+        ? Number(statusRaw)
+        : undefined;
+
+    const and: Array<Record<string, unknown>> = [];
+    if (statusFilter !== undefined && !Number.isNaN(statusFilter)) {
+      and.push({ status: statusFilter });
+    }
+
+    if (!feedUser?.admin) {
+      if (!feedUser) {
+        and.push({ isPublic: true });
+      } else {
+        const groupIds = await getUserGroupIds(feedUser.userId);
+        and.push({
+          OR: [
+            { isPublic: true },
+            {
+              members: {
+                some: {
+                  OR: [{ userId: feedUser.userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
+                },
+              },
+            },
+          ],
+        });
+      }
+    }
+    const where = and.length ? { AND: and } : {};
+
+    const rows = await prisma.project.findMany({
+      where,
+      orderBy: { updatedAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        name: true,
+        identifier: true,
+        description: true,
+        updatedAt: true,
+      },
+    });
+
+    const host = `${req.protocol}://${req.get('host')}`;
+    const projectsUrl = `${host}/projects`;
+    const feedUrl = `${host}${req.originalUrl}`;
+    const updatedAt = rows[0]?.updatedAt ?? new Date();
+    const feedId = `${host}/`;
+
+    const entries = rows
+      .map((row) => {
+        const entryUrl = `${host}/projects/${row.identifier}`;
+        const title = `${row.name} - プロジェクト: ${row.name}`;
+        return [
+          '  <entry>',
+          `    <id>${escapeXml(entryUrl)}</id>`,
+          `    <title>${escapeXml(title)}</title>`,
+          `    <link rel="alternate" href="${escapeXml(entryUrl)}" />`,
+          `    <updated>${row.updatedAt.toISOString()}</updated>`,
+          '    <content type="html">',
+          `${escapeXml(row.description ?? '')}`,
+          '    </content>',
+          '  </entry>',
+        ].join('\n');
+      })
+      .join('\n');
+
+    const xml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<feed xmlns="http://www.w3.org/2005/Atom">',
+      `  <id>${escapeXml(feedId)}</id>`,
+      '  <title>TaskNova: 最近のプロジェクト</title>',
+      `  <updated>${updatedAt.toISOString()}</updated>`,
+      `  <link rel="self" href="${escapeXml(feedUrl)}" />`,
+      `  <link rel="alternate" href="${escapeXml(projectsUrl)}" />`,
+      `  <icon>${escapeXml(`${host}/favicon.ico`)}</icon>`,
+      '  <author>',
+      '    <name>TaskNova</name>',
+      '  </author>',
+      '  <generator uri="https://www.redmine.org/">TaskNova</generator>',
+      entries,
+      '</feed>',
+      '',
+    ].join('\n');
+
+    const accept = String(req.headers.accept ?? '').toLowerCase();
+    const prefersHtml = accept.includes('text/html');
+    if (prefersHtml) {
+      const html = [
+        '<!doctype html>',
+        '<html lang="ja">',
+        '<head>',
+        '  <meta charset="utf-8" />',
+        '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
+        '  <title>Projects Atom</title>',
+        '  <style>',
+        '    :root { color-scheme: dark; }',
+        '    body { margin: 0; background: #000; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }',
+        '    pre { margin: 0; padding: 12px 14px; white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.45; }',
+        '  </style>',
+        '</head>',
+        '<body>',
+        `  <pre>${escapeXml(xml)}</pre>`,
+        '</body>',
+        '</html>',
+      ].join('\n');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.status(200).send(html);
+    }
+
+    res.setHeader('Content-Type', 'application/atom+xml; charset=utf-8');
+    return res.status(200).send(xml);
   }),
 );
 

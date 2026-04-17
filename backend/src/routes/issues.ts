@@ -63,6 +63,11 @@ function buildJournalDetailsFromDiff(
   return details;
 }
 
+function isUuidLike(value: string | null | undefined): value is string {
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 async function createIssueCreationJournal(
   db: Tx,
   issue: {
@@ -896,7 +901,43 @@ router.get(
     const can = await userCanAccessProject(req.user?.userId, req.user?.admin, project);
     if (!can) throw AppError.forbidden();
 
-    return sendSuccess(res, issue);
+    const assigneeHistoryIds = new Set<string>();
+    for (const journal of issue.journals ?? []) {
+      for (const detail of journal.details ?? []) {
+        if (detail.propKey !== 'assigneeId') continue;
+        if (isUuidLike(detail.oldValue)) assigneeHistoryIds.add(detail.oldValue);
+        if (isUuidLike(detail.newValue)) assigneeHistoryIds.add(detail.newValue);
+      }
+    }
+
+    const assigneeLabelMap = new Map<string, string>();
+    if (assigneeHistoryIds.size > 0) {
+      const users = await prisma.user.findMany({
+        where: { id: { in: Array.from(assigneeHistoryIds) } },
+        select: { id: true, login: true, firstname: true, lastname: true },
+      });
+      for (const user of users) {
+        const name = `${user.lastname} ${user.firstname}`.trim() || user.login;
+        assigneeLabelMap.set(user.id, name);
+      }
+    }
+
+    const enrichedIssue = {
+      ...issue,
+      journals: (issue.journals ?? []).map((journal) => ({
+        ...journal,
+        details: (journal.details ?? []).map((detail) => {
+          if (detail.propKey !== 'assigneeId') return detail;
+          return {
+            ...detail,
+            oldValue: isUuidLike(detail.oldValue) ? (assigneeLabelMap.get(detail.oldValue) ?? detail.oldValue) : detail.oldValue,
+            newValue: isUuidLike(detail.newValue) ? (assigneeLabelMap.get(detail.newValue) ?? detail.newValue) : detail.newValue,
+          };
+        }),
+      })),
+    };
+
+    return sendSuccess(res, enrichedIssue);
   }),
 );
 
