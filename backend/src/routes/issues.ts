@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
-import { authenticate, optionalAuth } from '../middleware/auth';
+import { authenticate, optionalAuth, type AuthPayload } from '../middleware/auth';
 import { z } from 'zod';
 
 const router = Router({ mergeParams: true });
@@ -61,6 +61,89 @@ function buildJournalDetailsFromDiff(
     }
   }
   return details;
+}
+
+function isUuidLike(value: string | null | undefined): value is string {
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+async function resolveFeedUserByApiKey(key: string | undefined): Promise<AuthPayload | undefined> {
+  if (!key) return undefined;
+  const user = await prisma.user.findFirst({
+    where: { apiKey: key, status: 1 },
+    select: { id: true, login: true, admin: true },
+  });
+  if (!user) return undefined;
+  return { userId: user.id, login: user.login, admin: user.admin };
+}
+
+async function buildIssueWhere(
+  req: Request,
+  user: AuthPayload | undefined,
+): Promise<{ where: Prisma.IssueWhereInput; earlyEmpty: boolean }> {
+  const paramPid = req.params.projectId as string | undefined;
+  const queryPid = req.query.projectId as string | undefined;
+  const resolvedFromParam = paramPid ? await resolveProjectId(paramPid) : undefined;
+  const resolvedFromQuery = queryPid ? await resolveProjectId(queryPid) : undefined;
+
+  let projectIdFilter: string | undefined;
+  if (resolvedFromParam) projectIdFilter = resolvedFromParam;
+  else if (resolvedFromQuery) projectIdFilter = resolvedFromQuery;
+
+  const visible = await getVisibleProjectIds(user?.userId, user?.admin);
+  const where: Prisma.IssueWhereInput = {};
+
+  if (projectIdFilter) {
+    if (visible !== null && !visible.includes(projectIdFilter)) {
+      throw AppError.forbidden();
+    }
+    where.projectId = projectIdFilter;
+  } else if (visible !== null) {
+    if (!visible.length) return { where, earlyEmpty: true };
+    where.projectId = { in: visible };
+  }
+
+  const statusId = req.query.status as string | undefined;
+  if (statusId) where.statusId = statusId;
+
+  const trackerId = req.query.tracker as string | undefined;
+  if (trackerId) where.trackerId = trackerId;
+
+  const assigneeId = req.query.assignee as string | undefined;
+  if (assigneeId) where.assigneeId = assigneeId;
+
+  const authorId = req.query.author as string | undefined;
+  if (authorId) where.authorId = authorId;
+
+  const closedParam = req.query.closed as string | undefined;
+  if (closedParam === 'true') {
+    where.status = { isClosed: true };
+  } else if (closedParam === 'false') {
+    where.status = { isClosed: false };
+  }
+
+  const priorityRaw = req.query.priority;
+  if (priorityRaw !== undefined && priorityRaw !== '') {
+    const p = Number(priorityRaw);
+    if (!Number.isNaN(p)) where.priority = p;
+  }
+
+  const q = req.query.q as string | undefined;
+  if (q?.trim()) {
+    where.subject = { contains: q.trim(), mode: 'insensitive' };
+  }
+
+  return { where, earlyEmpty: false };
 }
 
 async function createIssueCreationJournal(
@@ -342,60 +425,9 @@ router.get(
   optionalAuth,
   catchAsync(async (req, res) => {
     const { page, perPage, skip } = parsePagination(req.query as Record<string, unknown>);
-
-    const paramPid = req.params.projectId as string | undefined;
-    const queryPid = req.query.projectId as string | undefined;
-    const resolvedFromParam = paramPid ? await resolveProjectId(paramPid) : undefined;
-    const resolvedFromQuery = queryPid ? await resolveProjectId(queryPid) : undefined;
-
-    let projectIdFilter: string | undefined;
-    if (resolvedFromParam) projectIdFilter = resolvedFromParam;
-    else if (resolvedFromQuery) projectIdFilter = resolvedFromQuery;
-
-    const visible = await getVisibleProjectIds(req.user?.userId, req.user?.admin);
-
-    const where: Prisma.IssueWhereInput = {};
-
-    if (projectIdFilter) {
-      if (visible !== null && !visible.includes(projectIdFilter)) {
-        throw AppError.forbidden();
-      }
-      where.projectId = projectIdFilter;
-    } else if (visible !== null) {
-      if (!visible.length) {
-        return sendPaginated(res, [], { total: 0, page, perPage, totalPages: 1 });
-      }
-      where.projectId = { in: visible };
-    }
-
-    const statusId = req.query.status as string | undefined;
-    if (statusId) where.statusId = statusId;
-
-    const trackerId = req.query.tracker as string | undefined;
-    if (trackerId) where.trackerId = trackerId;
-
-    const assigneeId = req.query.assignee as string | undefined;
-    if (assigneeId) where.assigneeId = assigneeId;
-
-    const authorId = req.query.author as string | undefined;
-    if (authorId) where.authorId = authorId;
-
-    const closedParam = req.query.closed as string | undefined;
-    if (closedParam === 'true') {
-      where.status = { isClosed: true };
-    } else if (closedParam === 'false') {
-      where.status = { isClosed: false };
-    }
-
-    const priorityRaw = req.query.priority;
-    if (priorityRaw !== undefined && priorityRaw !== '') {
-      const p = Number(priorityRaw);
-      if (!Number.isNaN(p)) where.priority = p;
-    }
-
-    const q = req.query.q as string | undefined;
-    if (q?.trim()) {
-      where.subject = { contains: q.trim(), mode: 'insensitive' };
+    const { where, earlyEmpty } = await buildIssueWhere(req, req.user);
+    if (earlyEmpty) {
+      return sendPaginated(res, [], { total: 0, page, perPage, totalPages: 1 });
     }
 
     const [total, rows] = await Promise.all([
@@ -421,6 +453,219 @@ router.get(
       perPage,
       totalPages: Math.ceil(total / perPage) || 1,
     });
+  }),
+);
+
+router.get(
+  '/atom',
+  optionalAuth,
+  catchAsync(async (req, res) => {
+    const key = typeof req.query.key === 'string' ? req.query.key : undefined;
+    const feedUser = req.user ?? (await resolveFeedUserByApiKey(key));
+    const { where, earlyEmpty } = await buildIssueWhere(req, feedUser);
+    const limitRaw = Number(req.query.limit ?? 100);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.trunc(limitRaw))) : 100;
+
+    const rows = earlyEmpty
+      ? []
+      : await prisma.issue.findMany({
+          where,
+          orderBy: [{ updatedAt: 'desc' }],
+          take: limit,
+          include: {
+            project: { select: { id: true, name: true, identifier: true } },
+            tracker: true,
+            status: true,
+          },
+        });
+
+    const host = `${req.protocol}://${req.get('host')}`;
+    const issuesUrl = `${host}/issues`;
+    const feedUrl = `${host}${req.originalUrl}`;
+    const updatedAt = rows[0]?.updatedAt ?? new Date();
+    const feedId = `${host}/issues`;
+
+    const entries = rows
+      .map((row) => {
+        const issuePath = row.project?.identifier
+          ? `/projects/${row.project.identifier}/issues/${row.id}`
+          : `/issues/${row.id}`;
+        const entryUrl = `${host}${issuePath}`;
+        const title = `#${row.number} ${row.subject}`;
+        const content = [
+          row.project ? `プロジェクト: ${row.project.name}` : '',
+          row.tracker ? `トラッカー: ${row.tracker.name}` : '',
+          row.status ? `ステータス: ${row.status.name}` : '',
+          row.description ?? '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+        return [
+          '  <entry>',
+          `    <id>${escapeXml(entryUrl)}</id>`,
+          `    <title>${escapeXml(title)}</title>`,
+          `    <link rel="alternate" href="${escapeXml(entryUrl)}" />`,
+          `    <updated>${row.updatedAt.toISOString()}</updated>`,
+          '    <content type="html">',
+          `${escapeXml(content)}`,
+          '    </content>',
+          '  </entry>',
+        ].join('\n');
+      })
+      .join('\n');
+
+    const xml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<feed xmlns="http://www.w3.org/2005/Atom">',
+      `  <id>${escapeXml(feedId)}</id>`,
+      '  <title>TaskNova: 最近のチケット</title>',
+      `  <updated>${updatedAt.toISOString()}</updated>`,
+      `  <link rel="self" href="${escapeXml(feedUrl)}" />`,
+      `  <link rel="alternate" href="${escapeXml(issuesUrl)}" />`,
+      `  <icon>${escapeXml(`${host}/favicon.ico`)}</icon>`,
+      '  <author>',
+      '    <name>TaskNova</name>',
+      '  </author>',
+      '  <generator uri="https://www.redmine.org/">TaskNova</generator>',
+      entries,
+      '</feed>',
+      '',
+    ].join('\n');
+
+    const accept = String(req.headers.accept ?? '').toLowerCase();
+    const prefersHtml = accept.includes('text/html');
+    if (prefersHtml) {
+      const html = [
+        '<!doctype html>',
+        '<html lang="ja">',
+        '<head>',
+        '  <meta charset="utf-8" />',
+        '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
+        '  <title>Issues Atom</title>',
+        '  <style>',
+        '    :root { color-scheme: dark; }',
+        '    body { margin: 0; background: #000; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }',
+        '    pre { margin: 0; padding: 12px 14px; white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.45; }',
+        '  </style>',
+        '</head>',
+        '<body>',
+        `  <pre>${escapeXml(xml)}</pre>`,
+        '</body>',
+        '</html>',
+      ].join('\n');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.status(200).send(html);
+    }
+
+    res.setHeader('Content-Type', 'application/atom+xml; charset=utf-8');
+    return res.status(200).send(xml);
+  }),
+);
+
+router.get(
+  '/:id/atom',
+  optionalAuth,
+  catchAsync(async (req, res) => {
+    const issue = await resolveIssueByParam(req.params.id);
+    if (!issue) throw AppError.notFound('チケットが見つかりません');
+
+    const project = await prisma.project.findUnique({ where: { id: issue.projectId } });
+    if (!project) throw AppError.notFound();
+    const can = await userCanAccessProject(req.user?.userId, req.user?.admin, project);
+    if (!can) throw AppError.forbidden();
+
+    const detail = await prisma.issue.findUnique({
+      where: { id: issue.id },
+      include: {
+        project: { select: { id: true, name: true, identifier: true } },
+        tracker: true,
+        status: true,
+        author: { select: { id: true, login: true, firstname: true, lastname: true } },
+        assignee: { select: { id: true, login: true, firstname: true, lastname: true } },
+      },
+    });
+    if (!detail) throw AppError.notFound('チケットが見つかりません');
+
+    const host = `${req.protocol}://${req.get('host')}`;
+    const issuePath = detail.project?.identifier
+      ? `/projects/${detail.project.identifier}/issues/${detail.id}`
+      : `/issues/${detail.id}`;
+    const entryUrl = `${host}${issuePath}`;
+    const feedUrl = `${host}${req.originalUrl}`;
+    const title = `#${detail.number} ${detail.subject}`;
+    const feedId = entryUrl;
+    const authorName = detail.author
+      ? `${detail.author.lastname} ${detail.author.firstname}`.trim() || detail.author.login
+      : '-';
+    const assigneeName = detail.assignee
+      ? `${detail.assignee.lastname} ${detail.assignee.firstname}`.trim() || detail.assignee.login
+      : '-';
+    const content = [
+      detail.project ? `プロジェクト: ${detail.project.name}` : '',
+      detail.tracker ? `トラッカー: ${detail.tracker.name}` : '',
+      detail.status ? `ステータス: ${detail.status.name}` : '',
+      `優先度: ${detail.priority}`,
+      `作成者: ${authorName}`,
+      `担当者: ${assigneeName}`,
+      '',
+      detail.description ?? '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const xml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<feed xmlns="http://www.w3.org/2005/Atom">',
+      `  <id>${escapeXml(feedId)}</id>`,
+      `  <title>${escapeXml(title)}</title>`,
+      `  <updated>${detail.updatedAt.toISOString()}</updated>`,
+      `  <link rel="self" href="${escapeXml(feedUrl)}" />`,
+      `  <link rel="alternate" href="${escapeXml(entryUrl)}" />`,
+      `  <icon>${escapeXml(`${host}/favicon.ico`)}</icon>`,
+      '  <author>',
+      '    <name>TaskNova</name>',
+      '  </author>',
+      '  <generator uri="https://www.redmine.org/">TaskNova</generator>',
+      '  <entry>',
+      `    <id>${escapeXml(entryUrl)}</id>`,
+      `    <title>${escapeXml(title)}</title>`,
+      `    <link rel="alternate" href="${escapeXml(entryUrl)}" />`,
+      `    <updated>${detail.updatedAt.toISOString()}</updated>`,
+      '    <content type="html">',
+      `${escapeXml(content)}`,
+      '    </content>',
+      '  </entry>',
+      '</feed>',
+      '',
+    ].join('\n');
+
+    const accept = String(req.headers.accept ?? '').toLowerCase();
+    const prefersHtml = accept.includes('text/html');
+    if (prefersHtml) {
+      const html = [
+        '<!doctype html>',
+        '<html lang="ja">',
+        '<head>',
+        '  <meta charset="utf-8" />',
+        '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
+        '  <title>Issue Atom</title>',
+        '  <style>',
+        '    :root { color-scheme: dark; }',
+        '    body { margin: 0; background: #000; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }',
+        '    pre { margin: 0; padding: 12px 14px; white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.45; }',
+        '  </style>',
+        '</head>',
+        '<body>',
+        `  <pre>${escapeXml(xml)}</pre>`,
+        '</body>',
+        '</html>',
+      ].join('\n');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.status(200).send(html);
+    }
+
+    res.setHeader('Content-Type', 'application/atom+xml; charset=utf-8');
+    return res.status(200).send(xml);
   }),
 );
 
@@ -896,7 +1141,43 @@ router.get(
     const can = await userCanAccessProject(req.user?.userId, req.user?.admin, project);
     if (!can) throw AppError.forbidden();
 
-    return sendSuccess(res, issue);
+    const assigneeHistoryIds = new Set<string>();
+    for (const journal of issue.journals ?? []) {
+      for (const detail of journal.details ?? []) {
+        if (detail.propKey !== 'assigneeId') continue;
+        if (isUuidLike(detail.oldValue)) assigneeHistoryIds.add(detail.oldValue);
+        if (isUuidLike(detail.newValue)) assigneeHistoryIds.add(detail.newValue);
+      }
+    }
+
+    const assigneeLabelMap = new Map<string, string>();
+    if (assigneeHistoryIds.size > 0) {
+      const users = await prisma.user.findMany({
+        where: { id: { in: Array.from(assigneeHistoryIds) } },
+        select: { id: true, login: true, firstname: true, lastname: true },
+      });
+      for (const user of users) {
+        const name = `${user.lastname} ${user.firstname}`.trim() || user.login;
+        assigneeLabelMap.set(user.id, name);
+      }
+    }
+
+    const enrichedIssue = {
+      ...issue,
+      journals: (issue.journals ?? []).map((journal) => ({
+        ...journal,
+        details: (journal.details ?? []).map((detail) => {
+          if (detail.propKey !== 'assigneeId') return detail;
+          return {
+            ...detail,
+            oldValue: isUuidLike(detail.oldValue) ? (assigneeLabelMap.get(detail.oldValue) ?? detail.oldValue) : detail.oldValue,
+            newValue: isUuidLike(detail.newValue) ? (assigneeLabelMap.get(detail.newValue) ?? detail.newValue) : detail.newValue,
+          };
+        }),
+      })),
+    };
+
+    return sendSuccess(res, enrichedIssue);
   }),
 );
 

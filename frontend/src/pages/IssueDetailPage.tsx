@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { renderMarkdown } from '../components/RichTextEditor';
 import { format } from 'date-fns';
 import { ja, enUS } from 'date-fns/locale';
-import { Pencil, FileIcon, Download, Trash2, Check, X } from 'lucide-react';
+import { Pencil, FileIcon, Download, Trash2, Check, X, Rss } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import { useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useUpdateJournal, useDeleteJournal, useTrackers, useStatuses, useMembers, useProjectIssues } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
@@ -379,6 +379,9 @@ export default function IssueDetailPage() {
   const issueDetailBase = projectSlug || issue.project?.identifier
     ? `/projects/${projectSlug || issue.project?.identifier}/issues`
     : '/issues';
+  const issueAtomUrl = projectSlug || issue.project?.identifier
+    ? `/api/v1/projects/${projectSlug || issue.project?.identifier}/issues/${issue.id}/atom`
+    : `/api/v1/issues/${issue.id}/atom`;
   const repositoryValue = (issue as Issue & { repository?: string }).repository;
   const propertyRows: Array<{ key: string; label: string; value: ReactNode }> = [
     { key: 'tracker', label: t('issues.tracker'), value: <span className="font-medium text-slate-900">{issue.tracker?.name ?? '—'}</span> },
@@ -464,15 +467,17 @@ export default function IssueDetailPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
-      {/* Breadcrumb */}
+      {/* Context header */}
       <div className="mb-4 text-sm text-slate-500">
-        {(projectSlug || issue.project) && (
-          <Link to={`/projects/${projectSlug || issue.project?.identifier}/issues`} className="text-primary-600 hover:underline">
-            {issue.project?.name ?? projectSlug}
-          </Link>
-        )}
-        <span className="mx-1.5">/</span>
-        <span className="text-slate-400">#{issue.number}</span>
+        <span>{issue.project?.name ?? projectSlug ?? '—'}</span>
+        {issue.parent ? (
+          <>
+            <span className="mx-1.5">/</span>
+            <Link to={`${issueDetailBase}/${issue.parent.id}`} className="text-primary-600 hover:underline">
+              {issue.parent.subject}
+            </Link>
+          </>
+        ) : null}
       </div>
 
       {/* Header: subject + edit button */}
@@ -663,12 +668,13 @@ export default function IssueDetailPage() {
           const details = (j.details ?? []).filter((d) => !(jIdx === 0 && !d.oldValue));
           return details.length > 0 && !(jIdx === 0 && details.every((d) => !d.oldValue));
         });
-        if (!activityJournals.length) return null;
+        const latestFiveActivityJournals = activityJournals.slice(-5);
+        if (!latestFiveActivityJournals.length) return null;
         return (
           <section className="mb-6 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <h2 className="text-sm font-semibold text-slate-900">{t('activity.title')}</h2>
+            <h2 className="text-sm font-semibold text-slate-900">{t('activity.title')}（最新5件）</h2>
             <ul className="mt-1.5 divide-y divide-slate-100">
-              {activityJournals.map((j) => {
+              {latestFiveActivityJournals.map((j) => {
                 const details = (j.details ?? []).filter((d) => d.oldValue || d.newValue);
                 const userName = j.user ? `${j.user.lastname} ${j.user.firstname}`.trim() || j.user.login : '—';
                 return (
@@ -866,11 +872,20 @@ export default function IssueDetailPage() {
               showAttachments={true}
             />
 
-            <button type="submit"
-              disabled={(updateMutation.isPending || uploadMutation.isPending) || (!note.trim() && attachFiles.length === 0)}
-              className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50">
-              {(updateMutation.isPending || uploadMutation.isPending) ? t('app.loading') : '送信'}
-            </button>
+            <div className="flex items-center justify-between gap-3">
+              <button type="submit"
+                disabled={(updateMutation.isPending || uploadMutation.isPending) || (!note.trim() && attachFiles.length === 0)}
+                className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50">
+                {(updateMutation.isPending || uploadMutation.isPending) ? t('app.loading') : '送信'}
+              </button>
+              <a
+                href={issueAtomUrl}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                <Rss className="h-4 w-4" />
+                Atom
+              </a>
+            </div>
           </form>
         </section>
       )}

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Rss, Trash2 } from 'lucide-react';
 import { useProjects, useDeleteProject } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 import type { Project } from '../types';
@@ -40,6 +40,14 @@ export default function ProjectsPage() {
     if (tab === 'archived') return { status: STATUS_ARCHIVED };
     return { status: STATUS_CLOSED };
   }, [tab]);
+
+  const atomUrl = useMemo(() => {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', String(params.status));
+    query.set('limit', '100');
+    const qs = query.toString();
+    return `/api/v1/projects/atom${qs ? `?${qs}` : ''}`;
+  }, [params]);
 
   const { data, isLoading, isError } = useProjects({
     ...(params ?? {}),
@@ -213,6 +221,16 @@ export default function ProjectsPage() {
       <ul className="space-y-3">
         {rootProjects.map((p) => renderProjectNode(p))}
       </ul>
+
+      <div className="flex justify-end pt-2">
+        <a
+          href={atomUrl}
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+        >
+          <Rss className="h-4 w-4" />
+          Atom
+        </a>
+      </div>
     </div>
   );
 }

@@ -52,7 +52,11 @@ export const useUpdateProject = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...body }: { id: string } & ProjectWriteBody) => put<Project>(`/projects/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
+    onSuccess: (_res, variables) => {
+      qc.invalidateQueries({ queryKey: ['projects'] });
+      qc.invalidateQueries({ queryKey: ['project', variables.id] });
+      qc.invalidateQueries({ queryKey: ['project'] });
+    },
   });
 };
 export const useDeleteProject = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (id: string) => del(`/projects/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }) }); };

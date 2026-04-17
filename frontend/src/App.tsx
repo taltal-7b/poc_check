@@ -1,6 +1,7 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout';
 import { useAuthStore } from './stores/auth';
+import { useProject } from './api/hooks';
 
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -53,6 +54,26 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return user?.admin ? <>{children}</> : <Navigate to="/" />;
 }
 
+function ProjectModuleRoute({
+  moduleKey,
+  children,
+}: {
+  moduleKey: string;
+  children: React.ReactNode;
+}) {
+  const { identifier } = useParams<{ identifier?: string }>();
+  const projectId = identifier ?? '';
+  const { data, isLoading } = useProject(projectId);
+
+  if (!projectId) return <Navigate to="/projects" replace />;
+  if (isLoading) return <div className="flex items-center justify-center min-h-screen">読み込み中...</div>;
+
+  const enabled = !!data?.data.enabledModules?.some((m) => m.name === moduleKey);
+  if (!enabled) return <Navigate to={`/projects/${projectId}`} replace />;
+
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -66,19 +87,19 @@ export default function App() {
         <Route path="projects/:identifier/edit" element={<ProtectedRoute><ProjectNewPage isEdit /></ProtectedRoute>} />
         <Route path="projects/:identifier" element={<ProjectDetailPage />} />
         <Route path="projects/:identifier/settings" element={<ProtectedRoute><ProjectSettingsPage /></ProtectedRoute>} />
-        <Route path="projects/:identifier/issues" element={<IssuesPage />} />
+        <Route path="projects/:identifier/issues" element={<ProjectModuleRoute moduleKey="issue_tracking"><IssuesPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/issues/new" element={<ProtectedRoute><IssueNewPage /></ProtectedRoute>} />
         <Route path="projects/:identifier/issues/:issueId" element={<IssueDetailPage />} />
-        <Route path="projects/:identifier/time_entries" element={<TimeEntriesPage />} />
-        <Route path="projects/:identifier/wiki" element={<WikiPage />} />
-        <Route path="projects/:identifier/wiki/:title" element={<WikiPage />} />
-        <Route path="projects/:identifier/wiki/:title/edit" element={<ProtectedRoute><WikiEditPage /></ProtectedRoute>} />
-        <Route path="projects/:identifier/news" element={<NewsPage />} />
-        <Route path="projects/:identifier/forums" element={<ForumsPage />} />
-        <Route path="projects/:identifier/documents" element={<DocumentsPage />} />
+        <Route path="projects/:identifier/time_entries" element={<ProjectModuleRoute moduleKey="time_tracking"><TimeEntriesPage /></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/wiki" element={<ProjectModuleRoute moduleKey="wiki"><WikiPage /></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/wiki/:title" element={<ProjectModuleRoute moduleKey="wiki"><WikiPage /></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/wiki/:title/edit" element={<ProjectModuleRoute moduleKey="wiki"><ProtectedRoute><WikiEditPage /></ProtectedRoute></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/news" element={<ProjectModuleRoute moduleKey="news"><NewsPage /></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/forums" element={<ProjectModuleRoute moduleKey="boards"><ForumsPage /></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/documents" element={<ProjectModuleRoute moduleKey="documents"><DocumentsPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/versions" element={<VersionsPage />} />
-        <Route path="projects/:identifier/gantt" element={<GanttPage />} />
-        <Route path="projects/:identifier/calendar" element={<CalendarPage />} />
+        <Route path="projects/:identifier/gantt" element={<ProjectModuleRoute moduleKey="gantt"><GanttPage /></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/calendar" element={<ProjectModuleRoute moduleKey="calendar"><CalendarPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/members" element={<MembersPage />} />
         <Route path="projects/:identifier/activity" element={<ActivityPage />} />
 
