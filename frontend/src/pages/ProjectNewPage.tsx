@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft } from 'lucide-react';
 import { useCreateProject, useProject, useUpdateProject, useProjects, useTrackers } from '../api/hooks';
@@ -40,6 +40,7 @@ function toKebabIdentifier(name: string): string {
 export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const { identifier: projectId } = useParams<{ identifier?: string }>();
   const createMutation = useCreateProject();
   const updateMutation = useUpdateProject();
@@ -49,7 +50,7 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
 
   const [name, setName] = useState('');
   const [identifier, setIdentifier] = useState('');
-  const [identifierTouched, setIdentifierTouched] = useState(false);
+  const [identifierTouched, setIdentifierTouched] = useState(isEdit);
   const [description, setDescription] = useState('');
   const [isPublic, setIsPublic] = useState(true);
   const [parentId, setParentId] = useState('');
@@ -113,8 +114,16 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
     if (!isEdit) {
       setInitializedProjectId(null);
       setTrackersInitializedProjectId(null);
+      setIdentifierTouched(false);
     }
   }, [isEdit]);
+
+  // 同じプロジェクト編集画面へ戻ってきたときでも初期値を再ロードする
+  useEffect(() => {
+    if (!isEdit) return;
+    setInitializedProjectId(null);
+    setTrackersInitializedProjectId(null);
+  }, [isEdit, location.key]);
 
   useEffect(() => {
     if (!identifierTouched) {

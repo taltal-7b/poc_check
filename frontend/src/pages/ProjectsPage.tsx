@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Pencil, Rss, Trash2 } from 'lucide-react';
 import { useProjects, useDeleteProject } from '../api/hooks';
@@ -11,6 +11,10 @@ type Tab = 'active' | 'archived' | 'closed' | 'all';
 const STATUS_ACTIVE = 1;
 const STATUS_ARCHIVED = 2;
 const STATUS_CLOSED = 3;
+
+function isTab(value: string | null): value is Tab {
+  return value === 'active' || value === 'archived' || value === 'closed' || value === 'all';
+}
 
 function statusLabel(t: (k: string) => string, status: number) {
   if (status === STATUS_ARCHIVED) return t('projects.status.archived');
@@ -26,10 +30,12 @@ function statusBadgeClass(status: number) {
 
 export default function ProjectsPage() {
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((s) => s.user);
   const isAdmin = useAuthStore((s) => s.user?.admin);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const [tab, setTab] = useState<Tab>('active');
+  const currentTab = searchParams.get('tab');
+  const tab: Tab = isTab(currentTab) ? currentTab : 'active';
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const deleteMutation = useDeleteProject();
@@ -96,6 +102,16 @@ export default function ProjectsPage() {
     { key: 'closed', label: t('projects.status.closed') },
     { key: 'all', label: t('search.scope.all') },
   ];
+
+  const handleTabChange = (nextTab: Tab) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextTab === 'active') {
+      nextParams.delete('tab');
+    } else {
+      nextParams.set('tab', nextTab);
+    }
+    setSearchParams(nextParams, { replace: true });
+  };
 
   const renderProjectNode = (project: Project, depth = 0): JSX.Element => {
     const children = projectChildren.get(project.id) ?? [];
@@ -199,7 +215,7 @@ export default function ProjectsPage() {
           <button
             key={key}
             type="button"
-            onClick={() => setTab(key)}
+            onClick={() => handleTabChange(key)}
             className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
               tab === key
                 ? 'bg-primary-600 text-white shadow'
