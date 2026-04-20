@@ -54,6 +54,14 @@ function displayDate(d: string | null): string {
   try { return format(new Date(d), 'yyyy-MM-dd'); } catch { return d; }
 }
 
+function formatJournalDate(value: string): string {
+  try {
+    return format(new Date(value), 'yyyy年M月d日');
+  } catch {
+    return value;
+  }
+}
+
 function parsePermissions(raw: unknown): string[] {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw.map(String);
@@ -157,6 +165,12 @@ export default function IssueDetailPage() {
     return map;
   }, [projectIssues, issue]);
 
+  const dateValidationError = useMemo(() => {
+    if (!form.startDate || !form.dueDate) return '';
+    if (form.dueDate < form.startDate) return t('issues.dateOrderError');
+    return '';
+  }, [form.startDate, form.dueDate, t]);
+
   const permissionSet = useMemo(() => {
     const set = new Set<string>();
     if (!currentUser?.id) return set;
@@ -226,6 +240,7 @@ export default function IssueDetailPage() {
   const saveEdit = () => {
     if (!issue || !form.subject.trim()) return;
     if (!canEditIssue) return;
+    if (dateValidationError) return;
     updateMutation.mutate(
       {
         id: issue.id,
@@ -313,6 +328,9 @@ export default function IssueDetailPage() {
     if (detail.propKey === 'parentId') return issueNameMap.get(detail.newValue) ?? detail.newValue;
     if (detail.propKey === 'projectId') return issue?.project?.name ?? detail.newValue;
     if (detail.propKey === 'doneRatio' && detail.newValue) return `${detail.newValue}%`;
+    if (detail.propKey === 'startDate' || detail.propKey === 'dueDate') {
+      return formatJournalDate(detail.newValue);
+    }
     if (detail.propKey === 'description') return '（変更あり）';
     return detail.newValue;
   };
@@ -328,6 +346,9 @@ export default function IssueDetailPage() {
     if (detail.propKey === 'parentId') return issueNameMap.get(detail.oldValue) ?? detail.oldValue;
     if (detail.propKey === 'projectId') return issue?.project?.name ?? detail.oldValue;
     if (detail.propKey === 'doneRatio' && detail.oldValue) return `${detail.oldValue}%`;
+    if (detail.propKey === 'startDate' || detail.propKey === 'dueDate') {
+      return formatJournalDate(detail.oldValue);
+    }
     if (detail.propKey === 'description') return '（変更あり）';
     return detail.oldValue;
   };
@@ -615,7 +636,7 @@ export default function IssueDetailPage() {
       {/* Edit action bar */}
       {isEditing && (
         <div className="mb-6 flex items-center gap-3">
-          <button type="button" onClick={saveEdit} disabled={updateMutation.isPending || !form.subject.trim()}
+          <button type="button" onClick={saveEdit} disabled={updateMutation.isPending || !form.subject.trim() || !!dateValidationError}
             className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50">
             {updateMutation.isPending ? t('app.loading') : t('app.save')}
           </button>
@@ -623,6 +644,7 @@ export default function IssueDetailPage() {
             className="rounded-lg border border-slate-300 px-5 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
             {t('app.cancel')}
           </button>
+          {dateValidationError && <p className="text-sm text-red-600">{dateValidationError}</p>}
         </div>
       )}
 
