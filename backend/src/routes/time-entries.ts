@@ -10,18 +10,19 @@ const router = Router({ mergeParams: true });
 
 const createBodySchema = z.object({
   projectId: z.string().uuid().optional(),
+  userId: z.string().uuid().optional(),
   issueId: z.string().uuid().nullable().optional(),
   hours: z.number().positive(),
-  activityId: z.string().uuid(),
-  comments: z.string().nullable().optional(),
+  activityId: z.string().min(1),
+  comments: z.string().max(255, 'commentsは255文字以内で入力してください').nullable().optional(),
   spentOn: z.coerce.date(),
 });
 
 const updateBodySchema = z.object({
   issueId: z.string().uuid().nullable().optional(),
   hours: z.number().positive().optional(),
-  activityId: z.string().uuid().optional(),
-  comments: z.string().nullable().optional(),
+  activityId: z.string().min(1).optional(),
+  comments: z.string().max(255, 'commentsは255文字以内で入力してください').nullable().optional(),
   spentOn: z.coerce.date().optional(),
 });
 
@@ -34,7 +35,13 @@ const groupBySchema = z.enum(['user', 'project', 'activity', 'issue', 'month', '
 
 function zodToNext(err: unknown, next: NextFunction) {
   if (err instanceof z.ZodError) {
-    return next(AppError.badRequest(err.errors.map((e) => e.message).join('; ')));
+    const message = err.errors
+      .map((e) => {
+        const path = e.path.length ? `${e.path.join('.')}: ` : '';
+        return `${path}${e.message}`;
+      })
+      .join('; ');
+    return next(AppError.badRequest(message));
   }
   next(err);
 }
@@ -102,7 +109,7 @@ router.get(
           orderBy: { spentOn: 'desc' },
           include: {
             project: { select: { id: true, name: true, identifier: true } },
-            issue: { select: { id: true, subject: true } },
+            issue: { select: { id: true, number: true, subject: true } },
             user: { select: { id: true, login: true, firstname: true, lastname: true } },
             activity: { select: { id: true, name: true, type: true } },
           },
@@ -296,7 +303,7 @@ router.get(
         where: { id: String(req.params.id) },
         include: {
           project: { select: { id: true, name: true, identifier: true } },
-          issue: { select: { id: true, subject: true } },
+          issue: { select: { id: true, number: true, subject: true } },
           user: { select: { id: true, login: true, firstname: true, lastname: true } },
           activity: { select: { id: true, name: true, type: true } },
         },
@@ -320,8 +327,16 @@ router.post(
         throw AppError.badRequest('projectId が必要です');
       }
 
+      const targetUserId = body.userId ?? req.user!.userId;
+      if (targetUserId !== req.user!.userId && !req.user!.admin) {
+        throw AppError.forbidden('他ユーザーの工数は記録できません');
+      }
+
       const project = await prisma.project.findUnique({ where: { id: projectId } });
       if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+
+      const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
+      if (!targetUser) throw AppError.badRequest('ユーザーが存在しません');
 
       if (body.issueId) {
         const issue = await prisma.issue.findFirst({
@@ -339,7 +354,7 @@ router.post(
         data: {
           projectId,
           issueId: body.issueId ?? null,
-          userId: req.user!.userId,
+          userId: targetUserId,
           activityId: body.activityId,
           hours: body.hours,
           comments: body.comments ?? null,
@@ -347,7 +362,7 @@ router.post(
         },
         include: {
           project: { select: { id: true, name: true, identifier: true } },
-          issue: { select: { id: true, subject: true } },
+          issue: { select: { id: true, number: true, subject: true } },
           user: { select: { id: true, login: true, firstname: true, lastname: true } },
           activity: { select: { id: true, name: true, type: true } },
         },
@@ -401,7 +416,7 @@ router.put(
         data,
         include: {
           project: { select: { id: true, name: true, identifier: true } },
-          issue: { select: { id: true, subject: true } },
+          issue: { select: { id: true, number: true, subject: true } },
           user: { select: { id: true, login: true, firstname: true, lastname: true } },
           activity: { select: { id: true, name: true, type: true } },
         },
