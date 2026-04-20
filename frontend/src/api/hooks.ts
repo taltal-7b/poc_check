@@ -129,6 +129,7 @@ export const useUploadAttachments = () => {
 // ========== Time Entries ==========
 export const useTimeEntries = (params?: Record<string, unknown>) => useQuery({ queryKey: ['timeEntries', params], queryFn: () => get<TimeEntry[]>('/time_entries', params) });
 export const useCreateTimeEntry = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (body: Partial<TimeEntry>) => post<TimeEntry>('/time_entries', body), onSuccess: () => qc.invalidateQueries({ queryKey: ['timeEntries'] }) }); };
+export const useUpdateTimeEntry = () => { const qc = useQueryClient(); return useMutation({ mutationFn: ({ id, ...body }: { id: string } & Partial<TimeEntry>) => put<TimeEntry>(`/time_entries/${id}`, body), onSuccess: () => qc.invalidateQueries({ queryKey: ['timeEntries'] }) }); };
 export const useDeleteTimeEntry = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (id: string) => del(`/time_entries/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['timeEntries'] }) }); };
 export const useTimeEntryReport = (params?: Record<string, unknown>) => useQuery({ queryKey: ['timeReport', params], queryFn: () => get<unknown>('/time_entries/report', params) });
 
