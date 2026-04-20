@@ -208,9 +208,10 @@ export default function ProjectSettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
+    <div className="mx-auto max-w-6xl space-y-6">
       {identifier && <ProjectSubNav identifier={identifier} />}
-      <h1 className="mb-6 mt-4 text-2xl font-bold text-slate-900">{t('nav.settings')}</h1>
+      <div className="mx-auto max-w-3xl space-y-6">
+      <h1 className="text-2xl font-bold text-slate-900">{t('nav.settings')}</h1>
       <form onSubmit={handleSave} className="space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">{t('projects.name')}</label>
@@ -343,6 +344,7 @@ export default function ProjectSettingsPage() {
           </button>
         </div>
       </form>
+      </div>
 
       {confirmAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setConfirmAction(null)}>
