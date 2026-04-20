@@ -364,6 +364,16 @@ async function resolveIssueByParam(id: string) {
   return prisma.issue.findUnique({ where: { id } });
 }
 
+function ensureIssueDateOrder(
+  startDate: Date | null | undefined,
+  dueDate: Date | null | undefined,
+) {
+  if (!startDate || !dueDate) return;
+  if (dueDate.getTime() < startDate.getTime()) {
+    throw AppError.badRequest('期日は開始日以降を指定してください');
+  }
+}
+
 const createIssueSchema = z.object({
   projectId: z.string().min(1),
   trackerId: z.string().uuid(),
@@ -687,6 +697,10 @@ router.post(
     for (const id of ids) {
       const oldIssue = await prisma.issue.findUnique({ where: { id } });
       if (!oldIssue) continue;
+
+      const nextStartDate = changes.startDate !== undefined ? changes.startDate : oldIssue.startDate;
+      const nextDueDate = changes.dueDate !== undefined ? changes.dueDate : oldIssue.dueDate;
+      ensureIssueDateOrder(nextStartDate, nextDueDate);
 
       const project = await prisma.project.findUnique({ where: { id: oldIssue.projectId } });
       if (!project) continue;
@@ -1194,6 +1208,10 @@ router.put(
     const oldIssue = await prisma.issue.findUnique({ where: { id: req.params.id } });
     if (!oldIssue) throw AppError.notFound('チケットが見つかりません');
 
+    const nextStartDate = body.startDate !== undefined ? body.startDate : oldIssue.startDate;
+    const nextDueDate = body.dueDate !== undefined ? body.dueDate : oldIssue.dueDate;
+    ensureIssueDateOrder(nextStartDate, nextDueDate);
+
     const proj = await prisma.project.findUnique({ where: { id: oldIssue.projectId } });
     if (!proj) throw AppError.notFound();
     const can = await userCanAccessProject(req.user?.userId, req.user?.admin, proj);
@@ -1343,6 +1361,7 @@ router.post(
       throw AppError.badRequest(parsed.error.flatten().formErrors.join('; ') || '入力が不正です');
     }
     const body = parsed.data;
+    ensureIssueDateOrder(body.startDate, body.dueDate);
 
     const projectId = await resolveProjectId(body.projectId);
     if (!projectId) throw AppError.badRequest('プロジェクトが存在しません');

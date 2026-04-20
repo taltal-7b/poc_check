@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useCreateIssue, useUploadAttachments, useEnumerations, useProject, useStatuses, useTrackers, useUsers, useProjectIssues } from '../api/hooks';
@@ -48,6 +48,12 @@ export default function IssueNewPage() {
   const [parentId, setParentId] = useState('');
   const [attachFiles, setAttachFiles] = useState<File[]>([]);
 
+  const dateValidationError = useMemo(() => {
+    if (!startDate || !dueDate) return '';
+    if (dueDate < startDate) return t('issues.dateOrderError');
+    return '';
+  }, [startDate, dueDate, t]);
+
   useEffect(() => {
     if (trackers.length && !trackerId) setTrackerId(trackers[0].id);
   }, [trackers, trackerId]);
@@ -59,6 +65,7 @@ export default function IssueNewPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!project) return;
+    if (dateValidationError) return;
     createMutation.mutate(
       {
         projectId: project.id,
@@ -238,6 +245,7 @@ export default function IssueNewPage() {
             />
           </div>
         </div>
+        {dateValidationError && <p className="text-sm text-red-600">{dateValidationError}</p>}
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.estimatedHours')}</label>
           <input
@@ -275,7 +283,7 @@ export default function IssueNewPage() {
         {createMutation.isError && <p className="text-sm text-red-600">{t('app.error')}</p>}
         <button
           type="submit"
-          disabled={isPending}
+          disabled={isPending || !!dateValidationError}
           className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60"
         >
           {isPending ? t('app.loading') : t('app.create')}
