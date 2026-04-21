@@ -1,10 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import ProjectSubNav from '../components/ProjectSubNav';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { renderMarkdown } from '../components/RichTextEditor';
-import { Book, History, Lock, LockOpen, Pencil } from 'lucide-react';
+import { Book, History, Lock, LockOpen, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { useProject, useWikiPage, useWikiPages, useMembers } from '../api/hooks';
 import api from '../api/client';
 import { useAuthStore } from '../stores/auth';
@@ -77,6 +78,10 @@ export default function WikiPage() {
     return renderMarkdown(md);
   }, [wikiPage?.content?.text]);
 
+  const [wikiActionsOpen, setWikiActionsOpen] = useState(false);
+  const [deleteWikiOpen, setDeleteWikiOpen] = useState(false);
+  const [deleteErrorMessage, setDeleteErrorMessage] = useState<string | null>(null);
+
   const toggleProtect = useMutation({
     mutationFn: async () => {
       if (!projectId || !decodedTitle || !wikiPage) return;
@@ -87,6 +92,23 @@ export default function WikiPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['wiki', projectId, decodedTitle] });
       qc.invalidateQueries({ queryKey: ['wiki', projectId] });
+    },
+  });
+
+  const deleteWikiPage = useMutation({
+    mutationFn: async () => {
+      if (!projectId || !decodedTitle) return;
+      await api.delete(`/projects/${projectId}/wiki/${encodeURIComponent(decodedTitle)}`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['wiki', projectId] });
+      setDeleteWikiOpen(false);
+      setDeleteErrorMessage(null);
+      navigate(base);
+    },
+    onError: (error: any) => {
+      const msg = error?.response?.data?.error?.message || t('app.error');
+      setDeleteErrorMessage(msg);
     },
   });
 
@@ -175,45 +197,110 @@ export default function WikiPage() {
             </ul>
           </div>
         ) : (
-          <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
             <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-4 py-3 bg-gray-50">
-              <h1 className="text-xl font-bold text-gray-900 flex-1 min-w-[12rem]">{decodedTitle}</h1>
-              {canEditWiki && (
-                <button
-                  type="button"
-                  onClick={() => navigate(`${base}/${encodeURIComponent(decodedTitle)}/edit`)}
+              <h1 className="text-xl font-bold text-gray-900 min-w-0 flex-1 basis-full sm:basis-auto sm:min-w-[12rem]">
+                {decodedTitle}
+              </h1>
+              <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+                {canEditWiki && wikiPage && !wikiPage.protected && (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`${base}/${encodeURIComponent(decodedTitle)}/edit`)}
+                    className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
+                  >
+                    <Pencil size={14} />
+                    {t('wiki.editPage')}
+                  </button>
+                )}
+                <a
+                  href={`/api/v1/projects/${projectId}/wiki/${encodeURIComponent(decodedTitle)}/export/pdf`}
+                  download
                   className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
                 >
-                  <Pencil size={14} />
-                  {t('wiki.editPage')}
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => navigate(`${base}/${encodeURIComponent(decodedTitle)}/history`)}
-                className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
-              >
-                <History size={14} />
-                {t('wiki.history')}
-              </button>
-              <a
-                href={`/api/v1/projects/${projectId}/wiki/${encodeURIComponent(decodedTitle)}/export/pdf`}
-                download
-                className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
-              >
-                {t('wiki.export')}
-              </a>
-              {canEditWiki && (
+                  {t('wiki.export')}
+                </a>
+                <div className="relative">
                 <button
                   type="button"
-                  disabled={toggleProtect.isPending || !wikiPage}
-                  onClick={() => toggleProtect.mutate()}
-                  className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+                  aria-haspopup="menu"
+                  aria-expanded={wikiActionsOpen}
+                  onClick={() => setWikiActionsOpen((o) => !o)}
+                  className="inline-flex h-[34px] min-w-[34px] items-center justify-center rounded border border-gray-300 bg-white px-2 text-gray-700 hover:bg-gray-50"
+                  title={t('wiki.moreActions')}
                 >
-                  {wikiPage?.protected ? <LockOpen size={14} /> : <Lock size={14} />}
-                  {wikiPage?.protected ? t('wiki.unprotect') : t('wiki.protect')}
+                  <MoreHorizontal className="h-5 w-5" aria-hidden />
+                  <span className="sr-only">{t('wiki.moreActions')}</span>
                 </button>
-              )}
+                {wikiActionsOpen && (
+                  <>
+                    <button
+                      type="button"
+                      aria-label="メニューを閉じる"
+                      className="fixed inset-0 z-40 cursor-default bg-transparent"
+                      onClick={() => setWikiActionsOpen(false)}
+                    />
+                    <ul
+                      role="menu"
+                      className="absolute right-0 z-50 mt-1 min-w-[11rem] rounded-md border border-gray-200 bg-white py-1 shadow-lg"
+                    >
+                      <li role="none">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-50"
+                          onClick={() => {
+                            setWikiActionsOpen(false);
+                            navigate(`${base}/${encodeURIComponent(decodedTitle)}/history`);
+                          }}
+                        >
+                          <History className="h-4 w-4 shrink-0" />
+                          {t('wiki.history')}
+                        </button>
+                      </li>
+                      {wikiPage?.canManageProtection && (
+                        <li role="none">
+                          <button
+                            type="button"
+                            role="menuitem"
+                            disabled={toggleProtect.isPending || !wikiPage}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                            onClick={() => {
+                              setWikiActionsOpen(false);
+                              toggleProtect.mutate();
+                            }}
+                          >
+                            {wikiPage?.protected ? (
+                              <LockOpen className="h-4 w-4 shrink-0" />
+                            ) : (
+                              <Lock className="h-4 w-4 shrink-0" />
+                            )}
+                            {wikiPage?.protected ? t('wiki.unprotect') : t('wiki.protect')}
+                          </button>
+                        </li>
+                      )}
+                      {canEditWiki && wikiPage && !wikiPage.protected && (
+                        <li role="none">
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50"
+                            onClick={() => {
+                              setWikiActionsOpen(false);
+                              setDeleteErrorMessage(null);
+                              setDeleteWikiOpen(true);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 shrink-0" />
+                            {t('app.delete')}
+                          </button>
+                        </li>
+                      )}
+                    </ul>
+                  </>
+                )}
+                </div>
+              </div>
             </div>
             {pageQuery.isLoading ? (
               <div className="p-8 text-center text-gray-500">{t('app.loading')}</div>
@@ -250,6 +337,51 @@ export default function WikiPage() {
         )}
       </div>
     </div>
+
+      <Dialog
+        open={deleteWikiOpen}
+        onClose={() => {
+          setDeleteErrorMessage(null);
+          setDeleteWikiOpen(false);
+        }}
+        className="relative z-50"
+      >
+        <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <DialogTitle className="text-lg font-semibold text-gray-900">{t('wiki.deletePage')}</DialogTitle>
+            <p className="mt-3 text-sm text-gray-700">
+              {t('wiki.deletePageConfirm', { title: decodedTitle || '—' })}
+            </p>
+            {deleteErrorMessage && (
+              <p className="mt-2 text-sm text-red-600">{deleteErrorMessage}</p>
+            )}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteErrorMessage(null);
+                  setDeleteWikiOpen(false);
+                }}
+                className="rounded border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+              >
+                {t('app.cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={deleteWikiPage.isPending || !decodedTitle}
+                onClick={() => {
+                  setDeleteErrorMessage(null);
+                  deleteWikiPage.mutate();
+                }}
+                className="rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {t('app.delete')}
+              </button>
+            </div>
+          </DialogPanel>
+        </div>
+      </Dialog>
     </div>
   );
 }

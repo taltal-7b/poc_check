@@ -132,6 +132,8 @@ export interface WikiPage {
   id: string;
   title: string;
   protected: boolean;
+  /** バックエンドが GET /wiki/:title で付与。保護の切替が可能なユーザー（管理者ロール等）のみ true */
+  canManageProtection?: boolean;
   createdAt: string;
   updatedAt: string;
   content?: {

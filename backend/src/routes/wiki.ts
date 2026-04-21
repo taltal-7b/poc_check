@@ -3,7 +3,7 @@ import fs from 'fs';
 import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
-import { authenticate } from '../middleware/auth';
+import { authenticate, optionalAuth } from '../middleware/auth';
 import { z } from 'zod';
 import PDFDocument from 'pdfkit';
 
@@ -95,12 +95,67 @@ async function userCanEditWiki(
   return perms.has('edit_wiki_pages');
 }
 
+/** プロジェクトの「管理者」ロール、またはシステム管理者 */
+async function userHasProjectAdministratorRole(
+  userId: string | undefined,
+  isAdmin: boolean | undefined,
+  projectRef: string,
+): Promise<boolean> {
+  if (isAdmin) return true;
+  if (!userId) return false;
+  const project = await prisma.project.findFirst({
+    where: { OR: [{ id: projectRef }, { identifier: projectRef }] },
+    select: { id: true },
+  });
+  if (!project) return false;
+  const groupIds = await getUserGroupIds(userId);
+  const member = await prisma.member.findFirst({
+    where: {
+      projectId: project.id,
+      OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
+    },
+    include: {
+      memberRoles: {
+        include: {
+          role: { select: { name: true } },
+        },
+      },
+    },
+  });
+  if (!member) return false;
+  return (member.memberRoles ?? []).some((mr) => (mr.role?.name ?? '') === '管理者');
+}
+
 async function ensureWiki(projectId: string) {
   let wiki = await prisma.wiki.findUnique({ where: { projectId } });
   if (!wiki) {
     wiki = await prisma.wiki.create({ data: { projectId } });
   }
   return wiki;
+}
+
+/** DB の `wiki_pages.protected` のみを見る（編集・削除の可否判定用） */
+async function wikiPageProtectionGuard(
+  pageId: string,
+  message: string,
+): Promise<AppError | null> {
+  const row = await prisma.wikiPage.findUnique({
+    where: { id: pageId },
+    select: { protected: true },
+  });
+  if (!row) return AppError.notFound('ページが見つかりません');
+  if (row.protected === true) return AppError.forbidden(message);
+  return null;
+}
+
+/** 他リクエストの保護設定と本文更新が競合しないよう、wiki ページ行をロックしてから保護状態を確認する */
+async function lockAndAssertWikiPageUnlockedInTx(tx: any, pageId: string, message: string) {
+  const rows = await tx.$queryRaw<{ protected: boolean }[]>`
+    SELECT protected FROM wiki_pages WHERE id = ${pageId} FOR UPDATE
+  `;
+  const row = rows[0];
+  if (!row) throw AppError.notFound('ページが見つかりません');
+  if (row.protected === true) throw AppError.forbidden(message);
 }
 
 async function findPageByTitle(wikiId: string, title: string) {
@@ -150,6 +205,13 @@ const updatePageSchema = z.object({
   attachmentIds: z.array(z.string().uuid()).optional(),
 });
 
+/** 版ごとの更新コメント。未指定は null（前版のコメントを引き継がない） */
+function normalizeWikiVersionComment(v: string | null | undefined): string | null {
+  if (v === undefined || v === null) return null;
+  const t = v.trim();
+  return t.length > 0 ? t : null;
+}
+
 const attachmentSelect = {
   id: true,
   filename: true,
@@ -168,9 +230,10 @@ async function listWikiAttachments(pageId: string) {
   });
 }
 
-async function attachWikiFiles(pageId: string, userId: string, attachmentIds?: string[]) {
+async function attachWikiFiles(pageId: string, userId: string, attachmentIds?: string[], tx?: any) {
   if (!attachmentIds?.length) return;
-  await prisma.attachment.updateMany({
+  const db = tx ?? prisma;
+  await db.attachment.updateMany({
     where: { id: { in: attachmentIds }, authorId: userId },
     data: { containerType: 'WikiPage', containerId: pageId },
   });
@@ -196,18 +259,6 @@ function resolveJapaneseFontPath(): string | null {
     '/usr/share/fonts/TTF/ipag.ttf',
     '/usr/share/fonts/OTF/ipag.otf',
     '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttf',
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
-  }
-  return null;
-}
-
-function resolveJapaneseBoldFontPath(): string | null {
-  const candidates = [
-    '/usr/share/fonts/ipaexfont/ipaexm.ttf',
-    '/usr/share/fonts/TTF/ipaexm.ttf',
-    '/usr/share/fonts/TTF/ipam.ttf',
   ];
   for (const p of candidates) {
     if (fs.existsSync(p)) return p;
@@ -285,7 +336,7 @@ function parseInlineSegments(line: string): InlineSegment[] {
   return segments;
 }
 
-function renderStyledLine(doc: any, line: string, fontName: string, boldFontName: string) {
+function renderStyledLine(doc: any, line: string, fontName: string) {
   const segments = parseInlineSegments(line);
   if (segments.length === 0) {
     doc.text(' ');
@@ -296,9 +347,10 @@ function renderStyledLine(doc: any, line: string, fontName: string, boldFontName
     if (seg.code) {
       doc.font('Courier').fillColor('#0369a1');
     } else {
-      doc.font(seg.bold ? boldFontName : fontName).fillColor('#111827');
+      doc.font(fontName).fillColor('#111827');
+      doc.strokeColor('#111827');
     }
-    if (isBoldText) doc.lineWidth(0.35);
+    if (isBoldText) doc.lineWidth(0.7);
     doc.text(seg.text || ' ', {
       continued: idx !== segments.length - 1,
       underline: !!seg.underline,
@@ -311,7 +363,7 @@ function renderStyledLine(doc: any, line: string, fontName: string, boldFontName
   });
 }
 
-function renderWikiMarkdownToPdf(doc: any, markdown: string, baseFont: string, boldFont: string) {
+function renderWikiMarkdownToPdf(doc: any, markdown: string, baseFont: string) {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
   const contentWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
   let inCode = false;
@@ -375,13 +427,13 @@ function renderWikiMarkdownToPdf(doc: any, markdown: string, baseFont: string, b
       doc.font(baseFont).fontSize(11).fillColor('#111827');
       ensurePdfSpace(doc, 18);
       doc.text('• ', { continued: true, lineGap: 1 });
-      renderStyledLine(doc, listItem[1], baseFont, boldFont);
+      renderStyledLine(doc, listItem[1], baseFont);
       continue;
     }
 
     doc.font(baseFont).fontSize(11).fillColor('#111827');
     ensurePdfSpace(doc, 18);
-    renderStyledLine(doc, line, baseFont, boldFont);
+    renderStyledLine(doc, line, baseFont);
   }
 
   if (inCode) {
@@ -510,7 +562,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
             authorId: userId,
             text: parsed.data.text,
             version: 1,
-            comments: parsed.data.comments ?? null,
+            comments: normalizeWikiVersionComment(parsed.data.comments),
           },
         },
       },
@@ -524,7 +576,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
           authorId: userId,
           text: parsed.data.text,
           version: 1,
-          comments: parsed.data.comments ?? null,
+          comments: normalizeWikiVersionComment(parsed.data.comments),
         },
       });
     }
@@ -637,15 +689,50 @@ router.delete('/:title/version/:version', authenticate, async (req: Request, res
 
     const page = await findPageByTitle(wiki.id, title);
     if (!page?.content) return next(AppError.notFound('ページが見つかりません'));
-    if (versionNum === page.content.version) {
-      return next(AppError.badRequest('現在の版は削除できません'));
+    const verGuard = await wikiPageProtectionGuard(page.id, '保護されたWikiページの版は削除できません');
+    if (verGuard) return next(verGuard);
+
+    const contentId = page.content.id;
+    const currentVer = page.content.version;
+
+    const target = await prisma.wikiContentVersion.findUnique({
+      where: { contentId_version: { contentId, version: versionNum } },
+    });
+    if (!target) return next(AppError.notFound('指定バージョンが見つかりません'));
+
+    // 現行版を消す場合は、直前の版のスナップショットへ本文を戻す（Redmineに近い挙動）
+    if (versionNum === currentVer) {
+      const prev = await prisma.wikiContentVersion.findFirst({
+        where: { contentId, version: { lt: versionNum } },
+        orderBy: { version: 'desc' },
+      });
+      if (!prev) {
+        return next(AppError.badRequest('削除後に残る版がないため、この版は削除できません'));
+      }
+      await prisma.$transaction(async (tx: any) => {
+        await lockAndAssertWikiPageUnlockedInTx(tx, page.id, '保護されたWikiページの版は削除できません');
+        await tx.wikiContentVersion.delete({
+          where: { contentId_version: { contentId, version: versionNum } },
+        });
+        await tx.wikiContent.update({
+          where: { id: contentId },
+          data: {
+            version: prev.version,
+            text: prev.text,
+            comments: prev.comments,
+            authorId: prev.authorId,
+          },
+        });
+      });
+      return sendSuccess(res, { deleted: true, version: versionNum, revertedToVersion: prev.version });
     }
 
-    const removed = await prisma.wikiContentVersion.deleteMany({
-      where: { contentId: page.content.id, version: versionNum },
+    await prisma.$transaction(async (tx: any) => {
+      await lockAndAssertWikiPageUnlockedInTx(tx, page.id, '保護されたWikiページの版は削除できません');
+      await tx.wikiContentVersion.delete({
+        where: { contentId_version: { contentId, version: versionNum } },
+      });
     });
-    if (removed.count === 0) return next(AppError.notFound('指定バージョンが見つかりません'));
-
     return sendSuccess(res, { deleted: true, version: versionNum });
   } catch (e) {
     next(e);
@@ -719,9 +806,7 @@ router.get('/:title/export/pdf', async (req: Request, res: Response, next: NextF
 
     const doc = new PDFDocument({ margin: 36, size: 'A4' });
     const jpFontPath = resolveJapaneseFontPath();
-    const jpBoldFontPath = resolveJapaneseBoldFontPath();
     if (jpFontPath) (doc as any).registerFont('jp', jpFontPath);
-    if (jpBoldFontPath) (doc as any).registerFont('jpBold', jpBoldFontPath);
     const chunks: Buffer[] = [];
     let handled = false;
     doc.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
@@ -743,7 +828,6 @@ router.get('/:title/export/pdf', async (req: Request, res: Response, next: NextF
     });
 
     const baseFont = jpFontPath ? 'jp' : 'Helvetica';
-    const boldFont = jpBoldFontPath ? 'jpBold' : jpFontPath ? 'jp' : 'Helvetica-Bold';
     const projectLabel = project?.name?.trim() || project?.identifier || 'Project';
     doc
       .font(baseFont)
@@ -751,10 +835,10 @@ router.get('/:title/export/pdf', async (req: Request, res: Response, next: NextF
       .fillColor('#111827')
       .text(`${projectLabel} - ${page.title} - #${page.content.version}`);
     doc.moveDown(0.9);
-    doc.font(baseFont).fontSize(18).fillColor('#0f172a').text(`# ${page.title}`, { lineGap: 1 });
+    doc.font(baseFont).fontSize(18).fillColor('#0f172a').text(page.title, { lineGap: 1 });
     doc.moveDown(1.1);
 
-    renderWikiMarkdownToPdf(doc, page.content.text ?? '', baseFont, boldFont);
+    renderWikiMarkdownToPdf(doc, page.content.text ?? '', baseFont);
     doc.end();
   } catch (e) {
     next(e);
@@ -769,8 +853,10 @@ router.post('/:title/protect', authenticate, async (req: Request, res: Response,
     if (!rawTitle) return next(AppError.badRequest('title が必要です'));
     const title = decodeTitle(rawTitle);
 
-    const canEdit = await userCanEditWiki(req.user?.userId, req.user?.admin, projectId);
-    if (!canEdit) return next(AppError.forbidden('Wikiを編集する権限がありません'));
+    const canManage = await userHasProjectAdministratorRole(req.user?.userId, req.user?.admin, projectId);
+    if (!canManage) {
+      return next(AppError.forbidden('Wikiページの保護を設定・解除できるのはプロジェクトの管理者ロールを持つユーザーのみです'));
+    }
 
     const wiki = await prisma.wiki.findUnique({ where: { projectId } });
     if (!wiki) return next(AppError.notFound('Wiki が見つかりません'));
@@ -794,7 +880,7 @@ router.post('/:title/protect', authenticate, async (req: Request, res: Response,
   }
 });
 
-router.get('/:title', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:title', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const projectId = param(req, 'projectId');
     const rawTitle = param(req, 'title');
@@ -808,7 +894,13 @@ router.get('/:title', async (req: Request, res: Response, next: NextFunction) =>
     const page = await findPageByTitle(wiki.id, title);
     if (!page) return next(AppError.notFound('ページが見つかりません'));
 
-    return sendSuccess(res, await withWikiAttachments(page));
+    const canManageProtection = await userHasProjectAdministratorRole(
+      req.user?.userId,
+      req.user?.admin,
+      projectId,
+    );
+    const payload = { ...(await withWikiAttachments(page)), canManageProtection };
+    return sendSuccess(res, payload);
   } catch (e) {
     next(e);
   }
@@ -834,6 +926,8 @@ router.put('/:title', authenticate, async (req: Request, res: Response, next: Ne
 
     const page = await findPageByTitle(wiki.id, title);
     if (!page?.content) return next(AppError.notFound('ページが見つかりません'));
+    const putGuard = await wikiPageProtectionGuard(page.id, '保護されたWikiページは編集できません');
+    if (putGuard) return next(putGuard);
 
     const requestedTitle = parsed.data.newTitle?.trim();
     const nextTitle = requestedTitle && requestedTitle.length > 0 ? requestedTitle : page.title;
@@ -846,8 +940,9 @@ router.put('/:title', authenticate, async (req: Request, res: Response, next: Ne
 
     const current = page.content;
     const nextVersion = current.version + 1;
-    const nextComments = parsed.data.comments === undefined ? current.comments : parsed.data.comments;
+    const nextComments = normalizeWikiVersionComment(parsed.data.comments);
     await prisma.$transaction(async (tx: any) => {
+      await lockAndAssertWikiPageUnlockedInTx(tx, page.id, '保護されたWikiページは編集できません');
       await tx.wikiContent.update({
         where: { id: current.id },
         data: {
@@ -874,9 +969,8 @@ router.put('/:title', authenticate, async (req: Request, res: Response, next: Ne
           create: { wikiId: wiki.id, title: page.title, redirectToId: page.id },
         });
       }
+      await attachWikiFiles(page.id, userId, parsed.data.attachmentIds, tx);
     });
-
-    await attachWikiFiles(page.id, userId, parsed.data.attachmentIds);
 
     const full = await prisma.wikiPage.findUnique({
       where: { id: page.id },
@@ -912,7 +1006,17 @@ router.delete('/:title', authenticate, async (req: Request, res: Response, next:
     const page = await findPageByTitle(wiki.id, title);
     if (!page) return next(AppError.notFound('ページが見つかりません'));
 
-    await prisma.wikiPage.delete({ where: { id: page.id } });
+    const del = await prisma.wikiPage.deleteMany({
+      where: { id: page.id, protected: false },
+    });
+    if (del.count === 0) {
+      const still = await prisma.wikiPage.findUnique({
+        where: { id: page.id },
+        select: { protected: true },
+      });
+      if (!still) return next(AppError.notFound('ページが見つかりません'));
+      return next(AppError.forbidden('保護されたWikiページは削除できません'));
+    }
     return sendSuccess(res, { deleted: true, id: page.id });
   } catch (e) {
     next(e);
