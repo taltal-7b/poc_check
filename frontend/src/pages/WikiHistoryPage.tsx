@@ -4,7 +4,7 @@ import { format, parseISO } from 'date-fns';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { Trash2 } from 'lucide-react';
 import ProjectSubNav from '../components/ProjectSubNav';
-import { useDeleteWikiVersion, useProject, useWikiHistory } from '../api/hooks';
+import { useDeleteWikiVersion, useProject, useWikiHistory, useWikiPage } from '../api/hooks';
 
 export default function WikiHistoryPage() {
   const { identifier, title } = useParams<{ identifier: string; title: string }>();
@@ -15,6 +15,8 @@ export default function WikiHistoryPage() {
   const projectId = projectRaw?.data?.id ?? '';
 
   const historyQuery = useWikiHistory(projectId, decodedTitle);
+  const pageQuery = useWikiPage(projectId, decodedTitle);
+  const wikiProtected = pageQuery.data?.data?.protected === true;
   const rows = useMemo(() => historyQuery.data?.data ?? [], [historyQuery.data]);
   const [fromVersion, setFromVersion] = useState<string>('');
   const [toVersion, setToVersion] = useState<string>('');
@@ -75,7 +77,7 @@ export default function WikiHistoryPage() {
                     <th className="px-4 py-2 font-medium">更新日時</th>
                     <th className="px-4 py-2 font-medium">更新者</th>
                     <th className="px-4 py-2 font-medium">コメント</th>
-                    <th className="px-4 py-2 text-center font-medium">操作</th>
+                    {!wikiProtected && <th className="px-4 py-2 text-center font-medium">操作</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -85,19 +87,21 @@ export default function WikiHistoryPage() {
                       <td className="px-4 py-2">{format(parseISO(row.createdAt), 'yyyy-MM-dd HH:mm')}</td>
                       <td className="px-4 py-2">{renderAuthor(row)}</td>
                       <td className="px-4 py-2">{row.comments || '—'}</td>
-                      <td className="px-4 py-2">
-                        <div className="flex items-center justify-center">
-                          <button
-                            type="button"
-                            onClick={() => setDeleteVersion(row.version)}
-                            className="rounded p-1 text-red-600 hover:bg-red-50"
-                            title="版を削除"
-                            aria-label="版を削除"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
+                      {!wikiProtected && (
+                        <td className="px-4 py-2">
+                          <div className="flex items-center justify-center">
+                            <button
+                              type="button"
+                              onClick={() => setDeleteVersion(row.version)}
+                              className="rounded p-1 text-red-600 hover:bg-red-50"
+                              title="版を削除"
+                              aria-label="版を削除"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

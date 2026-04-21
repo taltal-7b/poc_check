@@ -102,6 +102,12 @@ export default function WikiEditPage() {
     else navigate(`/projects/${identifier}/wiki`, { replace: true });
   }, [identifier, projectId, decodedTitle, canEditWiki, membersQuery.isLoading, navigate]);
 
+  useEffect(() => {
+    if (!identifier || !projectId || isNew || pageQuery.isLoading) return;
+    if (!existing?.protected) return;
+    navigate(`/projects/${identifier}/wiki/${encodeURIComponent(decodedTitle)}`, { replace: true });
+  }, [identifier, projectId, isNew, existing?.protected, decodedTitle, navigate, pageQuery.isLoading]);
+
   const insertAttachmentMarkup = (att: Attachment, asImage: boolean) => {
     const url = `/api/v1/attachments/${att.id}/download`;
     const markup = asImage ? `![${att.filename}](${url})` : `[${att.filename}](${url})`;
