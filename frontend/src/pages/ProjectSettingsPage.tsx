@@ -334,15 +334,6 @@ export default function ProjectSettingsPage() {
             {t('app.delete')}
           </button>
         </div>
-        <div className="flex gap-3 text-sm">
-          <button
-            type="button"
-            onClick={() => updateMutation.mutate({ id: project.id, status: STATUS_ACTIVE })}
-            className="text-primary-600 hover:text-primary-800"
-          >
-            {t('projects.reopen')}
-          </button>
-        </div>
       </form>
       </div>
 
