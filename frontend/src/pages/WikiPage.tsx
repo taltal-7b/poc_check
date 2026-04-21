@@ -3,8 +3,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import ProjectSubNav from '../components/ProjectSubNav';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { marked } from 'marked';
-import sanitizeHtml from 'sanitize-html';
+import { renderMarkdown } from '../components/RichTextEditor';
 import { Book, History, Lock, LockOpen, Pencil } from 'lucide-react';
 import { useProject, useWikiPage, useWikiPages, useMembers } from '../api/hooks';
 import api from '../api/client';
@@ -17,15 +16,6 @@ function unwrap<T>(raw: unknown): T | undefined {
     return (raw as { data: T }).data;
   }
   return raw as T;
-}
-
-function unwrapList<T>(raw: unknown): T[] {
-  if (raw == null) return [];
-  if (Array.isArray(raw)) return raw as T[];
-  if (typeof raw === 'object' && raw !== null && 'data' in raw && Array.isArray((raw as { data: unknown }).data)) {
-    return (raw as { data: T[] }).data;
-  }
-  return [];
 }
 
 function buildTree(pages: WikiPageType[]): { name: string; full: string; children: { name: string; full: string }[] }[] {
@@ -69,16 +59,13 @@ export default function WikiPage() {
   const currentUser = useAuthStore((s) => s.user);
 
   const { data: projectRaw } = useProject(identifier ?? '');
-  const project =
-    projectRaw && typeof projectRaw === 'object' && 'id' in projectRaw
-      ? (projectRaw as { id: string; identifier?: string })
-      : null;
+  const project = projectRaw?.data ?? null;
   const projectId = project?.id ?? '';
   const membersQuery = useMembers(projectId);
   const members = membersQuery.data?.data ?? [];
 
   const pagesRaw = useWikiPages(projectId);
-  const pages = useMemo(() => unwrapList<WikiPageType>(pagesRaw.data), [pagesRaw.data]);
+  const pages = useMemo(() => pagesRaw.data?.data?.pages ?? [], [pagesRaw.data]);
 
   const decodedTitle = titleParam ? decodeURIComponent(titleParam) : '';
   const pageQuery = useWikiPage(projectId, decodedTitle);
@@ -87,15 +74,13 @@ export default function WikiPage() {
   const html = useMemo(() => {
     const md = wikiPage?.content?.text ?? '';
     if (!md) return '';
-    const raw = marked.parse(md, { async: false }) as string;
-    return sanitizeHtml(raw);
+    return renderMarkdown(md);
   }, [wikiPage?.content?.text]);
 
   const toggleProtect = useMutation({
     mutationFn: async () => {
       if (!projectId || !decodedTitle || !wikiPage) return;
-      await api.put(`/projects/${projectId}/wiki/${encodeURIComponent(decodedTitle)}`, {
-        text: wikiPage.content?.text ?? '',
+      await api.post(`/projects/${projectId}/wiki/${encodeURIComponent(decodedTitle)}/protect`, {
         protected: !wikiPage.protected,
       });
     },
@@ -211,6 +196,13 @@ export default function WikiPage() {
                 <History size={14} />
                 {t('wiki.history')}
               </button>
+              <a
+                href={`/api/v1/projects/${projectId}/wiki/${encodeURIComponent(decodedTitle)}/export/pdf`}
+                download
+                className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
+              >
+                {t('wiki.export')}
+              </a>
               {canEditWiki && (
                 <button
                   type="button"
@@ -228,10 +220,31 @@ export default function WikiPage() {
             ) : pageQuery.isError || !wikiPage ? (
               <div className="p-8 text-center text-gray-500">{t('app.error')}</div>
             ) : (
-              <article
-                className="p-6 text-sm text-gray-800 max-w-none space-y-3 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-semibold [&_pre]:bg-gray-100 [&_pre]:p-3 [&_pre]:rounded-md [&_pre]:overflow-x-auto [&_a]:text-primary-700 [&_ul]:list-disc [&_ul]:pl-5"
-                dangerouslySetInnerHTML={{ __html: html || `<p>${t('app.noData')}</p>` }}
-              />
+              <>
+                <article
+                  className="p-6 text-sm text-gray-800 max-w-none space-y-3 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-semibold [&_pre]:bg-gray-100 [&_pre]:p-3 [&_pre]:rounded-md [&_pre]:overflow-x-auto [&_a]:text-primary-700 [&_ul]:list-disc [&_ul]:pl-5"
+                  dangerouslySetInnerHTML={{ __html: html || `<p>${t('app.noData')}</p>` }}
+                />
+                {(wikiPage.attachments?.length ?? 0) > 0 && (
+                  <section className="border-t border-gray-100 px-6 py-4">
+                    <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('settings.attachments')}</h2>
+                    <ul className="space-y-1 text-sm">
+                      {wikiPage.attachments!.map((att) => (
+                        <li key={att.id}>
+                          <a
+                            href={`/api/v1/attachments/${att.id}/download`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-primary-700 hover:underline"
+                          >
+                            {att.filename}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+              </>
             )}
           </div>
         )}

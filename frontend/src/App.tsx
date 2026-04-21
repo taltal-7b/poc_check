@@ -16,6 +16,8 @@ import IssueDetailPage from './pages/IssueDetailPage';
 import TimeEntriesPage from './pages/TimeEntriesPage';
 import WikiPage from './pages/WikiPage';
 import WikiEditPage from './pages/WikiEditPage';
+import WikiHistoryPage from './pages/WikiHistoryPage';
+import WikiDiffPage from './pages/WikiDiffPage';
 import NewsPage from './pages/NewsPage';
 import ForumsPage from './pages/ForumsPage';
 import DocumentsPage from './pages/DocumentsPage';
@@ -93,6 +95,8 @@ export default function App() {
         <Route path="projects/:identifier/time_entries" element={<ProjectModuleRoute moduleKey="time_tracking"><TimeEntriesPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/wiki" element={<ProjectModuleRoute moduleKey="wiki"><WikiPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/wiki/:title" element={<ProjectModuleRoute moduleKey="wiki"><WikiPage /></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/wiki/:title/history" element={<ProjectModuleRoute moduleKey="wiki"><WikiHistoryPage /></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/wiki/:title/diff" element={<ProjectModuleRoute moduleKey="wiki"><WikiDiffPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/wiki/:title/edit" element={<ProjectModuleRoute moduleKey="wiki"><ProtectedRoute><WikiEditPage /></ProtectedRoute></ProjectModuleRoute>} />
         <Route path="projects/:identifier/news" element={<ProjectModuleRoute moduleKey="news"><NewsPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/forums" element={<ProjectModuleRoute moduleKey="boards"><ForumsPage /></ProjectModuleRoute>} />

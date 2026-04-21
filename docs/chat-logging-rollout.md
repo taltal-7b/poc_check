@@ -84,7 +84,34 @@ git push -u origin feat/chat-logging-rollout
 - ログが増えない  
   - 対象プロジェクト配下の `.cursor/hooks.json` を確認
 
+## 6. 環境差がある場合の確認手順
+
+環境によってフック入力JSONのキーが異なる場合があります。次の順で確認してください。
+
+1. 当日のデバッグログを確認する
+  - `logs/chat_events/debug_hook_input_YYYY-MM-DD.jsonl`
+2. `top_level_keys` と `payload_redacted` を見て、セッションID相当のキー（例: `session_id`, `conversationId`）がどこにあるか確認する
+3. `text_preview` が空でないか確認する
+  - 空の場合は本文キー（例: `prompt`, `message`, `content`, `response`, `output`）の差異を疑う
+4. 本番ログを確認する
+  - `logs/chat_events/YYYY-MM-DD.jsonl` の `session_key`, `prompt_preview`, `response_preview`, `latency_ms` を見る
+5. 最後にレポート生成が通ることを確認する
+  - `python3 scripts/daily_report.py --date YYYY-MM-DD`
+
+※ デバッグログは本文を短縮保存しています（先頭のみ）。
+
+## 7. pendingクリア方法
+
+セッション混線や長時間放置後に挙動をリセットしたい場合は、pendingファイルをクリアします。
+
+```bash
+python3 -c "from pathlib import Path; p=Path('.cursor/hooks/.chat_logger_pending.json'); p.parent.mkdir(parents=True, exist_ok=True); p.write_text('{}', encoding='utf-8')"
+```
+
+その後、2〜3ターン会話して `logs/chat_events/YYYY-MM-DD.jsonl` の `latency_ms` が常識的な値か再確認してください。
+
 ## 補足
 
 - 既存の `hooks.json` があっても、同じコマンド重複は追加しない仕様です。
 - 出力は日別ファイルです（`logs/chat_events/YYYY-MM-DD.jsonl`）。
+

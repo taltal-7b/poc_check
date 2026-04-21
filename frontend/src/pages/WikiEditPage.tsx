@@ -1,11 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { marked } from 'marked';
-import sanitizeHtml from 'sanitize-html';
-import { useProject, useWikiPage, useCreateWikiPage, useUpdateWikiPage, useMembers } from '../api/hooks';
+import { Image, Link as LinkIcon, Trash2 } from 'lucide-react';
+import RichTextEditor from '../components/RichTextEditor';
+import {
+  useProject,
+  useWikiPage,
+  useCreateWikiPage,
+  useUpdateWikiPage,
+  useMembers,
+  useUploadAttachments,
+  useDeleteAttachment,
+} from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
-import type { WikiPage as WikiPageType } from '../types';
+import type { Attachment, WikiPage as WikiPageType } from '../types';
 
 function unwrap<T>(raw: unknown): T | undefined {
   if (raw == null) return undefined;
@@ -39,8 +47,7 @@ export default function WikiEditPage() {
   const currentUser = useAuthStore((s) => s.user);
 
   const { data: projectRaw } = useProject(identifier ?? '');
-  const project =
-    projectRaw && typeof projectRaw === 'object' && 'id' in projectRaw ? (projectRaw as { id: string }) : null;
+  const project = projectRaw?.data ?? null;
   const projectId = project?.id ?? '';
   const membersQuery = useMembers(projectId);
   const members = membersQuery.data?.data ?? [];
@@ -53,18 +60,19 @@ export default function WikiEditPage() {
 
   const [title, setTitle] = useState(decodedTitle);
   const [text, setText] = useState('');
-  const [previewEnabled, setPreviewEnabled] = useState(false);
+  const [comments, setComments] = useState('');
+  const [attachFiles, setAttachFiles] = useState<File[]>([]);
+  const [attachedFiles, setAttachedFiles] = useState<Attachment[]>([]);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     if (existing?.content?.text != null) setText(existing.content.text);
-    if (decodedTitle) setTitle(decodedTitle);
-  }, [existing?.content?.text, decodedTitle]);
-
-  useEffect(() => {
-    // Always default to edit mode when opening/changing page
-    setPreviewEnabled(false);
-  }, [identifier, titleParam]);
+    setComments(existing?.content?.comments ?? '');
+    setAttachedFiles(existing?.attachments ?? []);
+    if (isNew) return;
+    if (existing?.title) setTitle(existing.title);
+    else if (decodedTitle) setTitle(decodedTitle);
+  }, [existing?.content?.text, existing?.content?.comments, existing?.title, decodedTitle, isNew]);
 
   useEffect(() => {
     setSaveMessage(null);
@@ -72,6 +80,8 @@ export default function WikiEditPage() {
 
   const create = useCreateWikiPage(projectId);
   const update = useUpdateWikiPage(projectId);
+  const uploadAttachments = useUploadAttachments();
+  const deleteAttachment = useDeleteAttachment();
 
   const canEditWiki = useMemo(() => {
     if (currentUser?.admin) return true;
@@ -92,24 +102,47 @@ export default function WikiEditPage() {
     else navigate(`/projects/${identifier}/wiki`, { replace: true });
   }, [identifier, projectId, decodedTitle, canEditWiki, membersQuery.isLoading, navigate]);
 
-  const previewHtml = useMemo(() => {
-    const raw = marked.parse(text, { async: false }) as string;
-    return sanitizeHtml(raw);
-  }, [text]);
+  const insertAttachmentMarkup = (att: Attachment, asImage: boolean) => {
+    const url = `/api/v1/attachments/${att.id}/download`;
+    const markup = asImage ? `![${att.filename}](${url})` : `[${att.filename}](${url})`;
+    setText((prev) => `${prev}${prev.endsWith('\n') || prev.length === 0 ? '' : '\n'}${markup}\n`);
+  };
 
   const save = async () => {
     if (!projectId) return;
     try {
+      const normalizedComments = comments.trim();
+      const payloadComments = normalizedComments.length > 0 ? normalizedComments : null;
+      let uploadedAttachmentIds: string[] = [];
+      if (attachFiles.length > 0) {
+        const uploaded = await uploadAttachments.mutateAsync({ files: attachFiles });
+        const attachments = ((uploaded.data?.attachments ?? []) as { id?: string }[]).filter((a) => !!a.id);
+        uploadedAttachmentIds = attachments.map((a) => String(a.id));
+      }
       if (isNew) {
         if (!title.trim()) return;
-        await create.mutateAsync({ title: title.trim(), text });
+        await create.mutateAsync({
+          title: title.trim(),
+          text,
+          comments: payloadComments,
+          attachmentIds: uploadedAttachmentIds,
+        });
         setSaveMessage({ type: 'success', text: 'Wikiページを保存しました。' });
         navigate(`/projects/${identifier}/wiki/${encodeURIComponent(title.trim())}`);
       } else {
-        await update.mutateAsync({ title: decodedTitle, text });
+        const normalizedTitle = title.trim();
+        if (!normalizedTitle) return;
+        await update.mutateAsync({
+          title: decodedTitle,
+          newTitle: normalizedTitle !== decodedTitle ? normalizedTitle : undefined,
+          text,
+          comments: payloadComments,
+          attachmentIds: uploadedAttachmentIds,
+        });
         setSaveMessage({ type: 'success', text: 'Wikiページを保存しました。' });
-        navigate(`/projects/${identifier}/wiki/${encodeURIComponent(decodedTitle)}`);
+        navigate(`/projects/${identifier}/wiki/${encodeURIComponent(normalizedTitle)}`);
       }
+      setAttachFiles([]);
     } catch (error: any) {
       const msg = error?.response?.data?.error?.message || 'Wikiページの保存に失敗しました。';
       setSaveMessage({ type: 'error', text: msg });
@@ -142,65 +175,101 @@ export default function WikiEditPage() {
         </div>
       )}
 
-      {isNew ? (
-        <label className="block max-w-xl text-sm">
-          <span className="text-gray-700">タイトル</span>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-            placeholder="ページタイトル"
-          />
-        </label>
-      ) : (
-        <p className="text-lg font-medium text-gray-800">{decodedTitle}</p>
-      )}
+      <label className="block max-w-xl text-sm">
+        <span className="text-gray-700">タイトル</span>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+          placeholder="ページタイトル"
+        />
+      </label>
 
-      <div className="flex items-center justify-end">
-        <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setPreviewEnabled(false)}
-            className={`px-3 py-1.5 text-sm ${!previewEnabled ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-          >
-            編集
-          </button>
-          <button
-            type="button"
-            onClick={() => setPreviewEnabled(true)}
-            className={`px-3 py-1.5 text-sm border-l border-gray-300 ${previewEnabled ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-          >
-            プレビュー
-          </button>
-        </div>
-      </div>
+      <RichTextEditor
+        value={text}
+        onChange={setText}
+        rows={18}
+        placeholder="Wiki本文"
+        files={attachFiles}
+        onFilesChange={setAttachFiles}
+        showAttachments={true}
+      />
 
-      <div className="grid grid-cols-1 gap-4 min-h-[480px]">
-        <div className="flex flex-col rounded-lg border border-gray-200 bg-white overflow-hidden shadow-sm">
-          <span className="text-xs font-medium text-gray-500 px-3 py-2 bg-gray-50 border-b">
-            {previewEnabled ? 'プレビュー' : 'Markdown'}
-          </span>
-          {previewEnabled ? (
-            <div
-              className="flex-1 min-h-[400px] overflow-auto p-3 text-sm text-gray-800 space-y-3 [&_h1]:text-xl [&_h1]:font-bold [&_pre]:bg-gray-100 [&_pre]:p-2 [&_pre]:rounded [&_a]:text-primary-700"
-              dangerouslySetInnerHTML={{ __html: previewHtml }}
-            />
-          ) : (
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              className="flex-1 min-h-[400px] w-full resize-none border-0 p-3 font-mono text-sm focus:ring-0"
-              spellCheck={false}
-            />
+      <label className="block max-w-xl text-sm">
+        <span className="text-gray-700">コメント</span>
+        <input
+          value={comments}
+          onChange={(e) => setComments(e.target.value)}
+          className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+          placeholder="更新コメント（任意）"
+        />
+      </label>
+
+      {(attachedFiles.length > 0 || attachFiles.length > 0) && (
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <h2 className="mb-2 text-sm font-semibold text-gray-700">{t('settings.attachments')}</h2>
+          {attachedFiles.length > 0 && (
+            <ul className="space-y-2 text-sm">
+              {attachedFiles.map((att) => (
+                <li key={att.id} className="flex flex-wrap items-center gap-2">
+                  <a
+                    href={`/api/v1/attachments/${att.id}/download`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary-700 hover:underline"
+                  >
+                    {att.filename}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => insertAttachmentMarkup(att, false)}
+                    className="inline-flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50"
+                  >
+                    <LinkIcon className="h-3.5 w-3.5" />
+                    リンク挿入
+                  </button>
+                  {(att.contentType ?? '').startsWith('image/') && (
+                    <button
+                      type="button"
+                      onClick={() => insertAttachmentMarkup(att, true)}
+                      className="inline-flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50"
+                    >
+                      <Image className="h-3.5 w-3.5" />
+                      画像挿入
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await deleteAttachment.mutateAsync(att.id);
+                      setAttachedFiles((prev) => prev.filter((f) => f.id !== att.id));
+                    }}
+                    className="inline-flex items-center gap-1 rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    削除
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {attachFiles.length > 0 && (
+            <p className="mt-2 text-xs text-gray-500">新規追加ファイルは保存時にアップロードされます。</p>
           )}
         </div>
-      </div>
+      )}
 
       <div className="flex gap-2">
         <button
           type="button"
           onClick={save}
-          disabled={create.isPending || update.isPending || (isNew && !title.trim())}
+          disabled={
+            create.isPending ||
+            update.isPending ||
+            uploadAttachments.isPending ||
+            deleteAttachment.isPending ||
+            !title.trim()
+          }
           className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
         >
           {t('app.save')}
