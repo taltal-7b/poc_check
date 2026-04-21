@@ -1,7 +1,0 @@
-Fix role sorting order and add error messages
-
-Changes:
-- Fix role list sorting: "管理者", "開発者", "報告者" are always at the top, followed by other roles in chronological order (oldest first).
-- Remove default backend sorting to allow frontend-side custom sorting logic.
-- Add error message display in create and edit role modals (e.g., for duplicate role names).
-- Reset error state when opening modals.

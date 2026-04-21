@@ -109,12 +109,29 @@ export const useDeleteAttachment = () => {
 export const useUploadAttachments = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ files, issueId, journalId }: { files: File[]; issueId?: string; journalId?: string }) => {
+    mutationFn: ({
+      files,
+      issueId,
+      journalId,
+      containerType,
+      containerId,
+      description,
+    }: {
+      files: File[];
+      issueId?: string;
+      journalId?: string;
+      containerType?: string;
+      containerId?: string;
+      description?: string;
+    }) => {
       const fd = new FormData();
       files.forEach((f) => fd.append('files', f));
       const meta: Record<string, string> = {};
       if (issueId) meta.issueId = issueId;
       if (journalId) meta.journalId = journalId;
+      if (containerType) meta.containerType = containerType;
+      if (containerId) meta.containerId = containerId;
+      if (description) meta.description = description;
       if (Object.keys(meta).length) fd.append('meta', JSON.stringify(meta));
       return api.post<ApiResponse<{ attachments: unknown[] }>>('/attachments/upload', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -134,10 +151,61 @@ export const useDeleteTimeEntry = () => { const qc = useQueryClient(); return us
 export const useTimeEntryReport = (params?: Record<string, unknown>) => useQuery({ queryKey: ['timeReport', params], queryFn: () => get<unknown>('/time_entries/report', params) });
 
 // ========== Wiki ==========
-export const useWikiPages = (projectId: string) => useQuery({ queryKey: ['wiki', projectId], queryFn: () => get<WikiPage[]>(`/projects/${projectId}/wiki`), enabled: !!projectId });
+export const useWikiPages = (projectId: string) =>
+  useQuery({
+    queryKey: ['wiki', projectId],
+    queryFn: () =>
+      get<{ wiki: { id: string; startPage: string } | null; pages: WikiPage[] }>(`/projects/${projectId}/wiki`),
+    enabled: !!projectId,
+  });
 export const useWikiPage = (projectId: string, title: string) => useQuery({ queryKey: ['wiki', projectId, title], queryFn: () => get<WikiPage>(`/projects/${projectId}/wiki/${encodeURIComponent(title)}`), enabled: !!projectId && !!title });
-export const useCreateWikiPage = (projectId: string) => { const qc = useQueryClient(); return useMutation({ mutationFn: (body: { title: string; text: string }) => post<WikiPage>(`/projects/${projectId}/wiki`, body), onSuccess: () => qc.invalidateQueries({ queryKey: ['wiki', projectId] }) }); };
-export const useUpdateWikiPage = (projectId: string) => { const qc = useQueryClient(); return useMutation({ mutationFn: ({ title, ...body }: { title: string; text: string; comments?: string }) => put<WikiPage>(`/projects/${projectId}/wiki/${encodeURIComponent(title)}`, body), onSuccess: () => qc.invalidateQueries({ queryKey: ['wiki', projectId] }) }); };
+export const useWikiHistory = (projectId: string, title: string) =>
+  useQuery({
+    queryKey: ['wiki-history', projectId, title],
+    queryFn: () =>
+      get<
+        Array<{
+          id: string;
+          version: number;
+          comments: string | null;
+          authorId: string;
+          createdAt: string;
+          author?: { id: string; login: string; firstname: string; lastname: string } | null;
+        }>
+      >(
+        `/projects/${projectId}/wiki/${encodeURIComponent(title)}/history`,
+      ),
+    enabled: !!projectId && !!title,
+  });
+export const useWikiDiff = (projectId: string, title: string, fromVersion?: number, toVersion?: number) =>
+  useQuery({
+    queryKey: ['wiki-diff', projectId, title, fromVersion, toVersion],
+    queryFn: () =>
+      get<{ fromVersion: number; toVersion: number; oldText: string; newText: string }>(
+        `/projects/${projectId}/wiki/${encodeURIComponent(title)}/diff`,
+        { from: fromVersion, to: toVersion },
+      ),
+    enabled:
+      !!projectId &&
+      !!title &&
+      typeof fromVersion === 'number' &&
+      typeof toVersion === 'number' &&
+      fromVersion !== toVersion,
+  });
+export const useDeleteWikiVersion = (projectId: string, title: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (version: number) =>
+      del(`/projects/${projectId}/wiki/${encodeURIComponent(title)}/version/${version}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['wiki-history', projectId, title] });
+      qc.invalidateQueries({ queryKey: ['wiki', projectId, title] });
+      qc.invalidateQueries({ queryKey: ['wiki', projectId] });
+    },
+  });
+};
+export const useCreateWikiPage = (projectId: string) => { const qc = useQueryClient(); return useMutation({ mutationFn: (body: { title: string; text: string; comments?: string | null; attachmentIds?: string[] }) => post<WikiPage>(`/projects/${projectId}/wiki`, body), onSuccess: () => qc.invalidateQueries({ queryKey: ['wiki', projectId] }) }); };
+export const useUpdateWikiPage = (projectId: string) => { const qc = useQueryClient(); return useMutation({ mutationFn: ({ title, ...body }: { title: string; text: string; comments?: string | null; attachmentIds?: string[]; newTitle?: string }) => put<WikiPage>(`/projects/${projectId}/wiki/${encodeURIComponent(title)}`, body), onSuccess: () => qc.invalidateQueries({ queryKey: ['wiki', projectId] }) }); };
 
 // ========== News ==========
 export const useNewsList = (params?: Record<string, unknown>) => useQuery({ queryKey: ['news', params], queryFn: () => get<News[]>('/news', params) });

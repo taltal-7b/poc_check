@@ -134,7 +134,16 @@ export interface WikiPage {
   protected: boolean;
   createdAt: string;
   updatedAt: string;
-  content?: { text: string; version: number; authorId: string; author?: User };
+  content?: {
+    id?: string;
+    text: string;
+    version: number;
+    authorId: string;
+    comments?: string | null;
+    author?: User;
+    _count?: { versions: number };
+  };
+  attachments?: Attachment[];
 }
 
 export interface Document {
