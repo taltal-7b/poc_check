@@ -14,11 +14,68 @@ function param(req: Request, key: string): string | undefined {
   return undefined;
 }
 
+function parseRolePermissions(raw: unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return raw
+        .split(/[,\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+}
+
+async function getUserGroupIds(userId: string): Promise<string[]> {
+  const rows = await prisma.groupUser.findMany({
+    where: { userId },
+    select: { groupId: true },
+  });
+  return rows.map((r) => r.groupId);
+}
+
+async function userCanManageNews(
+  userId: string | undefined,
+  isAdmin: boolean | undefined,
+  projectId: string,
+): Promise<boolean> {
+  if (isAdmin) return true;
+  if (!userId) return false;
+  const groupIds = await getUserGroupIds(userId);
+  const members = await prisma.member.findMany({
+    where: {
+      projectId,
+      OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
+    },
+    include: {
+      memberRoles: {
+        include: {
+          role: { select: { permissions: true } },
+        },
+      },
+    },
+  });
+  if (!members.length) return false;
+  for (const m of members) {
+    for (const mr of m.memberRoles ?? []) {
+      const perms = parseRolePermissions(mr.role?.permissions);
+      if (perms.includes('manage_news')) return true;
+    }
+  }
+  return false;
+}
+
 const createSchema = z.object({
   title: z.string().min(1),
-  summary: z.string().optional(),
-  description: z.string().optional(),
+  summary: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
   projectId: z.string().uuid().optional(),
+  attachmentIds: z.array(z.string().uuid()).optional(),
 });
 
 const updateSchema = z.object({
@@ -29,12 +86,116 @@ const updateSchema = z.object({
 
 const commentSchema = z.object({
   content: z.string().min(1),
+  parentId: z.string().uuid().optional().nullable(),
 });
+
+const commentAuthorSelect = {
+  id: true,
+  login: true,
+  firstname: true,
+  lastname: true,
+} as const;
+
+type CommentWithAuthor = {
+  id: string;
+  newsId: string;
+  parentId: string | null;
+  authorId: string;
+  content: string;
+  createdAt: Date;
+  updatedAt: Date;
+  author: {
+    id: string;
+    login: string;
+    firstname: string;
+    lastname: string;
+  };
+};
+
+type CommentTreeNode = CommentWithAuthor & { replies: CommentTreeNode[] };
+
+function buildCommentTree(rows: CommentWithAuthor[]): CommentTreeNode[] {
+  const nodes = new Map<string, CommentTreeNode>();
+  for (const r of rows) {
+    nodes.set(r.id, { ...r, replies: [] });
+  }
+  const roots: CommentTreeNode[] = [];
+  for (const r of rows) {
+    const node = nodes.get(r.id)!;
+    if (r.parentId && nodes.has(r.parentId)) {
+      nodes.get(r.parentId)!.replies.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+  const byTime = (a: CommentTreeNode, b: CommentTreeNode) => a.createdAt.getTime() - b.createdAt.getTime();
+  function sortDeep(list: CommentTreeNode[]) {
+    list.sort(byTime);
+    for (const n of list) sortDeep(n.replies);
+  }
+  sortDeep(roots);
+  return roots;
+}
+
+const attachmentSelect = {
+  id: true,
+  filename: true,
+  diskFilename: true,
+  filesize: true,
+  contentType: true,
+  description: true,
+  createdAt: true,
+} as const;
+
+async function listNewsAttachments(newsId: string) {
+  return prisma.attachment.findMany({
+    where: { containerType: 'News', containerId: newsId },
+    orderBy: { createdAt: 'asc' },
+    select: attachmentSelect,
+  });
+}
+
+async function withNewsAttachments<T extends { id: string }>(news: T | null) {
+  if (!news) return news;
+  const attachments = await listNewsAttachments(news.id);
+  return { ...news, attachments };
+}
+
+async function withNewsAttachmentsMany<T extends { id: string }>(items: T[]) {
+  if (!items.length) return items;
+  const ids = items.map((i) => i.id);
+  const rows = await prisma.attachment.findMany({
+    where: { containerType: 'News', containerId: { in: ids } },
+    orderBy: { createdAt: 'asc' },
+    select: { ...attachmentSelect, containerId: true },
+  });
+  const map = new Map<string, Array<Omit<typeof rows[number], 'containerId'>>>();
+  for (const row of rows) {
+    if (!row.containerId) continue;
+    const arr = map.get(row.containerId) ?? [];
+    const { containerId: _containerId, ...rest } = row;
+    arr.push(rest);
+    map.set(row.containerId, arr);
+  }
+  return items.map((item) => ({ ...item, attachments: map.get(item.id) ?? [] }));
+}
+
+async function attachNewsFiles(newsId: string, userId: string, attachmentIds?: string[]) {
+  if (!attachmentIds?.length) return;
+  await prisma.attachment.updateMany({
+    where: { id: { in: attachmentIds }, authorId: userId },
+    data: { containerType: 'News', containerId: newsId },
+  });
+}
 
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const projectId = param(req, 'projectId');
-    const { page, perPage, skip } = parsePagination(req.query as Record<string, unknown>);
+    const query = req.query as Record<string, unknown>;
+    const { page, perPage, skip } = parsePagination({
+      ...query,
+      per_page: query.per_page ?? 30,
+    });
 
     const where = projectId ? { projectId } : {};
 
@@ -53,7 +214,8 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       }),
     ]);
 
-    return sendPaginated(res, items, {
+    const itemsWithAttachments = await withNewsAttachmentsMany(items);
+    return sendPaginated(res, itemsWithAttachments, {
       total,
       page,
       perPage,
@@ -78,13 +240,15 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
         comments: {
           orderBy: { createdAt: 'asc' },
           include: {
-            author: { select: { id: true, login: true, firstname: true, lastname: true } },
+            author: { select: commentAuthorSelect },
           },
         },
       },
     });
     if (!news) return next(AppError.notFound('ニュースが見つかりません'));
-    return sendSuccess(res, news);
+    const { comments, ...newsRest } = news;
+    const withTree = { ...newsRest, comments: buildCommentTree(comments as CommentWithAuthor[]) };
+    return sendSuccess(res, await withNewsAttachments(withTree));
   } catch (e) {
     next(e);
   }
@@ -100,6 +264,8 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
 
     const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) return next(AppError.notFound('プロジェクトが見つかりません'));
+    const canManage = await userCanManageNews(req.user?.userId, req.user?.admin, projectId);
+    if (!canManage) return next(AppError.forbidden('ニュースを作成する権限がありません'));
 
     const news = await prisma.news.create({
       data: {
@@ -115,7 +281,16 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         comments: true,
       },
     });
-    return sendSuccess(res, news, 201);
+    await attachNewsFiles(news.id, req.user!.userId, parsed.data.attachmentIds);
+    const full = await prisma.news.findUnique({
+      where: { id: news.id },
+      include: {
+        project: { select: { id: true, name: true, identifier: true } },
+        author: { select: { id: true, login: true, firstname: true, lastname: true } },
+        comments: true,
+      },
+    });
+    return sendSuccess(res, await withNewsAttachments(full), 201);
   } catch (e) {
     next(e);
   }
@@ -148,12 +323,14 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
         comments: {
           orderBy: { createdAt: 'asc' },
           include: {
-            author: { select: { id: true, login: true, firstname: true, lastname: true } },
+            author: { select: commentAuthorSelect },
           },
         },
       },
     });
-    return sendSuccess(res, news);
+    const { comments: putComments, ...putRest } = news;
+    const putWithTree = { ...putRest, comments: buildCommentTree(putComments as CommentWithAuthor[]) };
+    return sendSuccess(res, await withNewsAttachments(putWithTree));
   } catch (e) {
     next(e);
   }
@@ -191,14 +368,23 @@ router.post('/:id/comments', authenticate, async (req: Request, res: Response, n
     });
     if (!news) return next(AppError.notFound('ニュースが見つかりません'));
 
+    let parentId: string | null = parsed.data.parentId ?? null;
+    if (parentId) {
+      const parent = await prisma.comment.findFirst({
+        where: { id: parentId, newsId: id },
+      });
+      if (!parent) return next(AppError.badRequest('親コメントが見つかりません'));
+    }
+
     const comment = await prisma.comment.create({
       data: {
         newsId: id,
         authorId: req.user!.userId,
         content: parsed.data.content,
+        parentId,
       },
       include: {
-        author: { select: { id: true, login: true, firstname: true, lastname: true } },
+        author: { select: commentAuthorSelect },
       },
     });
     return sendSuccess(res, comment, 201);

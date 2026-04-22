@@ -7,7 +7,7 @@
   "timeEntries": { "title": "Time tracking", "new": "Log time", "hours": "Hours", "activity": "Activity", "comment": "Comment", "spentOn": "Date", "report": "Report" },
   "wiki": { "title": "Wiki", "newPage": "New page", "editPage": "Edit page", "history": "History", "protect": "Protect", "unprotect": "Unprotect", "export": "Export", "moreActions": "More actions", "deletePage": "Delete wiki page", "deletePageConfirm": "Delete \"{{title}}\"? This cannot be undone." },
   "documents": { "title": "Documents", "new": "New document", "titleField": "Title", "category": "Category" },
-  "news": { "title": "News", "new": "Add news", "summary": "Summary", "comments": "Comments", "addComment": "Add comment" },
+  "news": { "title": "News", "new": "Add news", "summary": "Summary", "comments": "Comments", "addComment": "Add comment", "deleteCommentConfirm": "Delete this comment?", "deleteCommentConfirmWithReplies": "This will delete this comment and all replies under it. Continue?" },
   "forums": { "title": "Forums", "newBoard": "New board", "newTopic": "New topic", "reply": "Reply", "quote": "Quote reply" },
   "versions": { "title": "Versions", "new": "New version", "roadmap": "Roadmap", "status": { "open": "Open", "locked": "Locked", "closed": "Closed" } },
   "users": { "title": "Users", "new": "New user", "login": "Login ID", "name": "Name", "firstname": "First name", "lastname": "Last name", "email": "Email", "admin": "Administrator", "createdAt": "Created", "status": { "active": "Active", "registered": "Registered", "locked": "Locked" }, "lock": "Lock", "unlock": "Unlock" },

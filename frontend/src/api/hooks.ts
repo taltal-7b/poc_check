@@ -209,8 +209,38 @@ export const useUpdateWikiPage = (projectId: string) => { const qc = useQueryCli
 
 // ========== News ==========
 export const useNewsList = (params?: Record<string, unknown>) => useQuery({ queryKey: ['news', params], queryFn: () => get<News[]>('/news', params) });
-export const useProjectNews = (projectId: string) => useQuery({ queryKey: ['news', projectId], queryFn: () => get<News[]>(`/projects/${projectId}/news`), enabled: !!projectId });
+export const useProjectNews = (projectId: string, params?: Record<string, unknown>) =>
+  useQuery({
+    queryKey: ['news', projectId, params],
+    queryFn: () => get<News[]>(`/projects/${projectId}/news`, params),
+    enabled: !!projectId,
+  });
 export const useNewsItem = (id: string) => useQuery({ queryKey: ['newsItem', id], queryFn: () => get<News>(`/news/${id}`), enabled: !!id });
+export const useProjectNewsItem = (projectId: string, newsId: string) =>
+  useQuery({
+    queryKey: ['newsItem', projectId, newsId],
+    queryFn: () => get<News>(`/projects/${projectId}/news/${newsId}`),
+    enabled: !!projectId && !!newsId,
+  });
+export const useCreateProjectNews = (projectId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { title: string; summary?: string | null; description?: string | null; attachmentIds?: string[] }) =>
+      post<News>(`/projects/${projectId}/news`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['news', projectId] }),
+  });
+};
+export const useUpdateProjectNews = (projectId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string; title: string; summary?: string | null; description?: string | null }) =>
+      put<News>(`/projects/${projectId}/news/${id}`, body),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ['news', projectId] });
+      qc.invalidateQueries({ queryKey: ['newsItem', projectId, vars.id] });
+    },
+  });
+};
 
 // ========== Boards & Messages ==========
 export const useBoards = (projectId: string) => useQuery({ queryKey: ['boards', projectId], queryFn: () => get<Board[]>(`/projects/${projectId}/boards`), enabled: !!projectId });

@@ -166,15 +166,20 @@ export interface News {
   authorId: string;
   author?: User;
   createdAt: string;
+  updatedAt?: string;
   comments?: Comment[];
+  attachments?: Attachment[];
 }
 
 export interface Comment {
   id: string;
   content: string;
   authorId: string;
+  parentId?: string | null;
   author?: User;
   createdAt: string;
+  updatedAt?: string;
+  replies?: Comment[];
 }
 
 export interface Board {
