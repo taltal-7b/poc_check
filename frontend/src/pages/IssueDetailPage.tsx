@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { renderMarkdown } from '../components/RichTextEditor';
 import { format } from 'date-fns';
-import { ja, enUS } from 'date-fns/locale';
+import { ja } from 'date-fns/locale';
 import { Pencil, FileIcon, Download, Trash2, Check, X, Rss } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import { useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useUpdateJournal, useDeleteJournal, useTrackers, useStatuses, useMembers, useProjectIssues } from '../api/hooks';
@@ -80,7 +80,7 @@ function parsePermissions(raw: unknown): string[] {
 }
 
 export default function IssueDetailPage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const params = useParams<{ identifier?: string; issueId?: string }>();
   const { identifier, issueId } = params;
   const id = issueId ?? '';
@@ -120,7 +120,7 @@ export default function IssueDetailPage() {
   const [editingJournalNote, setEditingJournalNote] = useState('');
   const [deleteJournalTarget, setDeleteJournalTarget] = useState<{ id: string; userName: string } | null>(null);
 
-  const locale = i18n.language?.startsWith('ja') ? ja : enUS;
+  const locale = ja;
   const projectSlug = identifier ?? issue?.project?.identifier ?? '';
 
   const trackersQuery = useTrackers();
@@ -919,7 +919,7 @@ export default function IssueDetailPage() {
             <h3 className="text-lg font-semibold text-slate-900">{t('app.confirm')}</h3>
             <p className="mt-2 text-sm text-slate-600">
               <span className="font-medium text-slate-800">{deleteTarget.filename}</span>
-              {' '}{t('app.delete')}{i18n.language?.startsWith('ja') ? 'しますか？' : '?'}
+              {' '}{t('app.delete')}しますか？
             </p>
             <div className="mt-5 flex justify-end gap-3">
               <button type="button" onClick={() => setDeleteTarget(null)}

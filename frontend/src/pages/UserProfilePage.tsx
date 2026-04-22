@@ -1,15 +1,13 @@
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { format, formatDistanceToNow } from 'date-fns';
-import { ja, enUS } from 'date-fns/locale';
+import { format } from 'date-fns';
 import { useUser, useIssues, useActivities } from '../api/hooks';
 import type { Issue, Activity } from '../types';
 
 export default function UserProfilePage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { userId } = useParams<{ userId: string }>();
   const id = userId ?? '';
-  const locale = i18n.language?.startsWith('ja') ? ja : enUS;
 
   const { data: userData, isLoading, isError } = useUser(id);
   const user = userData?.data;
@@ -79,16 +77,16 @@ export default function UserProfilePage() {
               <thead className="bg-slate-50">
                 <tr>
                   <th className="px-4 py-2 text-left font-medium text-slate-500" />
-                  <th className="px-4 py-2 text-center font-medium text-slate-500">{i18n.language?.startsWith('ja') ? '件数' : 'Count'}</th>
+                  <th className="px-4 py-2 text-center font-medium text-slate-500">件数</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 <tr>
-                  <td className="px-4 py-2 text-slate-700">{i18n.language?.startsWith('ja') ? '担当しているチケット（未完了）' : 'Assigned issues (Open)'}</td>
+                  <td className="px-4 py-2 text-slate-700">担当しているチケット（未完了）</td>
                   <td className="px-4 py-2 text-center font-medium text-primary-600">{assignedTotal}</td>
                 </tr>
                 <tr>
-                  <td className="px-4 py-2 text-slate-700">{i18n.language?.startsWith('ja') ? '報告したチケット（完了）' : 'Reported issues (Closed)'}</td>
+                  <td className="px-4 py-2 text-slate-700">報告したチケット（完了）</td>
                   <td className="px-4 py-2 text-center font-medium text-green-600">{reportedTotal}</td>
                 </tr>
               </tbody>
@@ -99,7 +97,7 @@ export default function UserProfilePage() {
           {assignedIssues.length > 0 && (
             <div>
               <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-                {i18n.language?.startsWith('ja') ? '担当しているチケット（未完了）' : 'Assigned issues (Open)'}
+                担当しているチケット（未完了）
               </h3>
               <ul className="space-y-1">
                 {assignedIssues.map((iss) => (
@@ -120,7 +118,7 @@ export default function UserProfilePage() {
           {reportedIssues.length > 0 && (
             <div>
               <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-                {i18n.language?.startsWith('ja') ? '報告したチケット（完了）' : 'Reported issues (Closed)'}
+                報告したチケット（完了）
               </h3>
               <ul className="space-y-1">
                 {reportedIssues.map((iss) => (

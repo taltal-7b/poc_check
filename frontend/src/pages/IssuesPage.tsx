@@ -3,13 +3,14 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Clock, Rss } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import { ja, enUS } from 'date-fns/locale';
+import { ja } from 'date-fns/locale';
 import { useIssues, useProjectIssues, useStatuses, useTrackers, useMembers } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 import ProjectSubNav from '../components/ProjectSubNav';
 import type { Issue } from '../types';
 
-const PER_PAGE = 20;
+const PER_PAGE = 10;
+const EMPTY_MARK = '\uFF0D';
 
 function priorityBadge(p: number) {
   const map: Record<number, string> = {
@@ -24,11 +25,11 @@ function priorityBadge(p: number) {
 
 
 export default function IssuesPage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { identifier } = useParams<{ identifier?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const locale = i18n.language?.startsWith('ja') ? ja : enUS;
+  const locale = ja;
 
   const page = Math.max(1, Number(searchParams.get('page') || '1') || 1);
   const trackerId = searchParams.get('trackerId') || '';
@@ -76,7 +77,6 @@ export default function IssuesPage() {
   const trackers = trackersQuery.data?.data ?? [];
   const statuses = statusesQuery.data?.data ?? [];
 
-  // プロジェクト内のメンバーを取得（プロジェクト検索時のみ）
   const membersQuery = useMembers(identifier ?? '');
   const members = identifier ? (membersQuery.data?.data ?? []) : [];
 
@@ -123,7 +123,7 @@ export default function IssuesPage() {
             onChange={(e) => setFilter('trackerId', e.target.value)}
             className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
           >
-            <option value="">—</option>
+            <option value="">{EMPTY_MARK}</option>
             {trackers.map((tr) => (
               <option key={tr.id} value={tr.id}>
                 {tr.name}
@@ -138,7 +138,7 @@ export default function IssuesPage() {
             onChange={(e) => setFilter('statusId', e.target.value)}
             className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
           >
-            <option value="">—</option>
+            <option value="">{EMPTY_MARK}</option>
             {statuses.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
@@ -153,7 +153,7 @@ export default function IssuesPage() {
             onChange={(e) => setFilter('priority', e.target.value)}
             className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
           >
-            <option value="">—</option>
+            <option value="">{EMPTY_MARK}</option>
             {[1, 2, 3, 4, 5].map((n) => (
               <option key={n} value={String(n)}>
                 {t(`issues.priorities.${n}` as const)}
@@ -168,14 +168,14 @@ export default function IssuesPage() {
             onChange={(e) => setFilter('assignee', e.target.value)}
             className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
           >
-            <option value="">—</option>
+            <option value="">{EMPTY_MARK}</option>
             {members.map((member) => (
               <option key={member.userId} value={member.userId || ''}>
                 {member.user
                   ? (member.user.firstname && member.user.lastname
                       ? `${member.user.lastname} ${member.user.firstname}`
                       : member.user.login)
-                  : '—'}
+                  : EMPTY_MARK}
               </option>
             ))}
           </select>
@@ -211,16 +211,16 @@ export default function IssuesPage() {
                   <tr key={issue.id} className="hover:bg-slate-50/80">
                     <td className="whitespace-nowrap px-3 py-2 font-mono text-sm text-slate-600">
                       <Link to={to} className="text-primary-600 hover:underline">
-                        #{issue.number || '—'}
+                        #{issue.number || EMPTY_MARK}
                       </Link>
                     </td>
-                    <td className="px-3 py-2 text-slate-700">{issue.tracker?.name ?? '—'}</td>
+                    <td className="px-3 py-2 text-slate-700">{issue.tracker?.name ?? EMPTY_MARK}</td>
                     <td className="max-w-xs px-3 py-2">
                       <Link to={to} className="font-medium text-slate-900 hover:text-primary-700">
                         {issue.subject}
                       </Link>
                     </td>
-                    <td className="px-3 py-2 text-slate-700">{issue.status?.name ?? '—'}</td>
+                    <td className="px-3 py-2 text-slate-700">{issue.status?.name ?? EMPTY_MARK}</td>
                     <td className="px-3 py-2">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${priorityBadge(issue.priority)}`}
@@ -231,7 +231,7 @@ export default function IssuesPage() {
                     <td className="px-3 py-2 text-slate-700">
                       {issue.assignee
                         ? `${issue.assignee.lastname} ${issue.assignee.firstname}`.trim() || issue.assignee.login
-                        : '—'}
+                        : EMPTY_MARK}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">
                       {formatDistanceToNow(new Date(issue.updatedAt), { addSuffix: true, locale })}
@@ -266,7 +266,7 @@ export default function IssuesPage() {
             onClick={() => setPage(page + 1)}
             className="rounded-lg border border-slate-300 px-3 py-1 text-sm disabled:opacity-40"
           >
-            →
+            {t('forums.next')}
           </button>
         </div>
       )}

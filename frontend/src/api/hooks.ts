@@ -247,7 +247,7 @@ export const useBoards = (projectId: string) =>
   useQuery({ queryKey: ['boards', projectId], queryFn: () => get<Board[]>(`/projects/${projectId}/boards`), enabled: !!projectId });
 
 /** トピック一覧（親メッセージのみ・ページング）。Redmine の掲示板トピック一覧相当。 */
-export const useBoardTopicsPage = (projectId: string, boardId: string, page: number, perPage = 25) =>
+export const useBoardTopicsPage = (projectId: string, boardId: string, page: number, perPage = 10) =>
   useQuery({
     queryKey: ['boardTopics', projectId, boardId, page, perPage],
     queryFn: () =>

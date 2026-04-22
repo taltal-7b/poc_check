@@ -25,6 +25,7 @@ import ForumsLayout from './pages/forums/ForumsLayout';
 import {
   ForumBoardIndex,
   ForumEditBoard,
+  ForumEditTopic,
   ForumNewBoard,
   ForumNewTopic,
   ForumTopicList,
@@ -117,6 +118,7 @@ export default function App() {
           <Route path="new" element={<ProtectedRoute><ForumNewBoard /></ProtectedRoute>} />
           <Route path=":boardId/edit" element={<ProtectedRoute><ForumEditBoard /></ProtectedRoute>} />
           <Route path=":boardId/topics/new" element={<ProtectedRoute><ForumNewTopic /></ProtectedRoute>} />
+          <Route path=":boardId/topics/:topicId/edit" element={<ProtectedRoute><ForumEditTopic /></ProtectedRoute>} />
           <Route path=":boardId/topics/:topicId" element={<ForumTopicShow />} />
           <Route path=":boardId" element={<ForumTopicList />} />
         </Route>

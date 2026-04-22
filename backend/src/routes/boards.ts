@@ -94,6 +94,101 @@ const messageTopicInclude = {
 } satisfies Prisma.MessageInclude;
 
 type MessageTopicRow = Prisma.MessageGetPayload<{ include: typeof messageTopicInclude }>;
+type MessageWithAuthor = Prisma.MessageGetPayload<{
+  include: { author: { select: { id: true; login: true; firstname: true; lastname: true } } };
+}>;
+type MessageTree = MessageWithAuthor & { replies: MessageTree[] };
+
+async function loadMessageReplyTree(boardId: string, rootId: string): Promise<MessageTree | null> {
+  const root = await prisma.message.findFirst({
+    where: { id: rootId, boardId },
+    include: {
+      author: { select: { id: true, login: true, firstname: true, lastname: true } },
+    },
+  });
+  if (!root) return null;
+
+  const childrenByParent = new Map<string, MessageWithAuthor[]>();
+  let parentIds = [root.id];
+
+  while (parentIds.length) {
+    const children = await prisma.message.findMany({
+      where: { boardId, parentId: { in: parentIds } },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        author: { select: { id: true, login: true, firstname: true, lastname: true } },
+      },
+    });
+    if (!children.length) break;
+
+    const nextParentIds: string[] = [];
+    for (const child of children) {
+      if (!child.parentId) continue;
+      const list = childrenByParent.get(child.parentId) ?? [];
+      list.push(child);
+      childrenByParent.set(child.parentId, list);
+      nextParentIds.push(child.id);
+    }
+    parentIds = nextParentIds;
+  }
+
+  function attachReplies(message: MessageWithAuthor): MessageTree {
+    const replies = (childrenByParent.get(message.id) ?? []).map(attachReplies);
+    return { ...message, replies };
+  }
+
+  return attachReplies(root);
+}
+
+async function countDescendantRepliesByRootIds(
+  boardId: string,
+  rootIds: string[],
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (!rootIds.length) return counts;
+
+  const rootByParent = new Map<string, string>();
+  for (const rootId of rootIds) {
+    counts.set(rootId, 0);
+    rootByParent.set(rootId, rootId);
+  }
+
+  let parentIds = [...rootIds];
+  while (parentIds.length) {
+    const rows = await prisma.message.findMany({
+      where: { boardId, parentId: { in: parentIds } },
+      select: { id: true, parentId: true },
+    });
+    if (!rows.length) break;
+
+    const nextParentIds: string[] = [];
+    for (const row of rows) {
+      if (!row.parentId) continue;
+      const rootId = rootByParent.get(row.parentId);
+      if (!rootId) continue;
+      counts.set(rootId, (counts.get(rootId) ?? 0) + 1);
+      rootByParent.set(row.id, rootId);
+      nextParentIds.push(row.id);
+    }
+    parentIds = nextParentIds;
+  }
+
+  return counts;
+}
+
+async function findRootTopicId(boardId: string, messageId: string): Promise<string | null> {
+  let currentId: string | null = messageId;
+  while (currentId) {
+    const row: { id: string; parentId: string | null } | null = await prisma.message.findFirst({
+      where: { id: currentId, boardId },
+      select: { id: true, parentId: true },
+    });
+    if (!row) return null;
+    if (!row.parentId) return row.id;
+    currentId = row.parentId;
+  }
+  return null;
+}
 
 const createBoardSchema = z.object({
   name: z.string().min(1),
@@ -200,15 +295,19 @@ router.get('/:id/messages', async (req: Request, res: Response, next: NextFuncti
         where,
         skip,
         take: perPage,
-        orderBy: [{ sticky: 'desc' }, { updatedAt: 'desc' }],
+        orderBy: [{ updatedAt: 'desc' }],
         include: messageTopicInclude,
       }),
     ]);
     const topicRows = rows as MessageTopicRow[];
+    const replyCounts = await countDescendantRepliesByRootIds(
+      boardId,
+      topicRows.map((m) => m.id),
+    );
 
     const items = topicRows.map(({ _count, ...m }) => ({
       ...m,
-      replyCount: _count.replies,
+      replyCount: replyCounts.get(m.id) ?? _count.replies,
     }));
 
     return sendPaginated(res, items, {
@@ -271,18 +370,7 @@ router.get('/:boardId/messages/:id', async (req: Request, res: Response, next: N
     const board = await prisma.board.findFirst({ where: { id: boardId, projectId } });
     if (!board) return next(AppError.notFound('掲示板が見つかりません'));
 
-    const message = await prisma.message.findFirst({
-      where: { id: messageId, boardId },
-      include: {
-        author: { select: { id: true, login: true, firstname: true, lastname: true } },
-        replies: {
-          orderBy: { createdAt: 'asc' },
-          include: {
-            author: { select: { id: true, login: true, firstname: true, lastname: true } },
-          },
-        },
-      },
-    });
+    const message = await loadMessageReplyTree(boardId, messageId);
     if (!message) return next(AppError.notFound('メッセージが見つかりません'));
     return sendSuccess(res, message);
   } catch (e) {
@@ -300,8 +388,10 @@ router.post('/:boardId/messages/:id/reply', authenticate, async (req: Request, r
     if (!parentId) return next(AppError.badRequest('id が必要です'));
 
     const can = await userHasAnyProjectPermission(req.user?.userId, req.user?.admin, projectId, [
+      'view_messages',
       'add_messages',
       'manage_boards',
+      'manage_project',
     ]);
     if (!can) return next(AppError.forbidden('メッセージを追加する権限がありません'));
 
@@ -330,6 +420,13 @@ router.post('/:boardId/messages/:id/reply', authenticate, async (req: Request, r
         author: { select: { id: true, login: true, firstname: true, lastname: true } },
       },
     });
+    const rootTopicId = await findRootTopicId(boardId, parentId);
+    if (rootTopicId) {
+      await prisma.message.update({
+        where: { id: rootTopicId },
+        data: { updatedAt: new Date() },
+      });
+    }
     return sendSuccess(res, message, 201);
   } catch (e) {
     next(e);
@@ -356,7 +453,12 @@ router.put('/:boardId/messages/:messageId', authenticate, async (req: Request, r
     });
     if (!existing) return next(AppError.notFound('メッセージが見つかりません'));
 
-    if (existing.authorId !== req.user!.userId && !req.user!.admin) {
+    const isComment = Boolean(existing.parentId);
+    if (isComment) {
+      if (existing.authorId !== req.user!.userId) {
+        return next(AppError.forbidden('このコメントを編集する権限がありません'));
+      }
+    } else if (existing.authorId !== req.user!.userId && !req.user!.admin) {
       return next(AppError.forbidden('このメッセージを編集する権限がありません'));
     }
 
@@ -370,6 +472,15 @@ router.put('/:boardId/messages/:messageId', authenticate, async (req: Request, r
         author: { select: { id: true, login: true, firstname: true, lastname: true } },
       },
     });
+    if (existing.parentId) {
+      const rootTopicId = await findRootTopicId(boardId, existing.id);
+      if (rootTopicId && rootTopicId !== existing.id) {
+        await prisma.message.update({
+          where: { id: rootTopicId },
+          data: { updatedAt: new Date() },
+        });
+      }
+    }
     return sendSuccess(res, message);
   } catch (e) {
     next(e);
@@ -393,11 +504,24 @@ router.delete('/:boardId/messages/:messageId', authenticate, async (req: Request
     });
     if (!existing) return next(AppError.notFound('メッセージが見つかりません'));
 
-    if (existing.authorId !== req.user!.userId && !req.user!.admin) {
+    const isComment = Boolean(existing.parentId);
+    const rootTopicIdForTouch =
+      isComment && existing.parentId ? await findRootTopicId(boardId, existing.id) : null;
+    if (isComment) {
+      if (existing.authorId !== req.user!.userId) {
+        return next(AppError.forbidden('このコメントを削除する権限がありません'));
+      }
+    } else if (existing.authorId !== req.user!.userId && !req.user!.admin) {
       return next(AppError.forbidden('このメッセージを削除する権限がありません'));
     }
 
     await prisma.message.delete({ where: { id: messageId } });
+    if (rootTopicIdForTouch && rootTopicIdForTouch !== existing.id) {
+      await prisma.message.update({
+        where: { id: rootTopicIdForTouch },
+        data: { updatedAt: new Date() },
+      });
+    }
     return sendSuccess(res, { deleted: true, id: messageId });
   } catch (e) {
     next(e);

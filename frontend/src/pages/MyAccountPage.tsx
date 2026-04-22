@@ -23,14 +23,12 @@ export default function MyAccountPage() {
   const [firstname, setFirstname] = useState('');
   const [lastname, setLastname] = useState('');
   const [email, setEmail] = useState('');
-  const [language, setLanguage] = useState<'ja' | 'en'>('ja');
 
   useEffect(() => {
     if (!me) return;
     setFirstname(me.firstname);
     setLastname(me.lastname);
     setEmail(me.mail);
-    setLanguage((me.language === 'en' ? 'en' : 'ja') as 'ja' | 'en');
   }, [me]);
 
   const updateUser = useUpdateUser();
@@ -43,10 +41,10 @@ export default function MyAccountPage() {
       firstname,
       lastname,
       mail: email,
-      language,
+      language: 'ja',
     });
-    await i18n.changeLanguage(language);
-    localStorage.setItem('language', language);
+    await i18n.changeLanguage('ja');
+    localStorage.setItem('language', 'ja');
     qc.invalidateQueries({ queryKey: ['me'] });
   };
 
@@ -138,17 +136,6 @@ export default function MyAccountPage() {
               onChange={(e) => setEmail(e.target.value)}
               className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
             />
-          </label>
-          <label className="block text-sm">
-            <span className="text-gray-700">{t('myAccount.language')}</span>
-            <select
-              value={language}
-              onChange={(e) => setLanguage(e.target.value as 'ja' | 'en')}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-            >
-              <option value="ja">日本語</option>
-              <option value="en">English</option>
-            </select>
           </label>
           <button
             type="submit"

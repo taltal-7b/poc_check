@@ -17,7 +17,7 @@ import {
   startOfWeek,
   subMonths,
 } from 'date-fns';
-import { ja, enUS } from 'date-fns/locale';
+import { ja } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useProjectIssues, useStatuses } from '../api/hooks';
 import type { Issue, IssueStatus } from '../types';
@@ -46,10 +46,9 @@ type DayEntry = {
 };
 
 export default function CalendarPage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { identifier } = useParams<{ identifier: string }>();
-  const isJa = i18n.language?.startsWith('ja');
-  const locale = isJa ? ja : enUS;
+  const locale = ja;
 
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
 
@@ -121,9 +120,7 @@ export default function CalendarPage() {
     return map;
   }, [issues]);
 
-  const weekdayNames = isJa
-    ? ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日']
-    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const weekdayNames = ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日'];
 
   const iconForType = (type: DayEntry['type']) => {
     if (type === 'start') return '⊙';
@@ -165,7 +162,7 @@ export default function CalendarPage() {
               <ChevronLeft size={18} />
             </button>
             <span className="text-sm font-medium w-32 text-center">
-              {format(cursor, isJa ? 'yyyy年M月' : 'MMMM yyyy', { locale })}
+              {format(cursor, 'yyyy年M月', { locale })}
             </span>
             <button
               type="button"
@@ -265,9 +262,9 @@ export default function CalendarPage() {
 
       {/* Legend */}
       <div className="text-xs text-gray-500 space-y-0.5 px-1">
-        <div>⊙ {isJa ? 'この日に開始するチケット' : 'Issue starts on this day'}</div>
-        <div>⊘ {isJa ? 'この日に終了するチケット' : 'Issue ends on this day'}</div>
-        <div>◇ {isJa ? 'この日に開始・終了するチケット' : 'Issue starts and ends on this day'}</div>
+        <div>⊙ この日に開始するチケット</div>
+        <div>⊘ この日に終了するチケット</div>
+        <div>◇ この日に開始・終了するチケット</div>
       </div>
     </div>
   );

@@ -142,10 +142,9 @@ const ROW_H = 32;
 const LABEL_W = 260;
 
 export default function GanttPage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { identifier } = useParams<{ identifier: string }>();
   const slug = identifier ?? '';
-  const isJa = i18n.language?.startsWith('ja');
 
   const { data: projectRaw } = useProject(slug);
   const projectName = (projectRaw as { data?: { name?: string } })?.data?.name ?? slug;
@@ -277,7 +276,7 @@ export default function GanttPage() {
             <div className="shrink-0 border-r border-gray-200 bg-gray-50/80" style={{ width: LABEL_W, minWidth: LABEL_W }}>
               {/* Header */}
               <div className="flex items-center border-b border-gray-200 px-3 text-xs font-semibold text-gray-600" style={{ height: ROW_H }}>
-                {isJa ? 'チケット名' : 'Issue'}
+                チケット名
               </div>
 
               {/* Project row */}
@@ -466,7 +465,7 @@ export default function GanttPage() {
                           {progressW > 0 && (
                             <rect x={left} y={barY} width={progressW} height={barH} rx={3} fill={BAR_GREEN} />
                           )}
-                          <title>{`${issue.tracker?.name} #${issue.number}: ${issue.subject}\n${format(range.start, 'yyyy-MM-dd')} → ${format(range.end, 'yyyy-MM-dd')}\n${isJa ? '進捗' : 'Progress'}: ${issue.doneRatio}%`}</title>
+                          <title>{`${issue.tracker?.name} #${issue.number}: ${issue.subject}\n${format(range.start, 'yyyy-MM-dd')} → ${format(range.end, 'yyyy-MM-dd')}\n進捗: ${issue.doneRatio}%`}</title>
                         </a>
                         <a href={issueUrl}>
                           <text
@@ -520,7 +519,7 @@ export default function GanttPage() {
             <span className="font-medium">{t('gantt.legend')}</span>
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-8 h-3 rounded" style={{ backgroundColor: BAR_GRAY }} />
-              {isJa ? '予定期間' : 'Scheduled'}
+              予定期間
             </span>
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-8 h-3 rounded" style={{ backgroundColor: BAR_GREEN }} />
@@ -528,7 +527,7 @@ export default function GanttPage() {
             </span>
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-8 h-3 rounded" style={{ backgroundColor: BAR_RED }} />
-              {isJa ? '遅れ' : 'Late'}
+              遅れ
             </span>
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-4 h-0.5" style={{ borderTop: '2px dashed #ef4444' }} />

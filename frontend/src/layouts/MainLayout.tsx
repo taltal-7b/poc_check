@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { Menu, X, Search, User, LogOut, Settings, ChevronDown } from 'lucide-react';
 
 export default function MainLayout() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { isAuthenticated, logout, user, setUser } = useAuthStore();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -30,12 +30,6 @@ export default function MainLayout() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
-  };
-
-  const toggleLang = () => {
-    const next = i18n.language === 'ja' ? 'en' : 'ja';
-    i18n.changeLanguage(next);
-    localStorage.setItem('language', next);
   };
 
   const navLinks = [

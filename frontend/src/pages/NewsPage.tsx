@@ -32,7 +32,7 @@ export default function NewsPage() {
   const project = projectRaw?.data ?? null;
 
   const page = Math.max(1, Number(searchParams.get('page') || 1));
-  const projectList = useProjectNews(project?.id ?? '', { page, per_page: 30 });
+  const projectList = useProjectNews(project?.id ?? '', { page, per_page: 10 });
   const membersQuery = useMembers(project?.id ?? '');
   const detailQuery = useProjectNewsItem(project?.id ?? '', newsId ?? '');
   const items = useMemo(() => unwrapList<News>(projectList.data), [projectList.data]);
@@ -105,7 +105,7 @@ export default function NewsPage() {
   }, [identifier, project?.id, currentUser, membersQuery.data]);
 
   const authorName = (author?: { firstname: string; lastname: string; login: string }) =>
-    author ? `${author.lastname} ${author.firstname}`.trim() || author.login : '—';
+    author ? `${author.lastname} ${author.firstname}`.trim() || author.login : '-';
   const pagination = projectList.data?.pagination;
   const totalPages = pagination?.totalPages ?? 1;
 
@@ -138,10 +138,10 @@ export default function NewsPage() {
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-50 text-left text-gray-600">
                   <tr>
-                    <th className="px-4 py-2 font-medium">タイトル</th>
-                    <th className="px-4 py-2 font-medium">サマリー</th>
-                    <th className="px-4 py-2 font-medium">作成日</th>
-                    <th className="px-4 py-2 font-medium">更新日</th>
+                    <th className="px-4 py-2 font-medium">{t('documents.titleField')}</th>
+                    <th className="px-4 py-2 font-medium">{t('news.summary')}</th>
+                    <th className="px-4 py-2 font-medium">{t('users.createdAt')}</th>
+                    <th className="px-4 py-2 font-medium">{t('forums.lastMessage')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -152,9 +152,9 @@ export default function NewsPage() {
                           {n.title}
                         </Link>
                       </td>
-                      <td className="px-4 py-2 text-gray-700">{n.summary?.trim() ? n.summary : '—'}</td>
-                      <td className="px-4 py-2">{n.createdAt ? format(parseISO(n.createdAt), 'yyyy-MM-dd HH:mm') : '—'}</td>
-                      <td className="px-4 py-2">{n.updatedAt ? format(parseISO(n.updatedAt), 'yyyy-MM-dd HH:mm') : '—'}</td>
+                      <td className="px-4 py-2 text-gray-700">{n.summary?.trim() ? n.summary : '-'}</td>
+                      <td className="px-4 py-2">{n.createdAt ? format(parseISO(n.createdAt), 'yyyy-MM-dd HH:mm') : '-'}</td>
+                      <td className="px-4 py-2">{n.updatedAt ? format(parseISO(n.updatedAt), 'yyyy-MM-dd HH:mm') : '-'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -164,7 +164,7 @@ export default function NewsPage() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3 text-sm">
               <span className="text-gray-600">
-                {pagination?.total ?? 0} 件中 {((page - 1) * 30) + 1} - {Math.min(page * 30, pagination?.total ?? page * 30)} 件
+                {pagination?.total ?? 0} {t('forums.topics')} {((page - 1) * 10) + 1} - {Math.min(page * 10, pagination?.total ?? page * 10)} {t('forums.topics')}
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -177,7 +177,7 @@ export default function NewsPage() {
                   }}
                   className="rounded border border-gray-300 px-3 py-1.5 disabled:opacity-50"
                 >
-                  前へ
+                  {t('forums.prev')}
                 </button>
                 <span className="text-gray-700">{page} / {totalPages}</span>
                 <button
@@ -190,7 +190,7 @@ export default function NewsPage() {
                   }}
                   className="rounded border border-gray-300 px-3 py-1.5 disabled:opacity-50"
                 >
-                  次へ
+                  {t('forums.next')}
                 </button>
               </div>
             </div>
@@ -208,7 +208,7 @@ export default function NewsPage() {
               canManageNews={canCreateNews}
               onEdit={() => navigate(`/projects/${identifier}/news/${detailQuery.data!.data.id}/edit`)}
               onDelete={() => {
-                if (!window.confirm('このニュースを削除します。よろしいですか？')) return;
+                if (!window.confirm('Delete this news?')) return;
                 deleteNews.mutate(detailQuery.data!.data.id);
               }}
               deleting={deleteNews.isPending}
@@ -281,7 +281,7 @@ function NewsCommentThread({
   const { t } = useTranslation();
   if (comments.length === 0) {
     if (depth === 0) {
-      return <p className="mt-2 text-sm text-gray-500">コメントはまだありません。</p>;
+      return <p className="mt-2 text-sm text-gray-500">{t('app.noData')}</p>;
     }
     return null;
   }
@@ -301,36 +301,36 @@ function NewsCommentThread({
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-gray-500 text-xs">
-                {authorName(c.author)} · {c.createdAt ? format(parseISO(c.createdAt), 'yyyy-MM-dd HH:mm') : ''}
+                {authorName(c.author)} | {c.createdAt ? format(parseISO(c.createdAt), 'yyyy-MM-dd HH:mm') : ''}
               </span>
-              <button
-                type="button"
-                disabled={rowBusy}
-                onClick={() => onSelectReplyParent(c.id)}
-                className="shrink-0 text-xs text-primary-600 hover:underline disabled:opacity-50"
-              >
-                返信
-              </button>
-            </div>
-            <p className="mt-0.5 whitespace-pre-wrap text-gray-800">{c.content}</p>
-            {canDelete && (
-              <div className="mt-1 flex justify-end">
+              <div className="flex items-center gap-3">
                 <button
                   type="button"
                   disabled={rowBusy}
-                  onClick={() => onDeleteComment(c)}
-                  className="text-xs text-red-600 hover:underline disabled:opacity-50"
+                  onClick={() => onSelectReplyParent(c.id)}
+                  className="shrink-0 text-xs text-primary-600 hover:underline disabled:opacity-50"
                 >
-                  {t('app.delete')}
+                  {t('forums.reply')}
                 </button>
+                {canDelete && (
+                  <button
+                    type="button"
+                    disabled={rowBusy}
+                    onClick={() => onDeleteComment(c)}
+                    className="shrink-0 text-xs text-red-600 hover:underline disabled:opacity-50"
+                  >
+                    {t('app.delete')}
+                  </button>
+                )}
               </div>
-            )}
+            </div>
+            <p className="mt-0.5 whitespace-pre-wrap text-gray-800">{c.content}</p>
             {showReplyComposer && (
               <div className="mt-3 space-y-2 rounded border border-primary-200 bg-primary-50/60 px-3 py-3">
                 <div className="flex items-center justify-between gap-2 text-xs text-primary-900">
-                  <span>{authorName(c.author)} への返信</span>
+                  <span>{authorName(c.author)} {t('forums.reply')}</span>
                   <button type="button" onClick={onCancelReply} className="text-primary-700 underline">
-                    キャンセル
+                    {t('app.cancel')}
                   </button>
                 </div>
                 <textarea
@@ -338,7 +338,7 @@ function NewsCommentThread({
                   onChange={(e) => onChangeComment(e.target.value)}
                   rows={2}
                   className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                  placeholder="返信を入力…"
+                  placeholder={`${t('forums.reply')}...`}
                 />
                 <button
                   type="button"
@@ -346,7 +346,7 @@ function NewsCommentThread({
                   onClick={onSubmitComment}
                   className="rounded bg-primary-600 px-3 py-1.5 text-sm text-white hover:bg-primary-700 disabled:opacity-50"
                 >
-                  返信を投稿
+                  {t('forums.reply')}
                 </button>
               </div>
             )}
@@ -441,7 +441,7 @@ function NewsDetail({
           )}
         </div>
         <p className="mt-1 text-sm text-gray-500">
-          {authorName(item.author)} · {item.createdAt ? format(parseISO(item.createdAt), 'yyyy-MM-dd HH:mm') : '—'}
+          {authorName(item.author)} | {item.createdAt ? format(parseISO(item.createdAt), 'yyyy-MM-dd HH:mm') : '-'}
         </p>
         {item.summary && <p className="mt-2 text-sm text-gray-600">{item.summary}</p>}
       </div>
@@ -452,7 +452,7 @@ function NewsDetail({
         />
         {(item.attachments?.length ?? 0) > 0 && (
           <section className="mt-4 rounded border border-gray-200 bg-white px-3 py-3">
-            <h3 className="text-sm font-semibold text-gray-700">添付ファイル</h3>
+            <h3 className="text-sm font-semibold text-gray-700">{t('settings.attachments')}</h3>
             <ul className="mt-2 space-y-1 text-sm">
               {item.attachments!.map((att) => (
                 <li key={att.id}>
@@ -471,7 +471,7 @@ function NewsDetail({
         )}
       </div>
       <div className="border-t border-gray-100 px-6 py-4">
-        <h3 className="text-sm font-semibold text-gray-700">コメント</h3>
+        <h3 className="text-sm font-semibold text-gray-700">{t('news.comments')}</h3>
         <NewsCommentThread
           comments={item.comments ?? []}
           authorName={authorName}
@@ -494,7 +494,7 @@ function NewsDetail({
               onChange={(e) => onChangeComment(e.target.value)}
               rows={2}
               className="rounded border border-gray-300 px-3 py-2 text-sm"
-              placeholder="コメントを追加"
+              placeholder={t('news.addComment')}
             />
             <button
               type="button"
@@ -502,7 +502,7 @@ function NewsDetail({
               onClick={onSubmitComment}
               className="self-start rounded bg-primary-600 px-3 py-1.5 text-sm text-white hover:bg-primary-700 disabled:opacity-50"
             >
-              コメントを追加
+              {t('news.addComment')}
             </button>
           </div>
         )}

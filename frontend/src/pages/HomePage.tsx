@@ -1,16 +1,16 @@
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { formatDistanceToNow } from 'date-fns';
-import { ja, enUS } from 'date-fns/locale';
+import { ja } from 'date-fns/locale';
 import { useActivities, useProjects } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 
 export default function HomePage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
 
-  const locale = i18n.language?.startsWith('ja') ? ja : enUS;
+  const locale = ja;
 
   const projectsQuery = useProjects(
     isAuthenticated ? { sort: 'updatedAt', order: 'desc', limit: 6 } : undefined,

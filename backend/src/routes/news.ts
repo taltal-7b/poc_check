@@ -192,10 +192,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const projectId = param(req, 'projectId');
     const query = req.query as Record<string, unknown>;
-    const { page, perPage, skip } = parsePagination({
-      ...query,
-      per_page: query.per_page ?? 30,
-    });
+    const { page, perPage, skip } = parsePagination(query);
 
     const where = projectId ? { projectId } : {};
 
