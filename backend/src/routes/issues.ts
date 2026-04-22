@@ -29,7 +29,7 @@ const ISSUE_JOURNAL_KEYS = [
 ] as const;
 
 function catchAsync(
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<void>,
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>,
 ) {
   return (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);

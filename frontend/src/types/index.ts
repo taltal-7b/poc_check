@@ -188,6 +188,9 @@ export interface Board {
   name: string;
   description: string | null;
   position: number;
+  createdByUserId?: string | null;
+  /** GET /boards で付与（親メッセージ数） */
+  topicCount?: number;
 }
 
 export interface Message {
@@ -200,9 +203,12 @@ export interface Message {
   locked: boolean;
   sticky: boolean;
   createdAt: string;
+  updatedAt?: string;
   author?: User;
   replies?: Message[];
   _count?: { replies: number };
+  /** トピック一覧 API で付与 */
+  replyCount?: number;
 }
 
 export interface Role {

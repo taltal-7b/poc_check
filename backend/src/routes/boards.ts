@@ -15,6 +15,79 @@ function param(req: Request, key: string): string | undefined {
   return undefined;
 }
 
+function parseRolePermissions(raw: unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return raw
+        .split(/[,\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+}
+
+async function getUserGroupIds(userId: string): Promise<string[]> {
+  const rows = await prisma.groupUser.findMany({
+    where: { userId },
+    select: { groupId: true },
+  });
+  return rows.map((r) => r.groupId);
+}
+
+/** Redmine: manage_boards / add_messages などプロジェクトロールから判定 */
+async function userHasAnyProjectPermission(
+  userId: string | undefined,
+  isAdmin: boolean | undefined,
+  projectId: string,
+  anyOf: string[],
+): Promise<boolean> {
+  if (isAdmin) return true;
+  if (!userId) return false;
+  const groupIds = await getUserGroupIds(userId);
+  const members = await prisma.member.findMany({
+    where: {
+      projectId,
+      OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
+    },
+    include: {
+      memberRoles: {
+        include: {
+          role: { select: { permissions: true } },
+        },
+      },
+    },
+  });
+  if (!members.length) return false;
+  for (const m of members) {
+    for (const mr of m.memberRoles ?? []) {
+      const perms = parseRolePermissions(mr.role?.permissions);
+      for (const key of anyOf) {
+        if (perms.includes(key)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** 掲示板の編集・削除: システム管理者 / 作成者 / manage_boards / manage_project（Redmine の掲示板管理者相当） */
+async function userCanEditOrDeleteBoard(
+  userId: string | undefined,
+  isAdmin: boolean | undefined,
+  projectId: string,
+  board: { createdByUserId: string | null },
+): Promise<boolean> {
+  if (isAdmin) return true;
+  if (!userId) return false;
+  if (board.createdByUserId && board.createdByUserId === userId) return true;
+  return userHasAnyProjectPermission(userId, isAdmin, projectId, ['manage_boards', 'manage_project']);
+}
+
 const messageTopicInclude = {
   author: { select: { id: true, login: true, firstname: true, lastname: true } },
   _count: { select: { replies: true } },
@@ -58,7 +131,20 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       where: { projectId },
       orderBy: [{ position: 'asc' }, { name: 'asc' }],
     });
-    return sendSuccess(res, boards);
+    if (!boards.length) return sendSuccess(res, []);
+
+    const ids = boards.map((b) => b.id);
+    const topicCounts = await prisma.message.groupBy({
+      by: ['boardId'],
+      where: { boardId: { in: ids }, parentId: null },
+      _count: { _all: true },
+    });
+    const countMap = new Map(topicCounts.map((r) => [r.boardId, r._count._all]));
+    const withCounts = boards.map((b) => ({
+      ...b,
+      topicCount: countMap.get(b.id) ?? 0,
+    }));
+    return sendSuccess(res, withCounts);
   } catch (e) {
     next(e);
   }
@@ -69,12 +155,19 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
     const projectId = param(req, 'projectId');
     if (!projectId) return next(AppError.badRequest('projectId が必要です'));
 
+    const can = await userHasAnyProjectPermission(req.user?.userId, req.user?.admin, projectId, [
+      'manage_boards',
+      'manage_project',
+    ]);
+    if (!can) return next(AppError.forbidden('掲示板を管理する権限がありません'));
+
     const parsed = createBoardSchema.safeParse(req.body);
     if (!parsed.success) return next(AppError.badRequest(parsed.error.message));
 
     const board = await prisma.board.create({
       data: {
         projectId,
+        createdByUserId: req.user!.userId,
         name: parsed.data.name,
         description: parsed.data.description ?? null,
         position: parsed.data.position ?? 0,
@@ -135,6 +228,12 @@ router.post('/:id/messages', authenticate, async (req: Request, res: Response, n
     const boardId = param(req, 'id');
     if (!projectId) return next(AppError.badRequest('projectId が必要です'));
     if (!boardId) return next(AppError.badRequest('id が必要です'));
+
+    const can = await userHasAnyProjectPermission(req.user?.userId, req.user?.admin, projectId, [
+      'add_messages',
+      'manage_boards',
+    ]);
+    if (!can) return next(AppError.forbidden('メッセージを追加する権限がありません'));
 
     const board = await prisma.board.findFirst({ where: { id: boardId, projectId } });
     if (!board) return next(AppError.notFound('掲示板が見つかりません'));
@@ -199,6 +298,12 @@ router.post('/:boardId/messages/:id/reply', authenticate, async (req: Request, r
     if (!projectId) return next(AppError.badRequest('projectId が必要です'));
     if (!boardId) return next(AppError.badRequest('boardId が必要です'));
     if (!parentId) return next(AppError.badRequest('id が必要です'));
+
+    const can = await userHasAnyProjectPermission(req.user?.userId, req.user?.admin, projectId, [
+      'add_messages',
+      'manage_boards',
+    ]);
+    if (!can) return next(AppError.forbidden('メッセージを追加する権限がありません'));
 
     const board = await prisma.board.findFirst({ where: { id: boardId, projectId } });
     if (!board) return next(AppError.notFound('掲示板が見つかりません'));
@@ -352,6 +457,11 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
     const existing = await prisma.board.findFirst({ where: { id, projectId } });
     if (!existing) return next(AppError.notFound('掲示板が見つかりません'));
 
+    const canEdit = await userCanEditOrDeleteBoard(req.user?.userId, req.user?.admin, projectId, {
+      createdByUserId: existing.createdByUserId,
+    });
+    if (!canEdit) return next(AppError.forbidden('この掲示板を編集する権限がありません'));
+
     const board = await prisma.board.update({
       where: { id },
       data: {
@@ -375,6 +485,11 @@ router.delete('/:id', authenticate, async (req: Request, res: Response, next: Ne
 
     const existing = await prisma.board.findFirst({ where: { id, projectId } });
     if (!existing) return next(AppError.notFound('掲示板が見つかりません'));
+
+    const canDelete = await userCanEditOrDeleteBoard(req.user?.userId, req.user?.admin, projectId, {
+      createdByUserId: existing.createdByUserId,
+    });
+    if (!canDelete) return next(AppError.forbidden('この掲示板を削除する権限がありません'));
 
     await prisma.board.delete({ where: { id } });
     return sendSuccess(res, { deleted: true, id });

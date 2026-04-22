@@ -835,7 +835,7 @@ router.get('/:title/export/pdf', async (req: Request, res: Response, next: NextF
       .fillColor('#111827')
       .text(`${projectLabel} - ${page.title} - #${page.content.version}`);
     doc.moveDown(0.9);
-    doc.font(baseFont).fontSize(18).fillColor('#0f172a').text(page.title, { lineGap: 1 });
+    doc.font(baseFont).fontSize(18).fillColor('#0f172a').text(page.title);
     doc.moveDown(1.1);
 
     renderWikiMarkdownToPdf(doc, page.content.text ?? '', baseFont);

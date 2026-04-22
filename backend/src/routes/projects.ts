@@ -21,7 +21,7 @@ const DEFAULT_ENABLED_MODULES = [
 ] as const;
 
 function catchAsync(
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<void>,
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>,
 ) {
   return (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);
@@ -77,7 +77,7 @@ async function userCanManageProject(
 
   // プロジェクト内で「管理者」ロールを持つメンバーは管理できる
   const adminRole = await prisma.role.findFirst({
-    where: { builtin: true, name: { contains: '管理者' } },
+    where: { name: '管理者' },
   });
 
   if (!adminRole) return false;

@@ -8,7 +8,7 @@ import { z } from 'zod';
 const router = Router({ mergeParams: true });
 
 function catchAsync(
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<void>,
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>,
 ) {
   return (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);

@@ -21,7 +21,15 @@ import WikiDiffPage from './pages/WikiDiffPage';
 import NewsPage from './pages/NewsPage';
 import NewsNewPage from './pages/NewsNewPage';
 import NewsEditPage from './pages/NewsEditPage';
-import ForumsPage from './pages/ForumsPage';
+import ForumsLayout from './pages/forums/ForumsLayout';
+import {
+  ForumBoardIndex,
+  ForumEditBoard,
+  ForumNewBoard,
+  ForumNewTopic,
+  ForumTopicList,
+  ForumTopicShow,
+} from './pages/forums/ForumViews';
 import DocumentsPage from './pages/DocumentsPage';
 import VersionsPage from './pages/VersionsPage';
 import GanttPage from './pages/GanttPage';
@@ -104,7 +112,14 @@ export default function App() {
         <Route path="projects/:identifier/news/new" element={<ProjectModuleRoute moduleKey="news"><ProtectedRoute><NewsNewPage /></ProtectedRoute></ProjectModuleRoute>} />
         <Route path="projects/:identifier/news/:newsId" element={<ProjectModuleRoute moduleKey="news"><NewsPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/news/:newsId/edit" element={<ProjectModuleRoute moduleKey="news"><ProtectedRoute><NewsEditPage /></ProtectedRoute></ProjectModuleRoute>} />
-        <Route path="projects/:identifier/forums" element={<ProjectModuleRoute moduleKey="boards"><ForumsPage /></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/forums" element={<ProjectModuleRoute moduleKey="boards"><ForumsLayout /></ProjectModuleRoute>}>
+          <Route index element={<ForumBoardIndex />} />
+          <Route path="new" element={<ProtectedRoute><ForumNewBoard /></ProtectedRoute>} />
+          <Route path=":boardId/edit" element={<ProtectedRoute><ForumEditBoard /></ProtectedRoute>} />
+          <Route path=":boardId/topics/new" element={<ProtectedRoute><ForumNewTopic /></ProtectedRoute>} />
+          <Route path=":boardId/topics/:topicId" element={<ForumTopicShow />} />
+          <Route path=":boardId" element={<ForumTopicList />} />
+        </Route>
         <Route path="projects/:identifier/documents" element={<ProjectModuleRoute moduleKey="documents"><DocumentsPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/versions" element={<VersionsPage />} />
         <Route path="projects/:identifier/gantt" element={<ProjectModuleRoute moduleKey="gantt"><GanttPage /></ProjectModuleRoute>} />

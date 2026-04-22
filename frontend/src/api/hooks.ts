@@ -243,8 +243,27 @@ export const useUpdateProjectNews = (projectId: string) => {
 };
 
 // ========== Boards & Messages ==========
-export const useBoards = (projectId: string) => useQuery({ queryKey: ['boards', projectId], queryFn: () => get<Board[]>(`/projects/${projectId}/boards`), enabled: !!projectId });
-export const useBoardMessages = (projectId: string, boardId: string, params?: Record<string, unknown>) => useQuery({ queryKey: ['messages', boardId, params], queryFn: () => get<Message[]>(`/projects/${projectId}/boards/${boardId}/messages`, params), enabled: !!projectId && !!boardId });
+export const useBoards = (projectId: string) =>
+  useQuery({ queryKey: ['boards', projectId], queryFn: () => get<Board[]>(`/projects/${projectId}/boards`), enabled: !!projectId });
+
+/** トピック一覧（親メッセージのみ・ページング）。Redmine の掲示板トピック一覧相当。 */
+export const useBoardTopicsPage = (projectId: string, boardId: string, page: number, perPage = 25) =>
+  useQuery({
+    queryKey: ['boardTopics', projectId, boardId, page, perPage],
+    queryFn: () =>
+      get<(Message & { replyCount?: number })[]>(`/projects/${projectId}/boards/${boardId}/messages`, {
+        page,
+        per_page: perPage,
+      }),
+    enabled: !!projectId && !!boardId,
+  });
+
+export const useBoardMessage = (projectId: string, boardId: string, messageId: string) =>
+  useQuery({
+    queryKey: ['boardMessage', projectId, boardId, messageId],
+    queryFn: () => get<Message>(`/projects/${projectId}/boards/${boardId}/messages/${messageId}`),
+    enabled: !!projectId && !!boardId && !!messageId,
+  });
 
 // ========== Versions ==========
 export const useVersions = (projectId: string) => useQuery({ queryKey: ['versions', projectId], queryFn: () => get<Version[]>(`/projects/${projectId}/versions`), enabled: !!projectId });

@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { z } from 'zod';
@@ -133,7 +134,7 @@ router.get('/page', async (req: Request, res: Response, next: NextFunction) => {
 
 router.put('/page', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const body = z.record(z.string(), z.unknown()).parse(req.body);
+    const body = z.record(z.string(), z.unknown()).parse(req.body) as Prisma.InputJsonObject;
 
     const pref = await prisma.userPreference.upsert({
       where: { userId: req.user!.userId },
