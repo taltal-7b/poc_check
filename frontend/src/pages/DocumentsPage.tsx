@@ -275,6 +275,13 @@ export default function DocumentsPage() {
   const isImageAttachment = (att: Attachment) => Boolean(att.contentType?.startsWith('image/'));
   const isPdfAttachment = (att: Attachment) =>
     att.contentType?.includes('pdf') || att.filename.toLowerCase().endsWith('.pdf');
+  const thumbnailDeps = useMemo(
+    () =>
+      (currentDocument?.attachments ?? [])
+        .map((att) => `${att.id}:${att.filename}:${att.filesize}:${att.createdAt}`)
+        .join('|'),
+    [currentDocument?.attachments],
+  );
 
   const downloadAttachmentFile = async (att: Attachment) => {
     try {
@@ -324,18 +331,27 @@ export default function DocumentsPage() {
     setThumbnailLoading(true);
 
     (async () => {
+      const settled = await Promise.all(
+        targets.map(async (att) => {
+          try {
+            const res = await api.get(`/attachments/${att.id}/download`, { responseType: 'blob' });
+            const blob = new Blob([res.data], { type: att.contentType ?? 'application/octet-stream' });
+            return {
+              id: att.id,
+              thumb: {
+                url: URL.createObjectURL(blob),
+                kind: isPdfAttachment(att) ? ('pdf' as const) : ('image' as const),
+              },
+            };
+          } catch {
+            return null;
+          }
+        }),
+      );
       const next: Record<string, { url: string; kind: 'image' | 'pdf' }> = {};
-      for (const att of targets) {
-        try {
-          const res = await api.get(`/attachments/${att.id}/download`, { responseType: 'blob' });
-          const blob = new Blob([res.data], { type: att.contentType ?? 'application/octet-stream' });
-          next[att.id] = {
-            url: URL.createObjectURL(blob),
-            kind: isPdfAttachment(att) ? 'pdf' : 'image',
-          };
-        } catch {
-          // Skip individual thumbnail failures.
-        }
+      for (const item of settled) {
+        if (!item) continue;
+        next[item.id] = item.thumb;
       }
       if (cancelled) {
         Object.values(next).forEach((x) => URL.revokeObjectURL(x.url));
@@ -348,7 +364,7 @@ export default function DocumentsPage() {
     return () => {
       cancelled = true;
     };
-  }, [currentDocument?.id]);
+  }, [currentDocument?.id, thumbnailDeps]);
 
   const saving = createDoc.isPending || updateDoc.isPending || uploadAttachments.isPending;
   const isListLoading = projectQuery.isLoading || docsQuery.isLoading;
