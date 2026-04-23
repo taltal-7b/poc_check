@@ -70,6 +70,8 @@ type DocumentForm = {
   categoryId: string;
 };
 
+type SortKey = 'category' | 'date' | 'title' | 'author';
+
 const EMPTY_FORM: DocumentForm = { title: '', description: '', categoryId: '' };
 
 export default function DocumentsPage() {
@@ -105,18 +107,7 @@ export default function DocumentsPage() {
     return perms.has('manage_documents');
   }, [currentUser, membersQuery.data]);
 
-  const grouped = useMemo(() => {
-    const map = new Map<string, { name: string; docs: Document[] }>();
-    for (const d of documents) {
-      const key = d.category?.id ?? d.categoryId ?? 'uncategorized';
-      const name = d.category?.name ?? categories.find((c) => c.id === key)?.name ?? t('documents.category');
-      const bucket = map.get(key);
-      if (bucket) bucket.docs.push(d);
-      else map.set(key, { name, docs: [d] });
-    }
-    return Array.from(map.entries()).map(([id, value]) => ({ id, ...value }));
-  }, [documents, categories, t]);
-
+  const [sortBy, setSortBy] = useState<SortKey>('category');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<Document | null>(null);
   const [form, setForm] = useState<DocumentForm>(EMPTY_FORM);
@@ -127,6 +118,111 @@ export default function DocumentsPage() {
   const [thumbnails, setThumbnails] = useState<Record<string, { url: string; kind: 'image' | 'pdf' }>>({});
   const [thumbnailLoading, setThumbnailLoading] = useState(false);
   const thumbnailUrlsRef = useRef<string[]>([]);
+
+  const sortedSections = useMemo(() => {
+    const byDateDesc = (a: Document, b: Document) => {
+      const da = a.createdAt ? Date.parse(a.createdAt) : 0;
+      const db = b.createdAt ? Date.parse(b.createdAt) : 0;
+      return db - da;
+    };
+    const authorName = (d: Document) =>
+      d.author ? `${d.author.lastname} ${d.author.firstname}`.trim() || d.author.login : '未設定';
+    const createdDay = (d: Document) => {
+      if (!d.createdAt) return '日付未設定';
+      try {
+        return format(parseISO(d.createdAt), 'yyyy-MM-dd');
+      } catch {
+        return '日付未設定';
+      }
+    };
+    const titleGroup = (d: Document) => {
+      const title = (d.title ?? '').trim();
+      if (!title) return '#';
+      return title.slice(0, 1).toUpperCase();
+    };
+
+    if (sortBy === 'category') {
+      const map = new Map<string, { name: string; position: number; docs: Document[] }>();
+      for (const d of documents) {
+        const key = d.category?.id ?? d.categoryId ?? 'uncategorized';
+        const categoryMeta = categories.find((c) => c.id === key) as
+          | ({ id: string; name: string; position?: number })
+          | undefined;
+        const name = d.category?.name ?? categoryMeta?.name ?? t('documents.category');
+        const position =
+          typeof categoryMeta?.position === 'number' ? categoryMeta.position : Number.MAX_SAFE_INTEGER;
+        const bucket = map.get(key);
+        if (bucket) bucket.docs.push(d);
+        else map.set(key, { name, position, docs: [d] });
+      }
+
+      return Array.from(map.entries())
+        .map(([id, value]) => ({
+          id,
+          name: value.name,
+          docs: [...value.docs].sort(byDateDesc),
+          position: value.position,
+        }))
+        .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, 'ja'));
+    }
+
+    if (sortBy === 'date') {
+      const map = new Map<string, Document[]>();
+      for (const d of documents) {
+        const key = createdDay(d);
+        const bucket = map.get(key);
+        if (bucket) bucket.push(d);
+        else map.set(key, [d]);
+      }
+
+      return Array.from(map.entries())
+        .map(([key, docs]) => ({
+          id: `date-${key}`,
+          name: key,
+          docs: [...docs].sort(byDateDesc),
+          sortValue: key,
+        }))
+        .sort((a, b) => b.sortValue.localeCompare(a.sortValue, 'ja'))
+        .map(({ sortValue: _sortValue, ...section }) => section);
+    }
+
+    if (sortBy === 'author') {
+      const map = new Map<string, Document[]>();
+      for (const d of documents) {
+        const key = authorName(d);
+        const bucket = map.get(key);
+        if (bucket) bucket.push(d);
+        else map.set(key, [d]);
+      }
+
+      return Array.from(map.entries())
+        .map(([key, docs]) => ({
+          id: `author-${key}`,
+          name: key,
+          docs: [...docs].sort(byDateDesc),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+    }
+
+    const map = new Map<string, Document[]>();
+    for (const d of documents) {
+      const key = titleGroup(d);
+      const bucket = map.get(key);
+      if (bucket) bucket.push(d);
+      else map.set(key, [d]);
+    }
+    return Array.from(map.entries())
+      .map(([key, docs]) => ({
+        id: `title-${key}`,
+        name: key,
+        docs: [...docs].sort((a, b) => {
+          const byTitle = (a.title ?? '').localeCompare(b.title ?? '', 'ja');
+          if (byTitle !== 0) return byTitle;
+          return byDateDesc(a, b);
+        }),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+  }, [documents, categories, t, sortBy]);
 
   const uploadAttachments = useUploadAttachments();
   const deleteAttachment = useDeleteAttachment();
@@ -378,27 +474,41 @@ export default function DocumentsPage() {
 
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">{t('documents.title')}</h1>
-        {canModify && (
-          <button
-            type="button"
-            onClick={openCreateModal}
-            disabled={!projectId || categories.length === 0}
-            className="inline-flex items-center gap-2 rounded border border-slate-300 bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200 disabled:opacity-50"
-          >
-            <Plus size={16} />
-            {t('documents.new')}
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            並び替え
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortKey)}
+              className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
+            >
+              <option value="category">カテゴリ順</option>
+              <option value="date">日付順</option>
+              <option value="title">タイトル順</option>
+              <option value="author">作成者順</option>
+            </select>
+          </label>
+          {canModify && (
+            <button
+              type="button"
+              onClick={openCreateModal}
+              disabled={!projectId || categories.length === 0}
+              className="inline-flex items-center gap-2 rounded border border-slate-300 bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+            >
+              <Plus size={16} />
+              {t('documents.new')}
+            </button>
+          )}
+        </div>
       </div>
-
       {!documentId ? (
         isListLoading ? (
           <p className="text-slate-500">{t('app.loading')}</p>
-        ) : grouped.length === 0 ? (
+        ) : sortedSections.length === 0 ? (
           <p className="text-slate-500">{t('app.noData')}</p>
         ) : (
           <div className="space-y-6">
-            {grouped.map((group) => (
+            {sortedSections.map((group) => (
               <section key={group.id}>
                 <h2 className="mb-3 text-lg font-semibold text-gray-800">{group.name}</h2>
                 <ul className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm divide-y divide-gray-100">
