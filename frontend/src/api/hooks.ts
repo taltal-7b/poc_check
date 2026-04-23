@@ -296,6 +296,12 @@ export const useActivities = (params?: Record<string, unknown>) => useQuery({ qu
 
 // ========== Documents ==========
 export const useDocuments = (projectId: string) => useQuery({ queryKey: ['documents', projectId], queryFn: () => get<Document[]>(`/projects/${projectId}/documents`), enabled: !!projectId });
+export const useDocument = (projectId: string, id: string) =>
+  useQuery({
+    queryKey: ['document', projectId, id],
+    queryFn: () => get<Document>(`/projects/${projectId}/documents/${id}`),
+    enabled: !!projectId && !!id,
+  });
 
 // ========== Members ==========
 export const useMembers = (projectId: string) => useQuery({ queryKey: ['members', projectId], queryFn: () => get<Member[]>(`/projects/${projectId}/members`), enabled: !!projectId });

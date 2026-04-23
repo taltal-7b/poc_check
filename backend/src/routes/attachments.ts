@@ -21,6 +21,17 @@ import { z } from 'zod';
 
 const router = Router({ mergeParams: true });
 
+function scoreFilename(s: string): number {
+  const jp = (s.match(/[\u3040-\u30ff\u3400-\u9fff]/g) ?? []).length;
+  const bad = (s.match(/[ãÃâÂ¢�]/g) ?? []).length;
+  return jp * 2 - bad * 2;
+}
+
+function normalizeFilename(name: string): string {
+  const decoded = Buffer.from(name, 'latin1').toString('utf8');
+  return scoreFilename(decoded) > scoreFilename(name) ? decoded : name;
+}
+
 const optionalLinkSchema = z
   .object({
     containerType: z.string().min(1).optional(),
@@ -60,7 +71,7 @@ router.post(
         files.map((file) =>
           prisma.attachment.create({
             data: {
-              filename: file.originalname,
+              filename: normalizeFilename(file.originalname),
               diskFilename: file.filename,
               filesize: file.size,
               contentType: file.mimetype || null,
@@ -121,7 +132,7 @@ router.get(
         },
       });
       if (!attachment) throw AppError.notFound('添付が見つかりません');
-      return sendSuccess(res, attachment);
+      return sendSuccess(res, { ...attachment, filename: normalizeFilename(attachment.filename) });
     } catch (err) {
       next(err);
     }
@@ -143,7 +154,7 @@ router.get(
         throw AppError.notFound('ファイルがディスク上に存在しません');
       }
 
-      return res.download(filePath, attachment.filename, (err) => {
+      return res.download(filePath, normalizeFilename(attachment.filename), (err) => {
         if (err) next(err);
       });
     } catch (err) {
