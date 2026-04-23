@@ -154,7 +154,21 @@ export interface Document {
   title: string;
   description: string | null;
   categoryId: string;
+  authorId?: string;
   createdAt: string;
+  updatedAt?: string;
+  category?: {
+    id: string;
+    name: string;
+    type?: string;
+  };
+  author?: {
+    id: string;
+    login: string;
+    firstname: string;
+    lastname: string;
+  };
+  attachments?: Attachment[];
 }
 
 export interface News {

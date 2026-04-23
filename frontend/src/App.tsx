@@ -123,6 +123,7 @@ export default function App() {
           <Route path=":boardId" element={<ForumTopicList />} />
         </Route>
         <Route path="projects/:identifier/documents" element={<ProjectModuleRoute moduleKey="documents"><DocumentsPage /></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/documents/:documentId" element={<ProjectModuleRoute moduleKey="documents"><DocumentsPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/versions" element={<VersionsPage />} />
         <Route path="projects/:identifier/gantt" element={<ProjectModuleRoute moduleKey="gantt"><GanttPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/calendar" element={<ProjectModuleRoute moduleKey="calendar"><CalendarPage /></ProjectModuleRoute>} />

@@ -35,8 +35,6 @@ const updateBodySchema = z.object({
   active: z.boolean().optional(),
 });
 
-router.use(authenticate, requireAdmin);
-
 async function assertEnumerationNotInUse(id: string, type: string): Promise<void> {
   if (type === 'TimeEntryActivity') {
     const n = await prisma.timeEntry.count({ where: { activityId: id } });
@@ -58,7 +56,7 @@ async function assertEnumerationNotInUse(id: string, type: string): Promise<void
   }
 }
 
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const typeParam = typeof req.query.type === 'string' ? req.query.type : undefined;
     if (typeParam !== undefined && !enumerationTypeSchema.safeParse(typeParam).success) {
@@ -76,7 +74,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = pickParam(req.params.id);
     if (!id) return next(AppError.badRequest('ID が無効です'));
@@ -90,7 +88,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-router.post('/', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsed = createBodySchema.safeParse(req.body);
     if (!parsed.success) {
@@ -133,7 +131,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.put('/:id', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = pickParam(req.params.id);
     if (!id) return next(AppError.badRequest('ID が無効です'));
@@ -175,7 +173,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:id', authenticate, requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = pickParam(req.params.id);
     if (!id) return next(AppError.badRequest('ID が無効です'));
