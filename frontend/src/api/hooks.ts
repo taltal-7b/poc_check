@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from './client';
-import type { ApiResponse, Project, Issue, User, TimeEntry, WikiPage, News, Board, Message, Version, Role, Group, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, WorkflowSnapshot, CopyWorkflowPayload, IssueStatusUsage } from '../types';
+import type { ApiResponse, Project, Issue, User, TimeEntry, WikiPage, News, Board, Message, Version, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, WorkflowSnapshot, CopyWorkflowPayload, IssueStatusUsage } from '../types';
 
 function get<T>(url: string, params?: Record<string, unknown>) {
   return api.get<ApiResponse<T>>(url, { params }).then(r => r.data);
@@ -281,6 +281,69 @@ export const useRoles = () => useQuery({ queryKey: ['roles'], queryFn: () => get
 
 // ========== Groups ==========
 export const useGroups = () => useQuery({ queryKey: ['groups'], queryFn: () => get<Group[]>('/groups') });
+export const useGroup = (id: string) =>
+  useQuery({
+    queryKey: ['group', id],
+    queryFn: () => get<GroupDetail>(`/groups/${id}`),
+    enabled: !!id,
+  });
+export const useCreateGroup = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string }) => post<Group>('/groups', body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups'] }),
+  });
+};
+export const useUpdateGroup = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => put<Group>(`/groups/${id}`, { name }),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ['groups'] });
+      qc.invalidateQueries({ queryKey: ['group', vars.id] });
+    },
+  });
+};
+export const useAddGroupUsersBulk = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, userIds }: { id: string; userIds: string[] }) =>
+      post<{ added: number }>(`/groups/${id}/users/bulk`, { userIds }),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ['groups'] });
+      qc.invalidateQueries({ queryKey: ['group', vars.id] });
+    },
+  });
+};
+export const useRemoveGroupUser = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, userId }: { id: string; userId: string }) => del(`/groups/${id}/users/${userId}`),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ['groups'] });
+      qc.invalidateQueries({ queryKey: ['group', vars.id] });
+    },
+  });
+};
+export const useAddGroupProject = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, projectId, roleIds }: { id: string; projectId: string; roleIds: string[] }) =>
+      post(`/groups/${id}/projects`, { projectId, roleIds }),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ['group', vars.id] });
+    },
+  });
+};
+export const useRemoveGroupProject = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, projectId }: { id: string; projectId: string }) => del(`/groups/${id}/projects/${projectId}`),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ['group', vars.id] });
+    },
+  });
+};
 
 // ========== Trackers ==========
 export const useTrackers = () => useQuery({ queryKey: ['trackers'], queryFn: () => get<Tracker[]>('/trackers') });

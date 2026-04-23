@@ -238,7 +238,27 @@ export interface Role {
 export interface Group {
   id: string;
   name: string;
+  userCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
   groupUsers?: { user: User }[];
+}
+
+export interface GroupProjectAssignment {
+  memberId: string;
+  projectId: string;
+  projectName: string;
+  projectIdentifier: string;
+  roles: Role[];
+}
+
+export interface GroupDetail {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  users: User[];
+  projects: GroupProjectAssignment[];
 }
 
 export interface Member {

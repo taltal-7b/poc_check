@@ -12,7 +12,7 @@
   "versions": { "title": "バージョン", "new": "新しいバージョン", "roadmap": "ロードマップ", "status": { "open": "オープン", "locked": "ロック", "closed": "クローズ" } },
   "users": { "title": "ユーザー", "new": "新しいユーザー", "login": "ログインID", "name": "氏名", "firstname": "名", "lastname": "姓", "email": "メールアドレス", "admin": "管理者", "createdAt": "作成日時", "status": { "active": "有効", "registered": "登録", "locked": "ロック" }, "lock": "ロック", "unlock": "ロック解除" },
   "roles": { "title": "ロールと権限", "new": "新しいロール", "roleName": "ロール名", "assignable": "割当可能", "builtin": "組み込み", "permissions": "権限" },
-  "groups": { "title": "グループ", "new": "新しいグループ", "members": "メンバー" },
+  "groups": { "title": "グループ", "new": "新しいグループ", "name": "名称", "members": "メンバー", "general": "全般", "users": "ユーザー", "projects": "プロジェクト", "add": "追加", "save": "保存", "saved": "保存しました", "pendingUsers": "変更予定ユーザー", "pendingProjects": "変更予定プロジェクト", "removeUser": "解除", "undoRemoveUser": "解除取消", "removeProject": "解除", "undoRemoveProject": "解除取消" },
   "trackers": { "title": "トラッカー", "new": "新しいトラッカー", "position": "表示順", "defaultStatus": "デフォルトステータス" },
   "statuses": { "title": "チケットのステータス", "new": "新しいステータス", "isClosed": "終了したステータス", "deleteWarningInUse": "このステータスは {{count}} 件のチケットで使用されています。削除しますか？", "deleteWarningUnknown": "使用状況を取得できませんでした。削除しますか？" },
   "workflows": { "title": "ワークフロー", "copy": "コピー", "tracker": "トラッカー", "role": "ロール", "fromStatus": "現在のステータス", "toStatus": "遷移先", "saveMatrix": "ワークフローを保存", "copySection": "ワークフローをコピー", "source": "コピー元", "targets": "コピー先", "applyCopy": "コピーを実行" },

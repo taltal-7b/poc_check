@@ -43,6 +43,7 @@ export default function MainLayout() {
   const adminLinks = user?.admin ? [
     { to: '/admin/users', label: t('users.title') },
     { to: '/admin/roles', label: t('roles.title') },
+    { to: '/admin/groups', label: t('groups.title') },
     { to: '/admin/trackers', label: t('trackers.title') },
     { to: '/admin/statuses', label: t('statuses.title') },
     { to: '/admin/workflows', label: t('workflows.title') },

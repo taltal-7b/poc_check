@@ -44,6 +44,9 @@ import UserProfilePage from './pages/UserProfilePage';
 
 import AdminUsersPage from './pages/admin/UsersPage';
 import AdminRolesPage from './pages/admin/RolesPage';
+import AdminGroupsPage from './pages/admin/GroupsPage';
+import AdminGroupNewPage from './pages/admin/GroupNewPage';
+import AdminGroupDetailPage from './pages/admin/GroupDetailPage';
 import AdminTrackersPage from './pages/admin/TrackersPage';
 import AdminStatusesPage from './pages/admin/StatusesPage';
 import AdminWorkflowsPage from './pages/admin/WorkflowsPage';
@@ -142,6 +145,9 @@ export default function App() {
 
         <Route path="admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
         <Route path="admin/roles" element={<AdminRoute><AdminRolesPage /></AdminRoute>} />
+        <Route path="admin/groups" element={<AdminRoute><AdminGroupsPage /></AdminRoute>} />
+        <Route path="admin/groups/new" element={<AdminRoute><AdminGroupNewPage /></AdminRoute>} />
+        <Route path="admin/groups/:groupId" element={<AdminRoute><AdminGroupDetailPage /></AdminRoute>} />
         <Route path="admin/trackers" element={<AdminRoute><AdminTrackersPage /></AdminRoute>} />
         <Route path="admin/statuses" element={<AdminRoute><AdminStatusesPage /></AdminRoute>} />
         <Route path="admin/workflows" element={<AdminRoute><AdminWorkflowsPage /></AdminRoute>} />
