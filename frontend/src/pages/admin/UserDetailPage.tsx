@@ -1,79 +1,57 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  useAddGroupProject,
-  useAddGroupUsersBulk,
-  useGroup,
+  useAddGroupUser,
+  useAddUserProject,
+  useGroups,
   useProjects,
-  useRemoveGroupProject,
   useRemoveGroupUser,
+  useRemoveUserProject,
   useRoles,
-  useUpdateGroup,
-  useUsers,
+  useUser,
 } from '../../api/hooks';
 
-type TabKey = 'general' | 'users' | 'projects';
+type TabKey = 'general' | 'groups' | 'projects';
 
 type PendingProject = {
   projectId: string;
   roleIds: string[];
 };
 
-function userLabel(user: { login: string; lastname: string; firstname: string }) {
+function displayName(user: { login: string; lastname: string; firstname: string }) {
   const fullName = `${user.lastname} ${user.firstname}`.trim();
   return fullName ? `${user.login} (${fullName})` : user.login;
 }
 
-export default function GroupDetailPage() {
+export default function UserDetailPage() {
   const { t } = useTranslation();
-  const { groupId } = useParams<{ groupId: string }>();
+  const { userId } = useParams<{ userId: string }>();
   const [activeTab, setActiveTab] = useState<TabKey>('general');
-
-  const groupQuery = useGroup(groupId ?? '');
-  const usersQuery = useUsers({ page: 1, per_page: 500 });
-  const projectsQuery = useProjects({ page: 1, per_page: 500 });
-  const rolesQuery = useRoles();
-
-  const updateGroup = useUpdateGroup();
-  const addUsersBulk = useAddGroupUsersBulk();
-  const removeGroupUser = useRemoveGroupUser();
-  const addProject = useAddGroupProject();
-  const removeGroupProject = useRemoveGroupProject();
-
-  const [nameDraft, setNameDraft] = useState('');
-  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
-  const [pendingUserIds, setPendingUserIds] = useState<string[]>([]);
-  const [pendingRemovedUserIds, setPendingRemovedUserIds] = useState<string[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [selectedRoleIds, setSelectedRoleIds] = useState<Set<string>>(new Set());
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [pendingProjects, setPendingProjects] = useState<PendingProject[]>([]);
   const [pendingRemovedProjectIds, setPendingRemovedProjectIds] = useState<string[]>([]);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const group = groupQuery.data?.data;
-  const users = usersQuery.data?.data ?? [];
+  const userQuery = useUser(userId ?? '');
+  const groupsQuery = useGroups();
+  const projectsQuery = useProjects({ page: 1, per_page: 500 });
+  const rolesQuery = useRoles();
+  const addGroupUser = useAddGroupUser();
+  const removeGroupUser = useRemoveGroupUser();
+  const addProject = useAddUserProject();
+  const removeProject = useRemoveUserProject();
+
+  const user = userQuery.data?.data;
+  const groups = groupsQuery.data?.data ?? [];
   const projects = projectsQuery.data?.data ?? [];
   const roles = (rolesQuery.data?.data ?? []).filter((r) => r.assignable);
 
-  useEffect(() => {
-    if (group?.name) {
-      setNameDraft(group.name);
-    }
-  }, [group?.name]);
-
-  useEffect(() => {
-    setMessage('');
-  }, [activeTab]);
-
-  const existingUserIds = useMemo(() => new Set((group?.users ?? []).map((u) => u.id)), [group?.users]);
-  const existingProjectIds = useMemo(() => new Set((group?.projects ?? []).map((p) => p.projectId)), [group?.projects]);
-
-  const availableUsers = useMemo(
-    () => users.filter((u) => !existingUserIds.has(u.id) && !pendingUserIds.includes(u.id)),
-    [users, existingUserIds, pendingUserIds],
-  );
+  const savedGroupIds = useMemo(() => new Set((user?.groups ?? []).map((g) => g.id)), [user?.groups]);
+  const existingProjectIds = useMemo(() => new Set((user?.projects ?? []).map((p) => p.projectId)), [user?.projects]);
   const availableProjects = useMemo(
     () =>
       projects.filter((p) => {
@@ -84,15 +62,6 @@ export default function GroupDetailPage() {
     [projects, existingProjectIds, pendingProjects, pendingRemovedProjectIds],
   );
 
-  const toggleUser = (userId: string) => {
-    setSelectedUserIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
-      return next;
-    });
-  };
-
   const toggleRole = (roleId: string) => {
     setSelectedRoleIds((prev) => {
       const next = new Set(prev);
@@ -102,26 +71,56 @@ export default function GroupDetailPage() {
     });
   };
 
-  const onAddUsers = () => {
-    if (!selectedUserIds.size) return;
-    const next = Array.from(new Set([...pendingUserIds, ...Array.from(selectedUserIds)]));
-    setPendingUserIds(next);
-    setSelectedUserIds(new Set());
+  const effectiveGroupIds = useMemo(() => {
+    const next = new Set(savedGroupIds);
+    for (const id of selectedGroupIds) {
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+    }
+    return next;
+  }, [savedGroupIds, selectedGroupIds]);
+
+  const toggleGroup = (groupId: string) => {
+    setSelectedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
     setMessage('');
     setError('');
   };
 
-  const togglePendingRemoveUser = (userId: string) => {
-    setPendingRemovedUserIds((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
-    );
-    setMessage('');
+  const onSaveGroups = async () => {
+    if (!userId || selectedGroupIds.size === 0) return;
     setError('');
+    setMessage('');
+    try {
+      for (const groupId of selectedGroupIds) {
+        if (savedGroupIds.has(groupId)) {
+          await removeGroupUser.mutateAsync({ id: groupId, userId });
+        } else {
+          await addGroupUser.mutateAsync({ id: groupId, userId });
+        }
+      }
+      setSelectedGroupIds(new Set());
+      await userQuery.refetch();
+      setMessage(t('groups.saved'));
+    } catch (err: unknown) {
+      const msg =
+        typeof err === 'object' &&
+        err &&
+        'response' in err &&
+        typeof (err as { response?: { data?: { error?: { message?: string } } } }).response?.data?.error?.message ===
+          'string'
+          ? (err as { response?: { data?: { error?: { message?: string } } } }).response!.data!.error!.message!
+          : t('app.error');
+      setError(msg);
+    }
   };
 
   const onAddProject = () => {
-    if (!selectedProjectId || !selectedRoleIds.size) return;
-    if (pendingProjects.some((p) => p.projectId === selectedProjectId)) return;
+    if (!selectedProjectId || selectedRoleIds.size === 0) return;
     setPendingProjects((prev) => [
       ...prev,
       {
@@ -138,7 +137,6 @@ export default function GroupDetailPage() {
   const togglePendingRemoveProject = (projectId: string) => {
     setPendingRemovedProjectIds((prev) => {
       if (prev.includes(projectId)) {
-        // 解除取消した場合は、同一プロジェクトの再追加予定も破棄して重複追加を防ぐ
         setPendingProjects((pending) => pending.filter((p) => p.projectId !== projectId));
         return prev.filter((id) => id !== projectId);
       }
@@ -148,74 +146,24 @@ export default function GroupDetailPage() {
     setError('');
   };
 
-  const onSaveGeneral = async () => {
-    if (!groupId || !group) return;
-    const trimmed = nameDraft.trim();
-    if (!trimmed || trimmed === group.name) return;
-    setError('');
-    setMessage('');
-    try {
-      await updateGroup.mutateAsync({ id: groupId, name: trimmed });
-      setMessage(t('groups.saved'));
-    } catch (err: unknown) {
-      const msg =
-        typeof err === 'object' &&
-        err &&
-        'response' in err &&
-        typeof (err as { response?: { data?: { error?: { message?: string } } } }).response?.data?.error?.message ===
-          'string'
-          ? (err as { response?: { data?: { error?: { message?: string } } } }).response!.data!.error!.message!
-          : t('app.error');
-      setError(msg);
-    }
-  };
-
-  const onSaveUsers = async () => {
-    if (!groupId || (pendingUserIds.length === 0 && pendingRemovedUserIds.length === 0)) return;
-    setError('');
-    setMessage('');
-    try {
-      for (const userId of pendingRemovedUserIds) {
-        await removeGroupUser.mutateAsync({ id: groupId, userId });
-      }
-      if (pendingUserIds.length > 0) {
-        await addUsersBulk.mutateAsync({ id: groupId, userIds: pendingUserIds });
-      }
-      setPendingUserIds([]);
-      setPendingRemovedUserIds([]);
-      await groupQuery.refetch();
-      setMessage(t('groups.saved'));
-    } catch (err: unknown) {
-      const msg =
-        typeof err === 'object' &&
-        err &&
-        'response' in err &&
-        typeof (err as { response?: { data?: { error?: { message?: string } } } }).response?.data?.error?.message ===
-          'string'
-          ? (err as { response?: { data?: { error?: { message?: string } } } }).response!.data!.error!.message!
-          : t('app.error');
-      setError(msg);
-    }
-  };
-
   const onSaveProjects = async () => {
-    if (!groupId || (pendingProjects.length === 0 && pendingRemovedProjectIds.length === 0)) return;
+    if (!userId || (pendingProjects.length === 0 && pendingRemovedProjectIds.length === 0)) return;
     setError('');
     setMessage('');
     try {
       for (const projectId of pendingRemovedProjectIds) {
-        await removeGroupProject.mutateAsync({ id: groupId, projectId });
+        await removeProject.mutateAsync({ id: userId, projectId });
       }
       for (const pending of pendingProjects) {
         await addProject.mutateAsync({
-          id: groupId,
+          id: userId,
           projectId: pending.projectId,
           roleIds: pending.roleIds,
         });
       }
       setPendingProjects([]);
       setPendingRemovedProjectIds([]);
-      await groupQuery.refetch();
+      await userQuery.refetch();
       setMessage(t('groups.saved'));
     } catch (err: unknown) {
       const msg =
@@ -230,16 +178,16 @@ export default function GroupDetailPage() {
     }
   };
 
-  if (!groupId) return <p className="text-gray-500">{t('app.noData')}</p>;
-  if (groupQuery.isLoading) return <p className="text-gray-500">{t('app.loading')}</p>;
-  if (!group) return <p className="text-red-600">{t('app.error')}</p>;
+  if (!userId) return <p className="text-gray-500">{t('app.noData')}</p>;
+  if (userQuery.isLoading) return <p className="text-gray-500">{t('app.loading')}</p>;
+  if (!user) return <p className="text-red-600">{t('app.error')}</p>;
 
   return (
     <div className="space-y-4">
-      <Link to="/admin/groups" className="inline-block text-sm text-primary-700 hover:underline">
-        ← {t('groups.title')}
+      <Link to="/admin/users" className="inline-block text-sm text-primary-700 hover:underline">
+        ← {t('users.title')}
       </Link>
-      <h1 className="text-2xl font-semibold text-gray-900">{group.name}</h1>
+      <h1 className="text-2xl font-semibold text-gray-900">{displayName(user)}</h1>
 
       <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-3">
@@ -254,12 +202,12 @@ export default function GroupDetailPage() {
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('users')}
+            onClick={() => setActiveTab('groups')}
             className={`rounded px-3 py-1.5 text-sm ${
-              activeTab === 'users' ? 'bg-primary-600 text-white' : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+              activeTab === 'groups' ? 'bg-primary-600 text-white' : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
             }`}
           >
-            {t('groups.users')}
+            {t('groups.title')}
           </button>
           <button
             type="button"
@@ -273,100 +221,49 @@ export default function GroupDetailPage() {
         </div>
 
         {activeTab === 'general' && (
-          <div className="mt-4 space-y-3">
-            <label className="block text-sm">
-              <span className="mb-1 block text-sm font-medium text-gray-700">{t('groups.name')}</span>
-              <input
-                type="text"
-                value={nameDraft}
-                onChange={(e) => setNameDraft(e.target.value)}
-                className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-              />
-            </label>
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={onSaveGeneral}
-                disabled={updateGroup.isPending || !nameDraft.trim() || nameDraft.trim() === group.name}
-                className="rounded bg-primary-600 px-4 py-2 text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-              >
-                {t('groups.save')}
-              </button>
+          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-gray-500">{t('users.login')}</dt>
+              <dd className="font-mono text-gray-900">{user.login}</dd>
             </div>
-          </div>
+            <div>
+              <dt className="text-gray-500">{t('users.name')}</dt>
+              <dd className="text-gray-900">{`${user.lastname} ${user.firstname}`.trim()}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">{t('users.email')}</dt>
+              <dd className="text-gray-900">{user.mail}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">{t('users.admin')}</dt>
+              <dd className="text-gray-900">{user.admin ? t('app.yes') : t('app.no')}</dd>
+            </div>
+          </dl>
         )}
 
-        {activeTab === 'users' && (
+        {activeTab === 'groups' && (
           <div className="mt-4 space-y-4">
             <div className="rounded border border-gray-200 p-3">
-              <p className="text-sm font-medium text-gray-700">{t('groups.members')}</p>
-              <ul className="mt-2 space-y-1 text-sm text-gray-700">
-                {(group.users ?? []).map((u) => (
-                  <li key={u.id} className="flex items-center justify-between gap-2">
-                    <span className={pendingRemovedUserIds.includes(u.id) ? 'text-red-700' : ''}>
-                      {pendingRemovedUserIds.includes(u.id) ? `- ${userLabel(u)}` : userLabel(u)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => togglePendingRemoveUser(u.id)}
-                      disabled={removeGroupUser.isPending}
-                      className="text-xs text-red-700 hover:underline disabled:opacity-50"
-                    >
-                      {pendingRemovedUserIds.includes(u.id) ? t('groups.undoRemoveUser') : t('groups.removeUser')}
-                    </button>
-                  </li>
-                ))}
-                {pendingUserIds.map((uid) => {
-                  const user = users.find((u) => u.id === uid);
-                  return (
-                    <li key={`pending-user-${uid}`} className="text-primary-700">
-                      + {user ? userLabel(user) : uid}
-                    </li>
-                  );
-                })}
-                {group.users.length === 0 && pendingUserIds.length === 0 && (
-                  <li className="text-gray-500">{t('app.noData')}</li>
-                )}
-              </ul>
-            </div>
-            <div className="rounded border border-gray-200">
-              <div className="max-h-64 overflow-y-auto p-3 space-y-2">
-                {availableUsers.map((u) => (
-                  <label key={u.id} className="flex items-center gap-2 text-sm">
+              <div className="space-y-2">
+                {groups.map((group) => (
+                  <label key={group.id} className="flex items-center gap-2 text-sm text-gray-800">
                     <input
                       type="checkbox"
-                      checked={selectedUserIds.has(u.id)}
-                      onChange={() => toggleUser(u.id)}
+                      checked={effectiveGroupIds.has(group.id)}
+                      onChange={() => toggleGroup(group.id)}
                       className="h-4 w-4 rounded border-gray-300 text-primary-600"
                     />
-                    {userLabel(u)}
+                    {group.name}
                   </label>
                 ))}
-                {availableUsers.length === 0 && <p className="text-sm text-gray-500">{t('app.noData')}</p>}
+                {groups.length === 0 && <p className="text-sm text-gray-500">{t('app.noData')}</p>}
               </div>
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={onAddUsers}
-                disabled={selectedUserIds.size === 0}
-                className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                {t('groups.add')}
-              </button>
-              <span className="text-xs text-gray-500">
-                {t('groups.pendingUsers')}: +{pendingUserIds.length} / -{pendingRemovedUserIds.length}
-              </span>
             </div>
             <div className="flex justify-end">
               <button
                 type="button"
-                onClick={onSaveUsers}
-                disabled={
-                  addUsersBulk.isPending ||
-                  removeGroupUser.isPending ||
-                  (pendingUserIds.length === 0 && pendingRemovedUserIds.length === 0)
-                }
+                onClick={onSaveGroups}
+                disabled={addGroupUser.isPending || removeGroupUser.isPending || selectedGroupIds.size === 0}
                 className="rounded bg-primary-600 px-4 py-2 text-sm text-white hover:bg-primary-700 disabled:opacity-50"
               >
                 {t('groups.save')}
@@ -384,7 +281,7 @@ export default function GroupDetailPage() {
                 onChange={(e) => setSelectedProjectId(e.target.value)}
                 className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
               >
-                <option value="">—</option>
+                <option value="">－</option>
                 {availableProjects.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -424,7 +321,7 @@ export default function GroupDetailPage() {
             <div className="rounded border border-gray-200 p-3">
               <p className="text-sm font-medium text-gray-700">{t('groups.projects')}</p>
               <ul className="mt-2 space-y-1 text-sm text-gray-700">
-                {(group.projects ?? []).map((p) => (
+                {(user.projects ?? []).map((p) => (
                   <li key={p.memberId} className="flex items-center justify-between gap-2">
                     <span className={pendingRemovedProjectIds.includes(p.projectId) ? 'text-red-700' : ''}>
                       {pendingRemovedProjectIds.includes(p.projectId)
@@ -434,7 +331,7 @@ export default function GroupDetailPage() {
                     <button
                       type="button"
                       onClick={() => togglePendingRemoveProject(p.projectId)}
-                      disabled={removeGroupProject.isPending}
+                      disabled={removeProject.isPending}
                       className="text-xs text-red-700 hover:underline disabled:opacity-50"
                     >
                       {pendingRemovedProjectIds.includes(p.projectId)
@@ -455,6 +352,9 @@ export default function GroupDetailPage() {
                     </li>
                   );
                 })}
+                {(user.projects ?? []).length === 0 && pendingProjects.length === 0 && (
+                  <li className="text-gray-500">{t('app.noData')}</li>
+                )}
               </ul>
             </div>
             <div className="flex justify-end">
@@ -463,7 +363,7 @@ export default function GroupDetailPage() {
                 onClick={onSaveProjects}
                 disabled={
                   addProject.isPending ||
-                  removeGroupProject.isPending ||
+                  removeProject.isPending ||
                   (pendingProjects.length === 0 && pendingRemovedProjectIds.length === 0)
                 }
                 className="rounded bg-primary-600 px-4 py-2 text-sm text-white hover:bg-primary-700 disabled:opacity-50"

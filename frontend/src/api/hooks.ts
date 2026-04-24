@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from './client';
-import type { ApiResponse, Project, Issue, User, TimeEntry, WikiPage, News, Board, Message, Version, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, WorkflowSnapshot, CopyWorkflowPayload, IssueStatusUsage } from '../types';
+import { useAuthStore } from '../stores/auth';
+import type { ApiResponse, Project, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Version, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, WorkflowSnapshot, CopyWorkflowPayload, IssueStatusUsage } from '../types';
 
 function get<T>(url: string, params?: Record<string, unknown>) {
   return api.get<ApiResponse<T>>(url, { params }).then(r => r.data);
@@ -19,13 +20,17 @@ function del<T>(url: string) {
 }
 
 // ========== Auth ==========
-export const useMe = () => useQuery({ 
-  queryKey: ['me'], 
-  queryFn: () => get<User>('/auth/me'), 
-  retry: false,
-  staleTime: 5 * 60 * 1000, // 5 minutes - prevent frequent refetches
-  gcTime: 10 * 60 * 1000, // 10 minutes - keep in cache longer
-});
+export const useMe = () => {
+  const accessToken = useAuthStore((s) => s.accessToken);
+  return useQuery({
+    queryKey: ['me', accessToken],
+    queryFn: () => get<User>('/auth/me'),
+    enabled: !!accessToken,
+    retry: false,
+    staleTime: 0,
+    gcTime: 10 * 60 * 1000,
+  });
+};
 export const useLogin = () =>
   useMutation({
     mutationFn: (body: { login: string; password: string; totpCode?: string }) =>
@@ -35,7 +40,16 @@ export const useRegister = () => useMutation({ mutationFn: (body: { login: strin
 
 // ========== Projects ==========
 export const useProjects = (params?: Record<string, unknown>) => useQuery({ queryKey: ['projects', params], queryFn: () => get<Project[]>('/projects', params) });
-export const useProject = (id: string) => useQuery({ queryKey: ['project', id], queryFn: () => get<Project>(`/projects/${id}`), enabled: !!id });
+export const useProject = (
+  id: string,
+  options?: { enabled?: boolean; refetchOnMount?: boolean | 'always'; cacheScope?: string },
+) =>
+  useQuery({
+    queryKey: ['project', id, options?.cacheScope ?? 'default'],
+    queryFn: () => get<Project>(`/projects/${id}`),
+    enabled: options?.enabled ?? !!id,
+    refetchOnMount: options?.refetchOnMount ?? true,
+  });
 type ProjectWriteBody = Omit<Partial<Project>, 'enabledModules'> & {
   enabledModules?: string[];
   trackerIds?: string[];
@@ -271,10 +285,31 @@ export const useCreateVersion = (projectId: string) => { const qc = useQueryClie
 
 // ========== Users (admin) ==========
 export const useUsers = (params?: Record<string, unknown>) => useQuery({ queryKey: ['users', params], queryFn: () => get<User[]>('/users', params) });
-export const useUser = (id: string) => useQuery({ queryKey: ['user', id], queryFn: () => get<User>(`/users/${id}`), enabled: !!id });
+export const useUser = (id: string) => useQuery({ queryKey: ['user', id], queryFn: () => get<UserDetail>(`/users/${id}`), enabled: !!id });
 export const useCreateUser = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (body: Record<string, unknown>) => post<User>('/users', body), onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }) }); };
 export const useUpdateUser = () => { const qc = useQueryClient(); return useMutation({ mutationFn: ({ id, ...body }: { id: string } & Record<string, unknown>) => put<User>(`/users/${id}`, body), onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }) }); };
 export const useDeleteUser = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (id: string) => del(`/users/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }) }); };
+export const useAddUserProject = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, projectId, roleIds }: { id: string; projectId: string; roleIds: string[] }) =>
+      post(`/users/${id}/projects`, { projectId, roleIds }),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: ['user', vars.id] });
+    },
+  });
+};
+export const useRemoveUserProject = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, projectId }: { id: string; projectId: string }) => del(`/users/${id}/projects/${projectId}`),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: ['user', vars.id] });
+    },
+  });
+};
 
 // ========== Roles ==========
 export const useRoles = () => useQuery({ queryKey: ['roles'], queryFn: () => get<Role[]>('/roles') });
@@ -322,6 +357,18 @@ export const useRemoveGroupUser = () => {
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ['groups'] });
       qc.invalidateQueries({ queryKey: ['group', vars.id] });
+      qc.invalidateQueries({ queryKey: ['user', vars.userId] });
+    },
+  });
+};
+export const useAddGroupUser = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, userId }: { id: string; userId: string }) => post(`/groups/${id}/users`, { userId }),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ['groups'] });
+      qc.invalidateQueries({ queryKey: ['group', vars.id] });
+      qc.invalidateQueries({ queryKey: ['user', vars.userId] });
     },
   });
 };
@@ -368,6 +415,12 @@ export const useDocument = (projectId: string, id: string) =>
 
 // ========== Members ==========
 export const useMembers = (projectId: string) => useQuery({ queryKey: ['members', projectId], queryFn: () => get<Member[]>(`/projects/${projectId}/members`), enabled: !!projectId });
+export const useProjectMemberGroups = (projectId: string) =>
+  useQuery({
+    queryKey: ['member-groups', projectId],
+    queryFn: () => get<Group[]>(`/projects/${projectId}/members/groups`),
+    enabled: !!projectId,
+  });
 
 // ========== Custom Fields ==========
 export const useCustomFields = () => useQuery({ queryKey: ['customFields'], queryFn: () => get<CustomField[]>('/custom_fields') });

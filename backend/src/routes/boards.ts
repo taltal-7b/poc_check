@@ -4,6 +4,7 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
 import { authenticate } from '../middleware/auth';
+import { hasAnyProjectPermission } from '../utils/project-permissions';
 import { z } from 'zod';
 
 const router = Router({ mergeParams: true });
@@ -15,67 +16,8 @@ function param(req: Request, key: string): string | undefined {
   return undefined;
 }
 
-function parseRolePermissions(raw: unknown): string[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw.map(String);
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.map(String);
-    } catch {
-      return raw
-        .split(/[,\s]+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-  }
-  return [];
-}
-
-async function getUserGroupIds(userId: string): Promise<string[]> {
-  const rows = await prisma.groupUser.findMany({
-    where: { userId },
-    select: { groupId: true },
-  });
-  return rows.map((r) => r.groupId);
-}
-
 /** Redmine: manage_boards / add_messages などプロジェクトロールから判定 */
-async function userHasAnyProjectPermission(
-  userId: string | undefined,
-  isAdmin: boolean | undefined,
-  projectId: string,
-  anyOf: string[],
-): Promise<boolean> {
-  if (isAdmin) return true;
-  if (!userId) return false;
-  const groupIds = await getUserGroupIds(userId);
-  const members = await prisma.member.findMany({
-    where: {
-      projectId,
-      OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
-    },
-    include: {
-      memberRoles: {
-        include: {
-          role: { select: { permissions: true } },
-        },
-      },
-    },
-  });
-  if (!members.length) return false;
-  for (const m of members) {
-    for (const mr of m.memberRoles ?? []) {
-      const perms = parseRolePermissions(mr.role?.permissions);
-      for (const key of anyOf) {
-        if (perms.includes(key)) return true;
-      }
-    }
-  }
-  return false;
-}
-
-/** 掲示板の編集・削除: システム管理者 / 作成者 / manage_boards / manage_project（Redmine の掲示板管理者相当） */
+/** 掲示板の編集・削除: システム管理者 / 作成者 / manage_boards / manage_project */
 async function userCanEditOrDeleteBoard(
   userId: string | undefined,
   isAdmin: boolean | undefined,
@@ -85,7 +27,7 @@ async function userCanEditOrDeleteBoard(
   if (isAdmin) return true;
   if (!userId) return false;
   if (board.createdByUserId && board.createdByUserId === userId) return true;
-  return userHasAnyProjectPermission(userId, isAdmin, projectId, ['manage_boards', 'manage_project']);
+  return hasAnyProjectPermission(userId, isAdmin, projectId, ['manage_boards', 'manage_project']);
 }
 
 const messageTopicInclude = {
@@ -250,7 +192,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
     const projectId = param(req, 'projectId');
     if (!projectId) return next(AppError.badRequest('projectId が必要です'));
 
-    const can = await userHasAnyProjectPermission(req.user?.userId, req.user?.admin, projectId, [
+    const can = await hasAnyProjectPermission(req.user?.userId, req.user?.admin, projectId, [
       'manage_boards',
       'manage_project',
     ]);
@@ -328,7 +270,7 @@ router.post('/:id/messages', authenticate, async (req: Request, res: Response, n
     if (!projectId) return next(AppError.badRequest('projectId が必要です'));
     if (!boardId) return next(AppError.badRequest('id が必要です'));
 
-    const can = await userHasAnyProjectPermission(req.user?.userId, req.user?.admin, projectId, [
+    const can = await hasAnyProjectPermission(req.user?.userId, req.user?.admin, projectId, [
       'add_messages',
       'manage_boards',
     ]);
@@ -387,7 +329,7 @@ router.post('/:boardId/messages/:id/reply', authenticate, async (req: Request, r
     if (!boardId) return next(AppError.badRequest('boardId が必要です'));
     if (!parentId) return next(AppError.badRequest('id が必要です'));
 
-    const can = await userHasAnyProjectPermission(req.user?.userId, req.user?.admin, projectId, [
+    const can = await hasAnyProjectPermission(req.user?.userId, req.user?.admin, projectId, [
       'view_messages',
       'add_messages',
       'manage_boards',

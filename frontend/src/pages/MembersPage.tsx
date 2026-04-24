@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import ProjectSubNav from '../components/ProjectSubNav';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { UserPlus, UserMinus, Pencil } from 'lucide-react';
-import { useMembers, useUsers, useRoles, useProject } from '../api/hooks';
+import { useMembers, useUsers, useRoles, useProject, useProjectMemberGroups } from '../api/hooks';
 import api from '../api/client';
 import type { Member, User, Role } from '../types';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
@@ -36,6 +36,7 @@ export default function MembersPage() {
 
   const membersRaw = useMembers(slug);
   const usersRaw = useUsers();
+  const groupsRaw = useProjectMemberGroups(slug);
   const rolesRaw = useRoles();
   const projectRaw = useProject(slug);
   const currentUser = useAuthStore((s) => s.user);
@@ -43,6 +44,7 @@ export default function MembersPage() {
 
   const members = useMemo(() => unwrapList<Member>(membersRaw.data), [membersRaw.data]);
   const users = useMemo(() => unwrapList<User>(usersRaw.data), [usersRaw.data]);
+  const groups = useMemo(() => unwrapList<{ id: string; name: string }>(groupsRaw.data), [groupsRaw.data]);
   const roles = useMemo(() => unwrapList<Role>(rolesRaw.data).filter((r) => r.assignable), [rolesRaw.data]);
   const project = useMemo(() => unwrapObject<{ id: string; createdByUserId?: string | null }>(projectRaw.data), [projectRaw.data]);
 
@@ -51,6 +53,7 @@ export default function MembersPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [userId, setUserId] = useState('');
+  const [groupId, setGroupId] = useState('');
   const [roleIds, setRoleIds] = useState<Set<string>>(new Set());
   const [editTarget, setEditTarget] = useState<Member | null>(null);
   const [editRoleIds, setEditRoleIds] = useState<Set<string>>(new Set());
@@ -59,7 +62,7 @@ export default function MembersPage() {
   const addMember = useMutation({
     mutationFn: async () => {
       await api.post(`/projects/${slug}/members`, {
-        userId,
+        ...(groupId ? { groupId } : { userId }),
         roleIds: Array.from(roleIds),
       });
     },
@@ -67,6 +70,7 @@ export default function MembersPage() {
       qc.invalidateQueries({ queryKey: ['members', slug] });
       setModalOpen(false);
       setUserId('');
+      setGroupId('');
       setRoleIds(new Set());
     },
   });
@@ -217,13 +221,34 @@ export default function MembersPage() {
                 <span className="text-gray-700">{t('members.user')}</span>
                 <select
                   value={userId}
-                  onChange={(e) => setUserId(e.target.value)}
+                  onChange={(e) => {
+                    setUserId(e.target.value);
+                    if (e.target.value) setGroupId('');
+                  }}
                   className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 >
                   <option value="">—</option>
                   {availableUsers.map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.login} ({u.lastname} {u.firstname})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-sm">
+                <span className="text-gray-700">{t('groups.title')}</span>
+                <select
+                  value={groupId}
+                  onChange={(e) => {
+                    setGroupId(e.target.value);
+                    if (e.target.value) setUserId('');
+                  }}
+                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                >
+                  <option value="">—</option>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
                     </option>
                   ))}
                 </select>
@@ -258,7 +283,7 @@ export default function MembersPage() {
                 </button>
                 <button
                   type="button"
-                  disabled={!userId || roleIds.size === 0 || addMember.isPending}
+                  disabled={(!userId && !groupId) || roleIds.size === 0 || addMember.isPending}
                   onClick={() => addMember.mutate()}
                   className="rounded-lg bg-primary-600 px-4 py-2 text-sm text-white hover:bg-primary-700 disabled:opacity-50"
                 >

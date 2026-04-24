@@ -24,6 +24,13 @@ export interface Project {
   createdAt: string;
   updatedAt: string;
   enabledModules?: { name: string }[];
+  projectTrackers?: { trackerId: string; tracker: Tracker }[];
+  permissions?: {
+    canCreateIssue: boolean;
+    canEditIssue: boolean;
+    canAddIssueNotes: boolean;
+    canManageProject: boolean;
+  };
   _count?: { issues?: number; members?: number };
 }
 
@@ -53,6 +60,7 @@ export interface Issue {
   priority: number;
   authorId: string;
   assigneeId: string | null;
+  assigneeGroupId: string | null;
   categoryId: string | null;
   versionId: string | null;
   parentId: string | null;
@@ -68,6 +76,7 @@ export interface Issue {
   status?: IssueStatus;
   author?: User;
   assignee?: User | null;
+  assigneeGroup?: Group | null;
   parent?: { id: string; subject: string };
   children?: { id: string; number: number; subject: string }[];
   journals?: Journal[];
@@ -259,6 +268,13 @@ export interface GroupDetail {
   updatedAt: string;
   users: User[];
   projects: GroupProjectAssignment[];
+}
+
+export type UserProjectAssignment = GroupProjectAssignment;
+
+export interface UserDetail extends User {
+  groups?: Group[];
+  projects?: UserProjectAssignment[];
 }
 
 export interface Member {

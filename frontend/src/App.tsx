@@ -43,6 +43,7 @@ import MyAccountPage from './pages/MyAccountPage';
 import UserProfilePage from './pages/UserProfilePage';
 
 import AdminUsersPage from './pages/admin/UsersPage';
+import AdminUserDetailPage from './pages/admin/UserDetailPage';
 import AdminRolesPage from './pages/admin/RolesPage';
 import AdminGroupsPage from './pages/admin/GroupsPage';
 import AdminGroupNewPage from './pages/admin/GroupNewPage';
@@ -90,6 +91,34 @@ function ProjectModuleRoute({
   return <>{children}</>;
 }
 
+function IssueCreateRoute({ children }: { children: React.ReactNode }) {
+  const { identifier } = useParams<{ identifier?: string }>();
+  const { user, isAuthenticated } = useAuthStore();
+  const projectId = identifier ?? '';
+  const projectQuery = useProject(projectId, {
+    enabled: isAuthenticated && !!user?.id && !!projectId,
+    refetchOnMount: 'always',
+    cacheScope: user?.id ?? 'anon',
+  });
+
+  if (!projectId) return <Navigate to="/projects" replace />;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  const project = projectQuery.data?.data;
+  if (!user?.id || (projectQuery.isLoading && !project)) {
+    return <div className="flex items-center justify-center min-h-screen">読み込み中...</div>;
+  }
+
+  if (projectQuery.isError) {
+    return <Navigate to={`/projects/${projectId}/issues`} replace />;
+  }
+
+  if (!project?.permissions?.canCreateIssue) {
+    return <Navigate to={`/projects/${project?.identifier ?? projectId}/issues`} replace />;
+  }
+
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -104,7 +133,7 @@ export default function App() {
         <Route path="projects/:identifier" element={<ProjectDetailPage />} />
         <Route path="projects/:identifier/settings" element={<ProtectedRoute><ProjectSettingsPage /></ProtectedRoute>} />
         <Route path="projects/:identifier/issues" element={<ProjectModuleRoute moduleKey="issue_tracking"><IssuesPage /></ProjectModuleRoute>} />
-        <Route path="projects/:identifier/issues/new" element={<ProtectedRoute><IssueNewPage /></ProtectedRoute>} />
+        <Route path="projects/:identifier/issues/new" element={<ProjectModuleRoute moduleKey="issue_tracking"><ProtectedRoute><IssueCreateRoute><IssueNewPage /></IssueCreateRoute></ProtectedRoute></ProjectModuleRoute>} />
         <Route path="projects/:identifier/issues/:issueId" element={<IssueDetailPage />} />
         <Route path="projects/:identifier/time_entries" element={<ProjectModuleRoute moduleKey="time_tracking"><TimeEntriesPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/wiki" element={<ProjectModuleRoute moduleKey="wiki"><WikiPage /></ProjectModuleRoute>} />
@@ -144,6 +173,7 @@ export default function App() {
         <Route path="my/account" element={<ProtectedRoute><MyAccountPage /></ProtectedRoute>} />
 
         <Route path="admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
+        <Route path="admin/users/:userId" element={<AdminRoute><AdminUserDetailPage /></AdminRoute>} />
         <Route path="admin/roles" element={<AdminRoute><AdminRolesPage /></AdminRoute>} />
         <Route path="admin/groups" element={<AdminRoute><AdminGroupsPage /></AdminRoute>} />
         <Route path="admin/groups/new" element={<AdminRoute><AdminGroupNewPage /></AdminRoute>} />

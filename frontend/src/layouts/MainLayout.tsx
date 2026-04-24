@@ -1,5 +1,6 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../stores/auth';
 import { useMe } from '../api/hooks';
 import { useEffect, useState } from 'react';
@@ -9,6 +10,7 @@ export default function MainLayout() {
   const { t } = useTranslation();
   const { isAuthenticated, logout, user, setUser } = useAuthStore();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
@@ -24,6 +26,7 @@ export default function MainLayout() {
 
   const handleLogout = () => {
     logout();
+    queryClient.clear();
     navigate('/login');
   };
 

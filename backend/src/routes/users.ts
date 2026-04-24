@@ -41,6 +41,31 @@ function serializeUser(user: {
   };
 }
 
+function serializeUserProject(member: {
+  id: string;
+  projectId: string;
+  project: { id: string; name: string; identifier: string };
+  memberRoles: {
+    role: {
+      id: string;
+      name: string;
+      position: number;
+      assignable: boolean;
+      builtin: number;
+      permissions: Prisma.JsonValue;
+      createdAt: Date;
+    };
+  }[];
+}) {
+  return {
+    memberId: member.id,
+    projectId: member.projectId,
+    projectName: member.project.name,
+    projectIdentifier: member.project.identifier,
+    roles: member.memberRoles.map((mr) => mr.role),
+  };
+}
+
 router.use(authenticate);
 
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
@@ -139,11 +164,153 @@ router.delete(
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = z.string().uuid().parse(req.params.id);
-    const user = await prisma.user.findUnique({ where: { id } });
+    if (!req.user!.admin) {
+      const user = await prisma.user.findUnique({ where: { id } });
+      if (!user) throw AppError.notFound('ユーザーが見つかりません');
+      return sendSuccess(res, serializeUser(user));
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id },
+      include: {
+        groupUsers: {
+          include: {
+            group: {
+              select: {
+                id: true,
+                name: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
+          },
+          orderBy: { group: { name: 'asc' } },
+        },
+        members: {
+          where: { userId: id },
+          include: {
+            project: { select: { id: true, name: true, identifier: true } },
+            memberRoles: {
+              include: {
+                role: {
+                  select: {
+                    id: true,
+                    name: true,
+                    position: true,
+                    assignable: true,
+                    builtin: true,
+                    permissions: true,
+                    createdAt: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
     if (!user) {
       throw AppError.notFound('ユーザーが見つかりません');
     }
-    return sendSuccess(res, serializeUser(user));
+    return sendSuccess(res, {
+      ...serializeUser(user),
+      groups: user.groupUsers.map((gu) => gu.group),
+      projects: user.members.map(serializeUserProject),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/projects', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = z.string().uuid().parse(req.params.id);
+    const body = z
+      .object({
+        projectId: z.string().uuid(),
+        roleIds: z.array(z.string().uuid()).min(1),
+      })
+      .parse(req.body);
+
+    const [user, project, roles] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId }, select: { id: true } }),
+      prisma.project.findUnique({
+        where: { id: body.projectId },
+        select: { id: true, name: true, identifier: true },
+      }),
+      prisma.role.findMany({ where: { id: { in: body.roleIds }, assignable: true } }),
+    ]);
+
+    if (!user) throw AppError.notFound('ユーザーが見つかりません');
+    if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+    if (roles.length !== body.roleIds.length) {
+      throw AppError.badRequest('存在しないロールが含まれています');
+    }
+
+    const existing = await prisma.member.findFirst({
+      where: { projectId: body.projectId, userId },
+      select: { id: true },
+    });
+    if (existing) {
+      throw AppError.conflict('このユーザーは既に対象プロジェクトに追加されています');
+    }
+
+    const member = await prisma.$transaction(async (tx) => {
+      const created = await tx.member.create({
+        data: {
+          projectId: body.projectId,
+          userId,
+          groupId: null,
+        },
+      });
+      await tx.memberRole.createMany({
+        data: body.roleIds.map((roleId) => ({ memberId: created.id, roleId })),
+      });
+      return tx.member.findUniqueOrThrow({
+        where: { id: created.id },
+        include: {
+          project: { select: { id: true, name: true, identifier: true } },
+          memberRoles: {
+            include: {
+              role: {
+                select: {
+                  id: true,
+                  name: true,
+                  position: true,
+                  assignable: true,
+                  builtin: true,
+                  permissions: true,
+                  createdAt: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    return sendSuccess(res, serializeUserProject(member), 201);
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      return next(AppError.conflict('この組み合わせは既に存在します'));
+    }
+    next(err);
+  }
+});
+
+router.delete('/:id/projects/:projectId', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = z.string().uuid().parse(req.params.id);
+    const projectId = z.string().uuid().parse(req.params.projectId);
+
+    const result = await prisma.member.deleteMany({
+      where: { userId, projectId },
+    });
+    if (result.count === 0) {
+      throw AppError.notFound('ユーザーのプロジェクト割り当てが見つかりません');
+    }
+    return sendSuccess(res, { ok: true });
   } catch (err) {
     next(err);
   }

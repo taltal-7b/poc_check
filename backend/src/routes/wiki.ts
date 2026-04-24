@@ -4,6 +4,7 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
 import { authenticate, optionalAuth } from '../middleware/auth';
+import { hasAnyProjectPermission, userHasProjectRoleName } from '../utils/project-permissions';
 import { z } from 'zod';
 import PDFDocument from 'pdfkit';
 
@@ -32,67 +33,12 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function parseRolePermissions(raw: unknown): string[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw.map(String);
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.map(String);
-    } catch {
-      return raw
-        .split(/[,\s]+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-  }
-  return [];
-}
-
-async function getUserGroupIds(userId: string): Promise<string[]> {
-  const rows = await prisma.groupUser.findMany({
-    where: { userId },
-    select: { groupId: true },
-  });
-  return rows.map((r) => r.groupId);
-}
-
-async function getUserProjectPermissions(userId: string, projectId: string): Promise<Set<string> | null> {
-  const groupIds = await getUserGroupIds(userId);
-  const members = await prisma.member.findMany({
-    where: {
-      projectId,
-      OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
-    },
-    include: {
-      memberRoles: {
-        include: {
-          role: { select: { permissions: true } },
-        },
-      },
-    },
-  });
-
-  if (!members.length) return null;
-  const perms = new Set<string>();
-  for (const m of members) {
-    for (const mr of m.memberRoles ?? []) {
-      for (const p of parseRolePermissions(mr.role?.permissions)) perms.add(p);
-    }
-  }
-  return perms;
-}
-
 async function userCanEditWiki(
   userId: string | undefined,
   isAdmin: boolean | undefined,
   projectId: string,
 ): Promise<boolean> {
-  if (isAdmin) return true;
-  if (!userId) return false;
-  const perms = await getUserProjectPermissions(userId, projectId);
-  if (!perms) return false;
-  return perms.has('edit_wiki_pages');
+  return hasAnyProjectPermission(userId, isAdmin, projectId, ['edit_wiki_pages']);
 }
 
 /** プロジェクトの「管理者」ロール、またはシステム管理者 */
@@ -108,22 +54,15 @@ async function userHasProjectAdministratorRole(
     select: { id: true },
   });
   if (!project) return false;
-  const groupIds = await getUserGroupIds(userId);
-  const member = await prisma.member.findFirst({
-    where: {
-      projectId: project.id,
-      OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
-    },
-    include: {
-      memberRoles: {
-        include: {
-          role: { select: { name: true } },
-        },
-      },
-    },
-  });
-  if (!member) return false;
-  return (member.memberRoles ?? []).some((mr) => (mr.role?.name ?? '') === '管理者');
+  const hasManagePermission = await hasAnyProjectPermission(
+    userId,
+    isAdmin,
+    project.id,
+    ['manage_project'],
+    { manageProjectOverrides: false },
+  );
+  if (hasManagePermission) return true;
+  return userHasProjectRoleName(userId, isAdmin, project.id, '管理者');
 }
 
 async function ensureWiki(projectId: string) {
