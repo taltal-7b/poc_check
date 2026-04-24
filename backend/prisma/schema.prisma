@@ -80,6 +80,7 @@ model Group {
   updatedAt  DateTime    @updatedAt @map("updated_at")
   groupUsers GroupUser[]
   members    Member[]
+  assignedIssues Issue[] @relation("GroupAssignedIssues")
 
   @@map("groups")
 }
@@ -328,6 +329,8 @@ model Issue {
   author         User      @relation("AuthoredIssues", fields: [authorId], references: [id])
   assigneeId     String?   @map("assignee_id")
   assignee       User?     @relation("AssignedIssues", fields: [assigneeId], references: [id])
+  assigneeGroupId String?  @map("assignee_group_id")
+  assigneeGroup   Group?   @relation("GroupAssignedIssues", fields: [assigneeGroupId], references: [id])
   categoryId     String?   @map("category_id")
   category       IssueCategory? @relation(fields: [categoryId], references: [id])
   versionId      String?   @map("version_id")
@@ -356,6 +359,7 @@ model Issue {
   @@index([trackerId])
   @@index([statusId])
   @@index([assigneeId])
+  @@index([assigneeGroupId])
   @@map("issues")
 }
 

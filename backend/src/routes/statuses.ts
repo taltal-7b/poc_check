@@ -27,7 +27,7 @@ const updateBodySchema = z.object({
   isClosed: z.boolean().optional(),
 });
 
-router.use(authenticate, requireAdmin);
+router.use(authenticate);
 
 router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
   try {
@@ -54,7 +54,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-router.post('/', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsed = createBodySchema.safeParse(req.body);
     if (!parsed.success) {
@@ -77,7 +77,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.put('/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = pickParam(req.params.id);
     if (!id) return next(AppError.badRequest('ID が無効です'));
@@ -104,7 +104,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = pickParam(req.params.id);
     if (!id) return next(AppError.badRequest('ID が無効です'));

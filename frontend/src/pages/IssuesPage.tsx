@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Clock, Rss } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { useIssues, useProjectIssues, useStatuses, useTrackers, useMembers } from '../api/hooks';
+import { useIssues, useProjectIssues, useStatuses, useTrackers, useMembers, useProject } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 import ProjectSubNav from '../components/ProjectSubNav';
 import type { Issue } from '../types';
@@ -29,6 +29,7 @@ export default function IssuesPage() {
   const { identifier } = useParams<{ identifier?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const currentUser = useAuthStore((s) => s.user);
   const locale = ja;
 
   const page = Math.max(1, Number(searchParams.get('page') || '1') || 1);
@@ -38,14 +39,21 @@ export default function IssuesPage() {
   const assignee = searchParams.get('assignee') || '';
 
   const queryParams = useMemo(
-    () => ({
-      page,
-      perPage: PER_PAGE,
-      ...(trackerId ? { tracker: trackerId } : {}),
-      ...(statusId ? { status: statusId } : {}),
-      ...(priority ? { priority: Number(priority) } : {}),
-      ...(assignee.trim() ? { assignee: assignee.trim() } : {}),
-    }),
+    () => {
+      const trimmedAssignee = assignee.trim();
+      return {
+        page,
+        perPage: PER_PAGE,
+        ...(trackerId ? { tracker: trackerId } : {}),
+        ...(statusId ? { status: statusId } : {}),
+        ...(priority ? { priority: Number(priority) } : {}),
+        ...(trimmedAssignee.startsWith('group:')
+          ? { assignee_group: trimmedAssignee.slice(6) }
+          : trimmedAssignee.startsWith('user:')
+            ? { assignee: trimmedAssignee.slice(5) }
+            : trimmedAssignee ? { assignee: trimmedAssignee } : {}),
+      };
+    },
     [page, trackerId, statusId, priority, assignee],
   );
 
@@ -54,7 +62,9 @@ export default function IssuesPage() {
     if (trackerId) params.set('tracker', trackerId);
     if (statusId) params.set('status', statusId);
     if (priority) params.set('priority', priority);
-    if (assignee.trim()) params.set('assignee', assignee.trim());
+    if (assignee.trim().startsWith('group:')) params.set('assignee_group', assignee.trim().slice(6));
+    else if (assignee.trim().startsWith('user:')) params.set('assignee', assignee.trim().slice(5));
+    else if (assignee.trim()) params.set('assignee', assignee.trim());
     params.set('limit', '100');
     const qs = params.toString();
     const base = identifier
@@ -68,6 +78,18 @@ export default function IssuesPage() {
 
   const active = identifier ? projectQuery : globalQuery;
   const { data, isLoading, isError } = active;
+  const projectDetailQuery = useProject(identifier ?? '', {
+    enabled: Boolean(identifier && isAuthenticated && currentUser?.id),
+    refetchOnMount: 'always',
+    cacheScope: currentUser?.id ?? 'signed-out',
+  });
+  const canCreateIssue = identifier ? Boolean(projectDetailQuery.data?.data.permissions?.canCreateIssue) : false;
+  const canShowProjectCreateButton =
+    Boolean(identifier) &&
+    isAuthenticated &&
+    Boolean(currentUser?.id) &&
+    projectDetailQuery.isSuccess &&
+    canCreateIssue;
 
   const issues: Issue[] = data?.data ?? [];
   const pagination = data?.pagination;
@@ -79,6 +101,27 @@ export default function IssuesPage() {
 
   const membersQuery = useMembers(identifier ?? '');
   const members = identifier ? (membersQuery.data?.data ?? []) : [];
+  const assigneeOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return members.flatMap((member) => {
+      if (member.user) {
+        const value = `user:${member.user.id}`;
+        if (seen.has(value)) return [];
+        seen.add(value);
+        const label = member.user.firstname && member.user.lastname
+          ? `${member.user.lastname} ${member.user.firstname}`
+          : member.user.login;
+        return [{ value, label }];
+      }
+      if (member.group) {
+        const value = `group:${member.group.id}`;
+        if (seen.has(value)) return [];
+        seen.add(value);
+        return [{ value, label: `[グループ] ${member.group.name}` }];
+      }
+      return [];
+    });
+  }, [members]);
 
   const setFilter = (key: string, value: string) => {
     setSearchParams((prev) => {
@@ -105,7 +148,7 @@ export default function IssuesPage() {
       {identifier && <ProjectSubNav identifier={identifier} />}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-slate-900">{t('issues.title')}</h1>
-        {isAuthenticated && (
+        {(canShowProjectCreateButton || (!identifier && isAuthenticated)) && (
           <Link
             to={newIssueTo}
             className="inline-flex justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-700"
@@ -169,13 +212,9 @@ export default function IssuesPage() {
             className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
           >
             <option value="">{EMPTY_MARK}</option>
-            {members.map((member) => (
-              <option key={member.userId} value={member.userId || ''}>
-                {member.user
-                  ? (member.user.firstname && member.user.lastname
-                      ? `${member.user.lastname} ${member.user.firstname}`
-                      : member.user.login)
-                  : EMPTY_MARK}
+            {assigneeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
@@ -231,6 +270,8 @@ export default function IssuesPage() {
                     <td className="px-3 py-2 text-slate-700">
                       {issue.assignee
                         ? `${issue.assignee.lastname} ${issue.assignee.firstname}`.trim() || issue.assignee.login
+                        : issue.assigneeGroup
+                          ? `[グループ] ${issue.assigneeGroup.name}`
                         : EMPTY_MARK}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">

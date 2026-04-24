@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
@@ -330,7 +331,11 @@ export default function UsersPage() {
                     <td className="px-3 py-2">
                       <input type="checkbox" checked={selected.has(u.id)} onChange={() => toggleSelect(u.id)} />
                     </td>
-                    <td className="px-3 py-2 font-mono text-gray-900">{u.login}</td>
+                    <td className="px-3 py-2 font-mono text-gray-900">
+                      <Link to={`/admin/users/${u.id}`} className="text-primary-700 hover:underline">
+                        {u.login}
+                      </Link>
+                    </td>
                     <td className="px-3 py-2 text-gray-800">{userDisplayName(u)}</td>
                     <td className="px-3 py-2 text-gray-700">{u.mail}</td>
                     <td className="px-3 py-2">

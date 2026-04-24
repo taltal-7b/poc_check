@@ -174,7 +174,7 @@ router.post('/:id/projects', async (req: Request, res: Response, next: NextFunct
         where: { id: body.projectId },
         select: { id: true, name: true, identifier: true },
       }),
-      prisma.role.findMany({ where: { id: { in: body.roleIds } } }),
+      prisma.role.findMany({ where: { id: { in: body.roleIds }, assignable: true } }),
     ]);
 
     if (!group) throw AppError.notFound('グループが見つかりません');

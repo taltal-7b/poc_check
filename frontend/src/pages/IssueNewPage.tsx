@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useCreateIssue, useUploadAttachments, useEnumerations, useProject, useStatuses, useTrackers, useUsers, useProjectIssues } from '../api/hooks';
+import { useCreateIssue, useUploadAttachments, useEnumerations, useProject, useStatuses, useMembers, useProjectIssues } from '../api/hooks';
+import { useAuthStore } from '../stores/auth';
 import RichTextEditor from '../components/RichTextEditor';
 import type { Issue } from '../types';
 
@@ -9,27 +10,42 @@ function RequiredMark() {
   return <span className="ml-0.5 text-red-500">*</span>;
 }
 
+function parseAssigneeValue(value: string) {
+  if (value.startsWith('user:')) return { assigneeId: value.slice(5), assigneeGroupId: null };
+  if (value.startsWith('group:')) return { assigneeId: null, assigneeGroupId: value.slice(6) };
+  return { assigneeId: null, assigneeGroupId: null };
+}
+
 export default function IssueNewPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { identifier } = useParams<{ identifier: string }>();
   const id = identifier ?? '';
+  const currentUser = useAuthStore((s) => s.user);
 
-  const projectQuery = useProject(id);
+  const projectQuery = useProject(id, {
+    enabled: Boolean(id && currentUser?.id),
+    cacheScope: currentUser?.id ?? 'signed-out',
+  });
   const project = projectQuery.data?.data;
 
-  const trackersQuery = useTrackers();
   const statusesQuery = useStatuses();
-  const usersQuery = useUsers({ limit: 500 });
+  const membersQuery = useMembers(project?.id ?? '');
   const categoriesQuery = useEnumerations('IssueCategory');
   const projectIssuesQuery = useProjectIssues(project?.id ?? '', { perPage: 1000 }, { enabled: !!project?.id });
 
   const createMutation = useCreateIssue();
   const uploadMutation = useUploadAttachments();
 
-  const trackers = trackersQuery.data?.data ?? [];
+  const trackers = useMemo(
+    () =>
+      (project?.projectTrackers ?? [])
+        .map((pt) => pt.tracker)
+        .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)),
+    [project?.projectTrackers],
+  );
   const statuses = statusesQuery.data?.data ?? [];
-  const users = usersQuery.data?.data ?? [];
+  const members = membersQuery.data?.data ?? [];
   const categories = categoriesQuery.data?.data ?? [];
   const projectIssues = (projectIssuesQuery.data?.data ?? []) as Issue[];
 
@@ -38,7 +54,7 @@ export default function IssueNewPage() {
   const [description, setDescription] = useState('');
   const [statusId, setStatusId] = useState('');
   const [priority, setPriority] = useState(2);
-  const [assigneeId, setAssigneeId] = useState('');
+  const [assigneeValue, setAssigneeValue] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [startDate, setStartDate] = useState('');
   const [dueDate, setDueDate] = useState('');
@@ -47,6 +63,27 @@ export default function IssueNewPage() {
   const [repository, setRepository] = useState('');
   const [parentId, setParentId] = useState('');
   const [attachFiles, setAttachFiles] = useState<File[]>([]);
+  const canCreateIssue = Boolean(project?.permissions?.canCreateIssue);
+
+  const assigneeOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return members.flatMap((member) => {
+      if (member.user) {
+        const value = `user:${member.user.id}`;
+        if (seen.has(value)) return [];
+        seen.add(value);
+        const name = `${member.user.lastname} ${member.user.firstname}`.trim() || member.user.login;
+        return [{ value, label: `${name} (${member.user.login})` }];
+      }
+      if (member.group) {
+        const value = `group:${member.group.id}`;
+        if (seen.has(value)) return [];
+        seen.add(value);
+        return [{ value, label: `[グループ] ${member.group.name}` }];
+      }
+      return [];
+    });
+  }, [members]);
 
   const dateValidationError = useMemo(() => {
     if (!startDate || !dueDate) return '';
@@ -55,7 +92,13 @@ export default function IssueNewPage() {
   }, [startDate, dueDate, t]);
 
   useEffect(() => {
-    if (trackers.length && !trackerId) setTrackerId(trackers[0].id);
+    if (!trackers.length) {
+      setTrackerId('');
+      return;
+    }
+    if (!trackers.some((tr) => tr.id === trackerId)) {
+      setTrackerId(trackers[0].id);
+    }
   }, [trackers, trackerId]);
 
   useEffect(() => {
@@ -65,7 +108,11 @@ export default function IssueNewPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!project) return;
+    const latest = await projectQuery.refetch();
+    const latestCanCreate = Boolean(latest.data?.data?.permissions?.canCreateIssue);
+    if (!latestCanCreate) return;
     if (dateValidationError) return;
+    const assignee = parseAssigneeValue(assigneeValue);
     createMutation.mutate(
       {
         projectId: project.id,
@@ -74,7 +121,8 @@ export default function IssueNewPage() {
         description: description.trim() || null,
         statusId,
         priority,
-        assigneeId: assigneeId || null,
+        assigneeId: assignee.assigneeId,
+        assigneeGroupId: assignee.assigneeGroupId,
         categoryId: categoryId || null,
         versionId: null,
         parentId: parentId || null,
@@ -102,12 +150,16 @@ export default function IssueNewPage() {
 
   const isPending = createMutation.isPending || uploadMutation.isPending;
 
-  if (projectQuery.isLoading || !project) {
+  if (projectQuery.isLoading || !currentUser?.id || !project) {
     return (
       <div className="px-4 py-8">
         <p className="text-slate-500">{t('app.loading')}</p>
       </div>
     );
+  }
+
+  if (!canCreateIssue) {
+    return <Navigate to={`/projects/${project.identifier}/issues`} replace />;
   }
 
   return (
@@ -125,8 +177,10 @@ export default function IssueNewPage() {
             value={trackerId}
             onChange={(e) => setTrackerId(e.target.value)}
             required
+            disabled={!canCreateIssue || trackers.length === 0}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           >
+            {trackers.length === 0 && <option value="">—</option>}
             {trackers.map((tr) => (
               <option key={tr.id} value={tr.id}>{tr.name}</option>
             ))}
@@ -187,13 +241,13 @@ export default function IssueNewPage() {
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.assignee')}</label>
           <select
-            value={assigneeId}
-            onChange={(e) => setAssigneeId(e.target.value)}
+            value={assigneeValue}
+            onChange={(e) => setAssigneeValue(e.target.value)}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           >
             <option value="">—</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>{u.lastname} {u.firstname} ({u.login})</option>
+            {assigneeOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
         </div>
@@ -283,7 +337,7 @@ export default function IssueNewPage() {
         {createMutation.isError && <p className="text-sm text-red-600">{t('app.error')}</p>}
         <button
           type="submit"
-          disabled={isPending || !!dateValidationError}
+          disabled={isPending || !!dateValidationError || !canCreateIssue || !trackerId}
           className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60"
         >
           {isPending ? t('app.loading') : t('app.create')}

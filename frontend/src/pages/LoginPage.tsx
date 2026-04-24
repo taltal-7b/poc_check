@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useQueryClient } from '@tanstack/react-query';
 import { useLogin } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 
@@ -8,6 +9,7 @@ export default function LoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const queryClient = useQueryClient();
   const loginMutation = useLogin();
   const authLogin = useAuthStore((s) => s.login);
 
@@ -32,6 +34,7 @@ export default function LoginPage() {
         onSuccess: (res) => {
           const payload = res.data;
           if (payload?.accessToken && payload?.refreshToken && payload?.user) {
+            queryClient.clear();
             authLogin(payload.user, payload.accessToken, payload.refreshToken);
             navigate('/');
             return;

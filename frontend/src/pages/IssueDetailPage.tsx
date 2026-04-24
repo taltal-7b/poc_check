@@ -24,13 +24,19 @@ interface EditForm {
   trackerId: string;
   statusId: string;
   priority: string;
-  assigneeId: string;
+  assigneeValue: string;
   parentId: string;
   startDate: string;
   dueDate: string;
   estimatedHours: string;
   doneRatio: string;
   repository: string;
+}
+
+function parseAssigneeValue(value: string) {
+  if (value.startsWith('user:')) return { assigneeId: value.slice(5), assigneeGroupId: null };
+  if (value.startsWith('group:')) return { assigneeId: null, assigneeGroupId: value.slice(6) };
+  return { assigneeId: null, assigneeGroupId: null };
 }
 
 function priorityBadgeClass(p: number) {
@@ -109,7 +115,7 @@ export default function IssueDetailPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState<EditForm>({
     subject: '', description: '', trackerId: '', statusId: '',
-    priority: '2', assigneeId: '', parentId: '', startDate: '', dueDate: '',
+    priority: '2', assigneeValue: '', parentId: '', startDate: '', dueDate: '',
     estimatedHours: '', doneRatio: '0', repository: '',
   });
   const [note, setNote] = useState('');
@@ -147,11 +153,35 @@ export default function IssueDetailPage() {
   const assigneeNameMap = useMemo(() => {
     const map = new Map<string, string>();
     members.forEach((m) => {
-      if (!m.user) return;
-      const label = `${m.user.lastname} ${m.user.firstname}`.trim() || m.user.login;
-      map.set(m.user.id, label);
+      if (m.user) {
+        const label = `${m.user.lastname} ${m.user.firstname}`.trim() || m.user.login;
+        map.set(m.user.id, label);
+      }
+      if (m.group) {
+        map.set(m.group.id, m.group.name);
+      }
     });
     return map;
+  }, [members]);
+
+  const assigneeOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return members.flatMap((member) => {
+      if (member.user) {
+        const value = `user:${member.user.id}`;
+        if (seen.has(value)) return [];
+        seen.add(value);
+        const label = `${member.user.lastname} ${member.user.firstname}`.trim() || member.user.login;
+        return [{ value, label }];
+      }
+      if (member.group) {
+        const value = `group:${member.group.id}`;
+        if (seen.has(value)) return [];
+        seen.add(value);
+        return [{ value, label: `[グループ] ${member.group.name}` }];
+      }
+      return [];
+    });
   }, [members]);
 
   const issueNameMap = useMemo(() => {
@@ -224,7 +254,7 @@ export default function IssueDetailPage() {
       trackerId: issue.trackerId,
       statusId: issue.statusId,
       priority: String(issue.priority),
-      assigneeId: issue.assigneeId ?? '',
+      assigneeValue: issue.assigneeGroupId ? `group:${issue.assigneeGroupId}` : issue.assigneeId ? `user:${issue.assigneeId}` : '',
       parentId: issue.parentId ?? '',
       startDate: toDateStr(issue.startDate),
       dueDate: toDateStr(issue.dueDate),
@@ -241,6 +271,7 @@ export default function IssueDetailPage() {
     if (!issue || !form.subject.trim()) return;
     if (!canEditIssue) return;
     if (dateValidationError) return;
+    const assignee = parseAssigneeValue(form.assigneeValue);
     updateMutation.mutate(
       {
         id: issue.id,
@@ -249,7 +280,8 @@ export default function IssueDetailPage() {
         trackerId: form.trackerId,
         statusId: form.statusId,
         priority: Number(form.priority),
-        assigneeId: form.assigneeId || null,
+        assigneeId: assignee.assigneeId,
+        assigneeGroupId: assignee.assigneeGroupId,
         parentId: form.parentId || null,
         startDate: form.startDate || null,
         dueDate: form.dueDate || null,
@@ -304,6 +336,7 @@ export default function IssueDetailPage() {
       statusId: t('issues.status'),
       priority: t('issues.priority'),
       assigneeId: t('issues.assignee'),
+      assigneeGroupId: t('issues.assignee'),
       categoryId: t('issues.category'),
       versionId: t('issues.version'),
       parentId: t('issues.parent'),
@@ -324,7 +357,7 @@ export default function IssueDetailPage() {
     }
     if (detail.propKey === 'trackerId') return trackerNameMap.get(detail.newValue) ?? detail.newValue;
     if (detail.propKey === 'statusId') return statusNameMap.get(detail.newValue) ?? detail.newValue;
-    if (detail.propKey === 'assigneeId') return assigneeNameMap.get(detail.newValue) ?? detail.newValue;
+    if (detail.propKey === 'assigneeId' || detail.propKey === 'assigneeGroupId') return assigneeNameMap.get(detail.newValue) ?? detail.newValue;
     if (detail.propKey === 'parentId') return issueNameMap.get(detail.newValue) ?? detail.newValue;
     if (detail.propKey === 'projectId') return issue?.project?.name ?? detail.newValue;
     if (detail.propKey === 'doneRatio' && detail.newValue) return `${detail.newValue}%`;
@@ -342,7 +375,7 @@ export default function IssueDetailPage() {
     }
     if (detail.propKey === 'trackerId') return trackerNameMap.get(detail.oldValue) ?? detail.oldValue;
     if (detail.propKey === 'statusId') return statusNameMap.get(detail.oldValue) ?? detail.oldValue;
-    if (detail.propKey === 'assigneeId') return assigneeNameMap.get(detail.oldValue) ?? detail.oldValue;
+    if (detail.propKey === 'assigneeId' || detail.propKey === 'assigneeGroupId') return assigneeNameMap.get(detail.oldValue) ?? detail.oldValue;
     if (detail.propKey === 'parentId') return issueNameMap.get(detail.oldValue) ?? detail.oldValue;
     if (detail.propKey === 'projectId') return issue?.project?.name ?? detail.oldValue;
     if (detail.propKey === 'doneRatio' && detail.oldValue) return `${detail.oldValue}%`;
@@ -393,7 +426,7 @@ export default function IssueDetailPage() {
   const relations = issue.relations ?? [];
   const assigneeName = issue.assignee
     ? `${issue.assignee.lastname} ${issue.assignee.firstname}`.trim() || issue.assignee.login
-    : '—';
+    : issue.assigneeGroup?.name ?? '—';
 
   const selectCls = 'w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500';
   const inputCls = selectCls;
@@ -421,6 +454,8 @@ export default function IssueDetailPage() {
       label: t('issues.assignee'),
       value: issue.assignee
         ? <Link to={`/users/${issue.assignee.id}`} className="font-medium text-primary-600 hover:underline">{assigneeName}</Link>
+        : issue.assigneeGroup
+          ? <span className="font-medium text-slate-900">[グループ] {issue.assigneeGroup.name}</span>
         : <span className="font-medium text-slate-900">—</span>,
     },
     { key: 'startDate', label: t('issues.startDate'), value: <span className="text-slate-900">{displayDate(issue.startDate)}</span> },
@@ -546,13 +581,11 @@ export default function IssueDetailPage() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.assignee')}</label>
-              <select value={form.assigneeId} onChange={(e) => setField('assigneeId', e.target.value)} className={selectCls}>
+              <select value={form.assigneeValue} onChange={(e) => setField('assigneeValue', e.target.value)} className={selectCls}>
                 <option value="">—</option>
-                {members.map((m) => {
-                  const u = m.user;
-                  if (!u) return null;
-                  return <option key={u.id} value={u.id}>{`${u.lastname} ${u.firstname}`.trim() || u.login}</option>;
-                })}
+                {assigneeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
               </select>
             </div>
             <div>

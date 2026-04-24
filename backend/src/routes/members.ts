@@ -3,6 +3,7 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
 import { authenticate } from '../middleware/auth';
+import { userCanManageProject } from '../utils/project-permissions';
 import { z } from 'zod';
 
 const router = Router({ mergeParams: true });
@@ -23,46 +24,15 @@ async function resolveProjectIdParam(projectId: string) {
   return p;
 }
 
-async function getUserGroupIds(userId: string): Promise<string[]> {
-  const rows = await prisma.groupUser.findMany({
-    where: { userId },
-    select: { groupId: true },
+const addMemberSchema = z
+  .object({
+    userId: z.string().uuid().optional(),
+    groupId: z.string().uuid().optional(),
+    roleIds: z.array(z.string().uuid()).min(1),
+  })
+  .refine((v) => Boolean(v.userId) !== Boolean(v.groupId), {
+    message: 'userId または groupId のどちらか一方を指定してください',
   });
-  return rows.map((r) => r.groupId);
-}
-
-async function userCanManageProject(
-  userId: string | undefined,
-  isAdmin: boolean | undefined,
-  project: { id: string; createdByUserId?: string | null },
-): Promise<boolean> {
-  if (isAdmin) return true;
-  if (!userId) return false;
-  if (project.createdByUserId === userId) return true;
-
-  const groupIds = await getUserGroupIds(userId);
-  const member = await prisma.member.findFirst({
-    where: {
-      projectId: project.id,
-      OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
-    },
-    include: {
-      memberRoles: {
-        include: {
-          role: { select: { name: true } },
-        },
-      },
-    },
-  });
-
-  if (!member) return false;
-  return (member.memberRoles ?? []).some((mr) => (mr.role?.name ?? '') === '管理者');
-}
-
-const addMemberSchema = z.object({
-  userId: z.string().uuid(),
-  roleIds: z.array(z.string().uuid()).min(1),
-});
 
 const updateMemberRolesSchema = z.object({
   roleIds: z.array(z.string().uuid()).min(1),
@@ -112,6 +82,23 @@ router.get(
   }),
 );
 
+router.get(
+  '/groups',
+  authenticate,
+  catchAsync(async (req, res) => {
+    const project = await resolveProjectIdParam(req.params.projectId);
+    if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+    const canManage = await userCanManageProject(req.user?.userId, req.user?.admin, project);
+    if (!canManage) throw AppError.forbidden('このプロジェクトのメンバーを編集する権限がありません');
+
+    const groups = await prisma.group.findMany({
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true },
+    });
+    return sendSuccess(res, groups);
+  }),
+);
+
 router.post(
   '/',
   authenticate,
@@ -126,27 +113,68 @@ router.post(
     if (!parsed.success) {
       throw AppError.badRequest(parsed.error.flatten().formErrors.join('; ') || '入力が不正です');
     }
-    const { userId, roleIds } = parsed.data;
-
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw AppError.badRequest('ユーザーが存在しません');
+    const { userId, groupId, roleIds } = parsed.data;
 
     const roles = await prisma.role.findMany({ where: { id: { in: roleIds } } });
     if (roles.length !== roleIds.length) {
       throw AppError.badRequest('存在しないロールが含まれています');
     }
 
-    const existing = await prisma.member.findFirst({
-      where: { projectId, userId },
+    if (userId) {
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) throw AppError.badRequest('ユーザーが存在しません');
+
+      const existing = await prisma.member.findFirst({
+        where: { projectId, userId },
+      });
+      if (existing) throw AppError.conflict('既にメンバーに登録されています');
+
+      const member = await prisma.$transaction(async (tx) => {
+        const m = await tx.member.create({
+          data: {
+            projectId,
+            userId,
+            groupId: null,
+          },
+        });
+        await tx.memberRole.createMany({
+          data: roleIds.map((roleId) => ({ memberId: m.id, roleId })),
+        });
+        return tx.member.findUniqueOrThrow({
+          where: { id: m.id },
+          include: {
+            user: {
+              select: {
+                id: true,
+                login: true,
+                firstname: true,
+                lastname: true,
+                mail: true,
+                status: true,
+              },
+            },
+            group: { select: { id: true, name: true } },
+            memberRoles: { include: { role: true } },
+          },
+        });
+      });
+      return sendSuccess(res, member, 201);
+    }
+
+    const group = await prisma.group.findUnique({ where: { id: groupId! } });
+    if (!group) throw AppError.badRequest('グループが存在しません');
+
+    const existingGroupMember = await prisma.member.findFirst({
+      where: { projectId, groupId: groupId! },
     });
-    if (existing) throw AppError.conflict('既にメンバーに登録されています');
+    if (existingGroupMember) throw AppError.conflict('既にメンバーに登録されています');
 
     const member = await prisma.$transaction(async (tx) => {
       const m = await tx.member.create({
         data: {
           projectId,
-          userId,
-          groupId: null,
+          userId: null,
+          groupId: groupId!,
         },
       });
       await tx.memberRole.createMany({
@@ -165,11 +193,11 @@ router.post(
               status: true,
             },
           },
+          group: { select: { id: true, name: true } },
           memberRoles: { include: { role: true } },
         },
       });
     });
-
     return sendSuccess(res, member, 201);
   }),
 );

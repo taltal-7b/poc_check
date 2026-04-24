@@ -4,6 +4,11 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
 import { authenticate, optionalAuth, type AuthPayload } from '../middleware/auth';
+import {
+  getUserGroupIds,
+  getUserProjectPermissionSet,
+  hasAnyProjectPermission,
+} from '../utils/project-permissions';
 import { z } from 'zod';
 
 const router = Router({ mergeParams: true });
@@ -18,6 +23,7 @@ const ISSUE_JOURNAL_KEYS = [
   'subject',
   'description',
   'assigneeId',
+  'assigneeGroupId',
   'categoryId',
   'versionId',
   'parentId',
@@ -120,7 +126,15 @@ async function buildIssueWhere(
   if (trackerId) where.trackerId = trackerId;
 
   const assigneeId = req.query.assignee as string | undefined;
-  if (assigneeId) where.assigneeId = assigneeId;
+  if (assigneeId) {
+    where.OR = [
+      { assigneeId },
+      { assigneeGroup: { groupUsers: { some: { userId: assigneeId } } } },
+    ];
+  }
+
+  const assigneeGroupId = req.query.assignee_group as string | undefined;
+  if (assigneeGroupId) where.assigneeGroupId = assigneeGroupId;
 
   const authorId = req.query.author as string | undefined;
   if (authorId) where.authorId = authorId;
@@ -193,61 +207,30 @@ async function createIssueActivity(
   });
 }
 
-async function getUserGroupIds(userId: string): Promise<string[]> {
-  const rows = await prisma.groupUser.findMany({
-    where: { userId },
-    select: { groupId: true },
-  });
-  return rows.map((r) => r.groupId);
-}
-
-function parseRolePermissions(raw: unknown): string[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw.map(String);
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.map(String);
-    } catch {
-      return raw
-        .split(/[,\s]+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-  }
-  return [];
-}
-
-async function getUserProjectPermissions(
-  userId: string,
+async function assertAssignableToProject(
+  assigneeId: string | null | undefined,
+  assigneeGroupId: string | null | undefined,
   projectId: string,
-): Promise<Set<string> | null> {
-  const groupIds = await getUserGroupIds(userId);
-  const members = await prisma.member.findMany({
-    where: {
-      projectId,
-      OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
-    },
-    include: {
-      memberRoles: {
-        include: {
-          role: { select: { permissions: true } },
-        },
-      },
-    },
-  });
-
-  if (!members.length) return null;
-
-  const perms = new Set<string>();
-  for (const m of members) {
-    for (const mr of m.memberRoles) {
-      for (const p of parseRolePermissions(mr.role.permissions)) {
-        perms.add(p);
-      }
-    }
+) {
+  if (assigneeId && assigneeGroupId) {
+    throw AppError.badRequest('担当者はユーザーまたはグループのどちらか一方を指定してください');
   }
-  return perms;
+
+  if (assigneeId) {
+    const member = await prisma.member.findFirst({
+      where: { projectId, userId: assigneeId },
+      select: { id: true },
+    });
+    if (!member) throw AppError.badRequest('担当者はプロジェクトのメンバーから選択してください');
+  }
+
+  if (assigneeGroupId) {
+    const member = await prisma.member.findFirst({
+      where: { projectId, groupId: assigneeGroupId },
+      select: { id: true },
+    });
+    if (!member) throw AppError.badRequest('担当グループはプロジェクトのグループから選択してください');
+  }
 }
 
 async function userCanAccessProject(
@@ -257,8 +240,8 @@ async function userCanAccessProject(
 ): Promise<boolean> {
   if (isAdmin) return true;
   if (!userId) return project.isPublic;
-  const perms = await getUserProjectPermissions(userId, project.id);
-  if (perms) return perms.has('view_issues');
+  const can = await hasAnyProjectPermission(userId, isAdmin, project.id, ['view_issues']);
+  if (can) return true;
   return project.isPublic;
 }
 
@@ -268,10 +251,10 @@ async function userCanCreateIssue(
   project: { id: string },
 ): Promise<boolean> {
   if (isAdmin) return true;
-  if (!userId) return false;
-  const perms = await getUserProjectPermissions(userId, project.id);
-  if (!perms) return false;
-  return perms.has('add_issues') || perms.has('edit_issues');
+  const permissions = await getUserProjectPermissionSet(userId, isAdmin, project.id);
+  if (!permissions) return false;
+  // 作成は add_issues 明示付与のみ許可（manage_project などでの暗黙許可は不可）
+  return permissions.has('add_issues');
 }
 
 async function userCanEditIssue(
@@ -280,11 +263,10 @@ async function userCanEditIssue(
   project: { id: string },
   issueAuthorId: string,
 ): Promise<boolean> {
-  if (isAdmin) return true;
+  if (await hasAnyProjectPermission(userId, isAdmin, project.id, ['edit_issues'])) return true;
   if (!userId) return false;
-  const perms = await getUserProjectPermissions(userId, project.id);
+  const perms = await getUserProjectPermissionSet(userId, isAdmin, project.id);
   if (!perms) return false;
-  if (perms.has('edit_issues')) return true;
   return perms.has('edit_own_issues') && issueAuthorId === userId;
 }
 
@@ -293,11 +275,7 @@ async function userCanDeleteIssue(
   isAdmin: boolean | undefined,
   project: { id: string },
 ): Promise<boolean> {
-  if (isAdmin) return true;
-  if (!userId) return false;
-  const perms = await getUserProjectPermissions(userId, project.id);
-  if (!perms) return false;
-  return perms.has('delete_issues');
+  return hasAnyProjectPermission(userId, isAdmin, project.id, ['delete_issues']);
 }
 
 async function userCanAddIssueNotes(
@@ -305,17 +283,13 @@ async function userCanAddIssueNotes(
   isAdmin: boolean | undefined,
   project: { id: string },
 ): Promise<boolean> {
-  if (isAdmin) return true;
-  if (!userId) return false;
-  const perms = await getUserProjectPermissions(userId, project.id);
-  if (!perms) return false;
-  return (
-    perms.has('view_issues') ||
-    perms.has('add_issue_notes') ||
-    perms.has('edit_issue_notes') ||
-    perms.has('edit_own_issue_notes') ||
-    perms.has('edit_issues')
-  );
+  return hasAnyProjectPermission(userId, isAdmin, project.id, [
+    'view_issues',
+    'add_issue_notes',
+    'edit_issue_notes',
+    'edit_own_issue_notes',
+    'edit_issues',
+  ]);
 }
 
 async function resolveProjectId(ref: string | undefined): Promise<string | undefined> {
@@ -382,6 +356,7 @@ const createIssueSchema = z.object({
   subject: z.string().min(1),
   description: z.string().nullable().optional(),
   assigneeId: z.string().uuid().nullable().optional(),
+  assigneeGroupId: z.string().uuid().nullable().optional(),
   categoryId: z.string().uuid().nullable().optional(),
   versionId: z.string().uuid().nullable().optional(),
   parentId: z.string().uuid().nullable().optional(),
@@ -399,6 +374,7 @@ const updateIssueSchema = z.object({
   subject: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
   assigneeId: z.string().uuid().nullable().optional(),
+  assigneeGroupId: z.string().uuid().nullable().optional(),
   categoryId: z.string().uuid().nullable().optional(),
   versionId: z.string().uuid().nullable().optional(),
   parentId: z.string().uuid().nullable().optional(),
@@ -453,6 +429,7 @@ router.get(
           status: true,
           author: { select: { id: true, login: true, firstname: true, lastname: true } },
           assignee: { select: { id: true, login: true, firstname: true, lastname: true } },
+          assigneeGroup: { select: { id: true, name: true } },
         },
       }),
     ]);
@@ -592,6 +569,7 @@ router.get(
         status: true,
         author: { select: { id: true, login: true, firstname: true, lastname: true } },
         assignee: { select: { id: true, login: true, firstname: true, lastname: true } },
+        assigneeGroup: { select: { id: true, name: true } },
       },
     });
     if (!detail) throw AppError.notFound('チケットが見つかりません');
@@ -714,6 +692,21 @@ router.post(
       );
       if (!canEdit) throw AppError.forbidden('チケットを編集する権限がありません');
 
+      const effectiveProjectId = changes.projectId ?? oldIssue.projectId;
+      if (changes.assigneeId !== undefined || changes.assigneeGroupId !== undefined || changes.projectId !== undefined) {
+        let nextAssigneeId = oldIssue.assigneeId;
+        let nextAssigneeGroupId = oldIssue.assigneeGroupId;
+        if (changes.assigneeId !== undefined) {
+          nextAssigneeId = changes.assigneeId;
+          if (changes.assigneeGroupId === undefined) nextAssigneeGroupId = null;
+        }
+        if (changes.assigneeGroupId !== undefined) {
+          nextAssigneeGroupId = changes.assigneeGroupId;
+          if (changes.assigneeId === undefined) nextAssigneeId = null;
+        }
+        await assertAssignableToProject(nextAssigneeId, nextAssigneeGroupId, effectiveProjectId);
+      }
+
       const effectiveStatusId = changes.statusId ?? oldIssue.statusId;
       const st = await prisma.issueStatus.findUnique({ where: { id: effectiveStatusId } });
 
@@ -726,7 +719,14 @@ router.post(
       if (changes.description !== undefined) data.description = changes.description;
       if (changes.assigneeId !== undefined) {
         data.assignee = changes.assigneeId ? { connect: { id: changes.assigneeId } } : { disconnect: true };
+        if (changes.assigneeGroupId === undefined) data.assigneeGroup = { disconnect: true };
       }
+      if (changes.assigneeGroupId !== undefined) {
+        data.assigneeGroup = changes.assigneeGroupId ? { connect: { id: changes.assigneeGroupId } } : { disconnect: true };
+        if (changes.assigneeId === undefined) data.assignee = { disconnect: true };
+      }
+      if (changes.assigneeId !== undefined && changes.assigneeId) data.assigneeGroup = { disconnect: true };
+      if (changes.assigneeGroupId !== undefined && changes.assigneeGroupId) data.assignee = { disconnect: true };
       if (changes.categoryId !== undefined) {
         data.category = changes.categoryId ? { connect: { id: changes.categoryId } } : { disconnect: true };
       }
@@ -758,6 +758,7 @@ router.post(
           subject: oldIssue.subject,
           description: oldIssue.description,
           assigneeId: oldIssue.assigneeId,
+          assigneeGroupId: oldIssue.assigneeGroupId,
           categoryId: oldIssue.categoryId,
           versionId: oldIssue.versionId,
           parentId: oldIssue.parentId,
@@ -775,6 +776,7 @@ router.post(
           subject: next.subject,
           description: next.description,
           assigneeId: next.assigneeId,
+          assigneeGroupId: next.assigneeGroupId,
           categoryId: next.categoryId,
           versionId: next.versionId,
           parentId: next.parentId,
@@ -927,6 +929,8 @@ router.post(
     const canCreate = await userCanCreateIssue(req.user?.userId, req.user?.admin, project);
     if (!canCreate) throw AppError.forbidden('チケットを作成する権限がありません');
 
+    await assertAssignableToProject(src.assigneeId, src.assigneeGroupId, targetProjectId);
+
     const subject = parsed.data.subject ?? `Copy: ${src.subject}`;
 
     const st = await prisma.issueStatus.findUnique({ where: { id: src.statusId } });
@@ -946,6 +950,7 @@ router.post(
           description: src.description,
           authorId: req.user!.userId,
           assigneeId: src.assigneeId,
+          assigneeGroupId: src.assigneeGroupId,
           categoryId: src.categoryId,
           versionId: src.versionId,
           parentId: null,
@@ -968,6 +973,7 @@ router.post(
           status: true,
           author: { select: { id: true, login: true, firstname: true, lastname: true } },
           assignee: { select: { id: true, login: true, firstname: true, lastname: true } },
+          assigneeGroup: { select: { id: true, name: true } },
         },
       });
     });
@@ -1125,6 +1131,7 @@ router.get(
         status: true,
         author: { select: { id: true, login: true, firstname: true, lastname: true, mail: true } },
         assignee: { select: { id: true, login: true, firstname: true, lastname: true, mail: true } },
+        assigneeGroup: { select: { id: true, name: true } },
         category: true,
         version: true,
         parent: { select: { id: true, subject: true } },
@@ -1156,11 +1163,17 @@ router.get(
     if (!can) throw AppError.forbidden();
 
     const assigneeHistoryIds = new Set<string>();
+    const assigneeGroupHistoryIds = new Set<string>();
     for (const journal of issue.journals ?? []) {
       for (const detail of journal.details ?? []) {
-        if (detail.propKey !== 'assigneeId') continue;
-        if (isUuidLike(detail.oldValue)) assigneeHistoryIds.add(detail.oldValue);
-        if (isUuidLike(detail.newValue)) assigneeHistoryIds.add(detail.newValue);
+        if (detail.propKey === 'assigneeId') {
+          if (isUuidLike(detail.oldValue)) assigneeHistoryIds.add(detail.oldValue);
+          if (isUuidLike(detail.newValue)) assigneeHistoryIds.add(detail.newValue);
+        }
+        if (detail.propKey === 'assigneeGroupId') {
+          if (isUuidLike(detail.oldValue)) assigneeGroupHistoryIds.add(detail.oldValue);
+          if (isUuidLike(detail.newValue)) assigneeGroupHistoryIds.add(detail.newValue);
+        }
       }
     }
 
@@ -1175,13 +1188,22 @@ router.get(
         assigneeLabelMap.set(user.id, name);
       }
     }
+    if (assigneeGroupHistoryIds.size > 0) {
+      const groups = await prisma.group.findMany({
+        where: { id: { in: Array.from(assigneeGroupHistoryIds) } },
+        select: { id: true, name: true },
+      });
+      for (const group of groups) {
+        assigneeLabelMap.set(group.id, group.name);
+      }
+    }
 
     const enrichedIssue = {
       ...issue,
       journals: (issue.journals ?? []).map((journal) => ({
         ...journal,
         details: (journal.details ?? []).map((detail) => {
-          if (detail.propKey !== 'assigneeId') return detail;
+          if (detail.propKey !== 'assigneeId' && detail.propKey !== 'assigneeGroupId') return detail;
           return {
             ...detail,
             oldValue: isUuidLike(detail.oldValue) ? (assigneeLabelMap.get(detail.oldValue) ?? detail.oldValue) : detail.oldValue,
@@ -1228,6 +1250,20 @@ router.put(
 
     const nextStatusId = body.statusId ?? oldIssue.statusId;
     const st = await prisma.issueStatus.findUnique({ where: { id: nextStatusId } });
+    const effectiveProjectId = body.projectId ?? oldIssue.projectId;
+    if (body.assigneeId !== undefined || body.assigneeGroupId !== undefined || body.projectId !== undefined) {
+      let nextAssigneeId = oldIssue.assigneeId;
+      let nextAssigneeGroupId = oldIssue.assigneeGroupId;
+      if (body.assigneeId !== undefined) {
+        nextAssigneeId = body.assigneeId;
+        if (body.assigneeGroupId === undefined) nextAssigneeGroupId = null;
+      }
+      if (body.assigneeGroupId !== undefined) {
+        nextAssigneeGroupId = body.assigneeGroupId;
+        if (body.assigneeId === undefined) nextAssigneeId = null;
+      }
+      await assertAssignableToProject(nextAssigneeId, nextAssigneeGroupId, effectiveProjectId);
+    }
 
     const data: Prisma.IssueUpdateInput = {};
     if (body.projectId !== undefined) data.project = { connect: { id: body.projectId } };
@@ -1238,7 +1274,14 @@ router.put(
     if (body.description !== undefined) data.description = body.description;
     if (body.assigneeId !== undefined) {
       data.assignee = body.assigneeId ? { connect: { id: body.assigneeId } } : { disconnect: true };
+      if (body.assigneeGroupId === undefined) data.assigneeGroup = { disconnect: true };
     }
+    if (body.assigneeGroupId !== undefined) {
+      data.assigneeGroup = body.assigneeGroupId ? { connect: { id: body.assigneeGroupId } } : { disconnect: true };
+      if (body.assigneeId === undefined) data.assignee = { disconnect: true };
+    }
+    if (body.assigneeId !== undefined && body.assigneeId) data.assigneeGroup = { disconnect: true };
+    if (body.assigneeGroupId !== undefined && body.assigneeGroupId) data.assignee = { disconnect: true };
     if (body.categoryId !== undefined) {
       data.category = body.categoryId ? { connect: { id: body.categoryId } } : { disconnect: true };
     }
@@ -1274,6 +1317,7 @@ router.put(
         subject: oldIssue.subject,
         description: oldIssue.description,
         assigneeId: oldIssue.assigneeId,
+        assigneeGroupId: oldIssue.assigneeGroupId,
         categoryId: oldIssue.categoryId,
         versionId: oldIssue.versionId,
         parentId: oldIssue.parentId,
@@ -1291,6 +1335,7 @@ router.put(
         subject: next.subject,
         description: next.description,
         assigneeId: next.assigneeId,
+        assigneeGroupId: next.assigneeGroupId,
         categoryId: next.categoryId,
         versionId: next.versionId,
         parentId: next.parentId,
@@ -1323,6 +1368,7 @@ router.put(
           status: true,
           author: { select: { id: true, login: true, firstname: true, lastname: true } },
           assignee: { select: { id: true, login: true, firstname: true, lastname: true } },
+          assigneeGroup: { select: { id: true, name: true } },
         },
       });
 
@@ -1373,6 +1419,8 @@ router.post(
     const canCreate = await userCanCreateIssue(req.user?.userId, req.user?.admin, project);
     if (!canCreate) throw AppError.forbidden('チケットを作成する権限がありません');
 
+    await assertAssignableToProject(body.assigneeId, body.assigneeGroupId, projectId);
+
     const st = await prisma.issueStatus.findUnique({ where: { id: body.statusId } });
     if (!st) throw AppError.badRequest('ステータスが存在しません');
 
@@ -1391,6 +1439,7 @@ router.post(
           description: body.description ?? null,
           authorId: req.user!.userId,
           assigneeId: body.assigneeId ?? null,
+          assigneeGroupId: body.assigneeGroupId ?? null,
           categoryId: body.categoryId ?? null,
           versionId: body.versionId ?? null,
           parentId: body.parentId ?? null,
@@ -1413,6 +1462,7 @@ router.post(
           status: true,
           author: { select: { id: true, login: true, firstname: true, lastname: true } },
           assignee: { select: { id: true, login: true, firstname: true, lastname: true } },
+          assigneeGroup: { select: { id: true, name: true } },
         },
       });
     });

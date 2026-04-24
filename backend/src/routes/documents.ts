@@ -6,6 +6,7 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
 import { authenticate } from '../middleware/auth';
+import { hasAnyProjectPermission } from '../utils/project-permissions';
 import { config } from '../config';
 
 const router = Router({ mergeParams: true });
@@ -17,60 +18,12 @@ function param(req: Request, key: string): string | undefined {
   return undefined;
 }
 
-function parseRolePermissions(raw: unknown): string[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw.map(String);
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.map(String);
-    } catch {
-      return raw
-        .split(/[,\s]+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-  }
-  return [];
-}
-
-async function getUserGroupIds(userId: string): Promise<string[]> {
-  const rows = await prisma.groupUser.findMany({
-    where: { userId },
-    select: { groupId: true },
-  });
-  return rows.map((r) => r.groupId);
-}
-
 async function userCanManageDocuments(
   userId: string | undefined,
   isAdmin: boolean | undefined,
   projectId: string,
 ): Promise<boolean> {
-  if (isAdmin) return true;
-  if (!userId) return false;
-  const groupIds = await getUserGroupIds(userId);
-  const members = await prisma.member.findMany({
-    where: {
-      projectId,
-      OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
-    },
-    include: {
-      memberRoles: {
-        include: {
-          role: { select: { permissions: true } },
-        },
-      },
-    },
-  });
-  if (!members.length) return false;
-  for (const m of members) {
-    for (const mr of m.memberRoles ?? []) {
-      const perms = parseRolePermissions(mr.role?.permissions);
-      if (perms.includes('manage_documents')) return true;
-    }
-  }
-  return false;
+  return hasAnyProjectPermission(userId, isAdmin, projectId, ['manage_documents']);
 }
 
 const createSchema = z.object({

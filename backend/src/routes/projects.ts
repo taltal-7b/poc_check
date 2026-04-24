@@ -3,6 +3,12 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
 import { authenticate, requireAdmin, optionalAuth } from '../middleware/auth';
+import {
+  getUserGroupIds,
+  getUserProjectPermissionSet,
+  hasAnyProjectPermission,
+  userCanManageProject,
+} from '../utils/project-permissions';
 import { z } from 'zod';
 
 const router = Router({ mergeParams: true });
@@ -37,14 +43,6 @@ async function resolveProjectRef(ref: string) {
   return project;
 }
 
-async function getUserGroupIds(userId: string): Promise<string[]> {
-  const rows = await prisma.groupUser.findMany({
-    where: { userId },
-    select: { groupId: true },
-  });
-  return rows.map((r) => r.groupId);
-}
-
 async function userCanAccessProject(
   userId: string | undefined,
   isAdmin: boolean | undefined,
@@ -61,38 +59,6 @@ async function userCanAccessProject(
     },
   });
   return !!member;
-}
-
-async function userCanManageProject(
-  userId: string | undefined,
-  isAdmin: boolean | undefined,
-  project: { id: string; createdByUserId?: string | null },
-): Promise<boolean> {
-  // システム管理者は全プロジェクトを管理できる
-  if (isAdmin) return true;
-  if (!userId) return false;
-
-  // プロジェクト作成者は管理できる
-  if (project.createdByUserId === userId) return true;
-
-  // プロジェクト内で「管理者」ロールを持つメンバーは管理できる
-  const adminRole = await prisma.role.findFirst({
-    where: { name: '管理者' },
-  });
-
-  if (!adminRole) return false;
-
-  const memberWithAdminRole = await prisma.member.findFirst({
-    where: {
-      projectId: project.id,
-      userId,
-      memberRoles: {
-        some: { roleId: adminRole.id },
-      },
-    },
-  });
-
-  return !!memberWithAdminRole;
 }
 
 function escapeXml(value: string): string {
@@ -370,7 +336,23 @@ router.get(
     const ok = await userCanAccessProject(req.user?.userId, req.user?.admin, project);
     if (!ok) throw AppError.forbidden();
 
-    return sendSuccess(res, project);
+    const permissionSet = await getUserProjectPermissionSet(req.user?.userId, req.user?.admin, project.id);
+    const permissions = {
+      canCreateIssue: Boolean(req.user?.admin || permissionSet?.has('add_issues')),
+      canEditIssue: await hasAnyProjectPermission(req.user?.userId, req.user?.admin, project.id, [
+        'edit_issues',
+      ]),
+      canAddIssueNotes: await hasAnyProjectPermission(req.user?.userId, req.user?.admin, project.id, [
+        'view_issues',
+        'add_issue_notes',
+        'edit_issue_notes',
+        'edit_own_issue_notes',
+        'edit_issues',
+      ]),
+      canManageProject: await userCanManageProject(req.user?.userId, req.user?.admin, project),
+    };
+
+    return sendSuccess(res, { ...project, permissions });
   }),
 );
 
