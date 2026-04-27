@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+      - "feat/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: TypeScript and Docker build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Build backend and frontend
+        run: npm run build
+
+      - name: Build backend image
+        run: docker build -t tasknova-backend:ci ./backend
+
+      - name: Build frontend image
+        run: docker build -t tasknova-frontend:ci ./frontend
