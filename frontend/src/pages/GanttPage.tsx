@@ -142,7 +142,7 @@ const ROW_H = 32;
 const LABEL_W = 260;
 
 export default function GanttPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { identifier } = useParams<{ identifier: string }>();
   const slug = identifier ?? '';
 
@@ -158,6 +158,7 @@ export default function GanttPage() {
   const [zoom, setZoom] = useState<Zoom>('day');
   const scrollRef = useRef<HTMLDivElement>(null);
   const today = startOfDay(new Date());
+  const isJa = (i18n.resolvedLanguage ?? i18n.language).startsWith('ja');
 
   const issueRows = useMemo(() => {
     const sorted = [...issues].sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
@@ -276,7 +277,7 @@ export default function GanttPage() {
             <div className="shrink-0 border-r border-gray-200 bg-gray-50/80" style={{ width: LABEL_W, minWidth: LABEL_W }}>
               {/* Header */}
               <div className="flex items-center border-b border-gray-200 px-3 text-xs font-semibold text-gray-600" style={{ height: ROW_H }}>
-                チケット名
+                {t('gantt.subjectColumn')}
               </div>
 
               {/* Project row */}
@@ -519,7 +520,7 @@ export default function GanttPage() {
             <span className="font-medium">{t('gantt.legend')}</span>
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-8 h-3 rounded" style={{ backgroundColor: BAR_GRAY }} />
-              予定期間
+              {t('gantt.scheduledSpan')}
             </span>
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-8 h-3 rounded" style={{ backgroundColor: BAR_GREEN }} />
@@ -527,7 +528,7 @@ export default function GanttPage() {
             </span>
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-8 h-3 rounded" style={{ backgroundColor: BAR_RED }} />
-              遅れ
+              {t('gantt.delay')}
             </span>
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-4 h-0.5" style={{ borderTop: '2px dashed #ef4444' }} />

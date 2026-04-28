@@ -42,6 +42,8 @@
     "subjectColumn": "チケット名",
     "hint": "開始日・期日のどちらか（または両方）があるチケットはその期間で表示します。どちらもない場合は作成日を1日分として表示します。",
     "legend": "凡例:",
+    "scheduledSpan": "予定期間",
+    "delay": "遅れ",
     "today": "今日",
     "versionMilestones": "バージョン（マイルストーン）",
     "estimatedFromCreated": "日付未設定のため作成日で表示"
