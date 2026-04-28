@@ -34,6 +34,25 @@ const ISSUE_JOURNAL_KEYS = [
   'repository',
 ] as const;
 
+const ISSUE_ACTIVITY_FIELD_LABELS: Record<string, string> = {
+  projectId: 'プロジェクト',
+  trackerId: 'トラッカー',
+  statusId: 'ステータス',
+  priority: '優先度',
+  subject: '題名',
+  description: '説明',
+  assigneeId: '担当者',
+  assigneeGroupId: '担当者',
+  categoryId: 'カテゴリ',
+  versionId: '対象バージョン',
+  parentId: '親チケット',
+  startDate: '開始日',
+  dueDate: '期日',
+  estimatedHours: '予定工数',
+  doneRatio: '進捗率',
+  repository: 'リポジトリ',
+};
+
 function catchAsync(
   fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>,
 ) {
@@ -203,6 +222,127 @@ async function createIssueActivity(
       actId: issue.id,
       title: issue.subject,
       description: issue.description ? issue.description.slice(0, 500) : null,
+    },
+  });
+}
+
+function collectJournalDetailIds(
+  details: Prisma.JournalDetailCreateWithoutJournalInput[],
+  propKey: string,
+) {
+  return Array.from(new Set(details.flatMap((detail) => {
+    if (detail.propKey !== propKey) return [];
+    return [detail.oldValue, detail.newValue].filter(isUuidLike);
+  })));
+}
+
+function setLabel(labels: Map<string, string>, id: string, value: string | null | undefined) {
+  if (value && value.trim()) labels.set(id, value.trim());
+}
+
+function formatIssueActivityValue(
+  propKey: string,
+  value: string | null | undefined,
+  labels: Map<string, string>,
+) {
+  if (!value) return '-';
+  if (labels.has(value)) return labels.get(value)!;
+  if (propKey === 'startDate' || propKey === 'dueDate') {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+    }
+  }
+  if (propKey === 'doneRatio') return `${value}%`;
+  return value;
+}
+
+async function buildIssueJournalActivityDescription(
+  db: Tx,
+  details: Prisma.JournalDetailCreateWithoutJournalInput[],
+  notes: string | undefined,
+) {
+  const labels = new Map<string, string>();
+  const [
+    projectIds,
+    trackerIds,
+    statusIds,
+    assigneeIds,
+    assigneeGroupIds,
+    categoryIds,
+    versionIds,
+    parentIds,
+  ] = [
+    collectJournalDetailIds(details, 'projectId'),
+    collectJournalDetailIds(details, 'trackerId'),
+    collectJournalDetailIds(details, 'statusId'),
+    collectJournalDetailIds(details, 'assigneeId'),
+    collectJournalDetailIds(details, 'assigneeGroupId'),
+    collectJournalDetailIds(details, 'categoryId'),
+    collectJournalDetailIds(details, 'versionId'),
+    collectJournalDetailIds(details, 'parentId'),
+  ];
+
+  await Promise.all([
+    projectIds.length
+      ? db.project.findMany({ where: { id: { in: projectIds } }, select: { id: true, name: true } })
+        .then((rows) => rows.forEach((row) => setLabel(labels, row.id, row.name)))
+      : Promise.resolve(),
+    trackerIds.length
+      ? db.tracker.findMany({ where: { id: { in: trackerIds } }, select: { id: true, name: true } })
+        .then((rows) => rows.forEach((row) => setLabel(labels, row.id, row.name)))
+      : Promise.resolve(),
+    statusIds.length
+      ? db.issueStatus.findMany({ where: { id: { in: statusIds } }, select: { id: true, name: true } })
+        .then((rows) => rows.forEach((row) => setLabel(labels, row.id, row.name)))
+      : Promise.resolve(),
+    assigneeIds.length
+      ? db.user.findMany({ where: { id: { in: assigneeIds } }, select: { id: true, login: true, firstname: true, lastname: true } })
+        .then((rows) => rows.forEach((row) => setLabel(labels, row.id, `${row.lastname} ${row.firstname}`.trim() || row.login)))
+      : Promise.resolve(),
+    assigneeGroupIds.length
+      ? db.group.findMany({ where: { id: { in: assigneeGroupIds } }, select: { id: true, name: true } })
+        .then((rows) => rows.forEach((row) => setLabel(labels, row.id, `[グループ] ${row.name}`)))
+      : Promise.resolve(),
+    categoryIds.length
+      ? db.issueCategory.findMany({ where: { id: { in: categoryIds } }, select: { id: true, name: true } })
+        .then((rows) => rows.forEach((row) => setLabel(labels, row.id, row.name)))
+      : Promise.resolve(),
+    versionIds.length
+      ? db.version.findMany({ where: { id: { in: versionIds } }, select: { id: true, name: true } })
+        .then((rows) => rows.forEach((row) => setLabel(labels, row.id, row.name)))
+      : Promise.resolve(),
+    parentIds.length
+      ? db.issue.findMany({ where: { id: { in: parentIds } }, select: { id: true, number: true, subject: true } })
+        .then((rows) => rows.forEach((row) => setLabel(labels, row.id, `#${row.number} ${row.subject}`)))
+      : Promise.resolve(),
+  ]);
+
+  const changes = details.map((detail) => {
+    const label = ISSUE_ACTIVITY_FIELD_LABELS[detail.propKey] ?? detail.propKey;
+    const oldValue = formatIssueActivityValue(detail.propKey, detail.oldValue, labels);
+    const newValue = formatIssueActivityValue(detail.propKey, detail.newValue, labels);
+    return `${label}: ${oldValue} -> ${newValue}`;
+  });
+  if (notes !== undefined && notes.length > 0) changes.push(`コメント: ${notes}`);
+  return changes.length > 0 ? changes.join('\n') : null;
+}
+
+async function createIssueJournalActivity(
+  db: Tx,
+  issue: { id: string; projectId: string; number: number; subject: string },
+  userId: string,
+  details: Prisma.JournalDetailCreateWithoutJournalInput[],
+  notes: string | undefined,
+) {
+  await db.activity.create({
+    data: {
+      projectId: issue.projectId,
+      userId,
+      actType: details.length > 0 ? 'issue_update' : 'issue_comment',
+      actId: issue.id,
+      title: `#${issue.number} ${issue.subject}`,
+      description: await buildIssueJournalActivityDescription(db, details, notes),
     },
   });
 }
@@ -797,6 +937,7 @@ router.post(
               details: { create: details },
             },
           });
+          await createIssueJournalActivity(tx, next, req.user!.userId, details, undefined);
         }
 
         return next;
@@ -1358,6 +1499,7 @@ router.put(
           },
         });
         newJournalId = journal.id;
+        await createIssueJournalActivity(tx, next, req.user!.userId, details, notes);
       }
 
       const issueResult = await tx.issue.findUniqueOrThrow({

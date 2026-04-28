@@ -48,6 +48,7 @@ export default function ProjectSettingsPage() {
 
   const { data, isLoading } = useProject(id);
   const project = data?.data;
+  const canManageProject = Boolean(project?.permissions?.canManageProject);
 
   const projectsQuery = useProjects();
   const trackersQuery = useTrackers();
@@ -132,12 +133,12 @@ export default function ProjectSettingsPage() {
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!project || !hasChanges) return;
+    if (!project || !canManageProject || !hasChanges) return;
     setConfirmAction('save');
   };
 
   const executeSave = () => {
-    if (!project) return;
+    if (!project || !canManageProject) return;
     updateMutation.mutate(
       {
       id: project.id,
@@ -154,22 +155,22 @@ export default function ProjectSettingsPage() {
   };
 
   const handleArchive = () => {
-    if (!project) return;
+    if (!project || !canManageProject) return;
     setConfirmAction('archive');
   };
 
   const handleUnarchive = () => {
-    if (!project) return;
+    if (!project || !canManageProject) return;
     setConfirmAction('unarchive');
   };
 
   const handleDelete = () => {
-    if (!project) return;
+    if (!project || !canManageProject) return;
     setConfirmAction('delete');
   };
 
   const executeArchive = () => {
-    if (!project) return;
+    if (!project || !canManageProject) return;
     updateMutation.mutate(
       { id: project.id, status: STATUS_ARCHIVED },
       { onSuccess: () => setConfirmAction(null) },
@@ -177,7 +178,7 @@ export default function ProjectSettingsPage() {
   };
 
   const executeUnarchive = () => {
-    if (!project) return;
+    if (!project || !canManageProject) return;
     updateMutation.mutate(
       { id: project.id, status: STATUS_ACTIVE },
       { onSuccess: () => setConfirmAction(null) },
@@ -185,7 +186,7 @@ export default function ProjectSettingsPage() {
   };
 
   const executeDelete = () => {
-    if (!project) return;
+    if (!project || !canManageProject) return;
     deleteMutation.mutate(project.id, {
       onSuccess: () => navigate('/projects'),
     });
@@ -212,7 +213,13 @@ export default function ProjectSettingsPage() {
       {identifier && <ProjectSubNav identifier={identifier} />}
       <div className="mx-auto max-w-3xl space-y-6">
       <h1 className="text-2xl font-bold text-slate-900">{t('nav.settings')}</h1>
+      {!canManageProject && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          このプロジェクト設定を変更する権限がありません。
+        </p>
+      )}
       <form onSubmit={handleSave} className="space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <fieldset disabled={!canManageProject} className="space-y-6">
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">{t('projects.name')}</label>
           <input
@@ -301,6 +308,8 @@ export default function ProjectSettingsPage() {
             ))}
           </div>
         </fieldset>
+        </fieldset>
+        {canManageProject && (
         <div className="flex flex-wrap gap-3">
           <button
             type="submit"
@@ -334,6 +343,7 @@ export default function ProjectSettingsPage() {
             {t('app.delete')}
           </button>
         </div>
+        )}
       </form>
       </div>
 

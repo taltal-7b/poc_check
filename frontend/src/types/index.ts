@@ -318,6 +318,7 @@ export interface Activity {
   userId: string | null;
   createdAt: string;
   project?: Project;
+  user?: Pick<User, 'id' | 'login' | 'firstname' | 'lastname'> | null;
 }
 
 export interface CustomField {

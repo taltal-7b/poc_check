@@ -78,26 +78,32 @@ router.get(
       const userId = req.query.user_id;
       if (typeof userId === 'string' && userId.length > 0) {
         const groupIds = await getUserGroupIds(userId);
-        if (groupIds.length > 0) {
-          const groupAssignedIssues = await prisma.issue.findMany({
-            where: {
-              assigneeGroupId: { in: groupIds },
-              ...(requestedProjectId
-                ? { projectId: requestedProjectId }
-                : visibleProjectIds !== null
-                  ? { projectId: { in: visibleProjectIds } }
-                  : {}),
-            },
-            select: { id: true },
-          });
-          const issueIds = groupAssignedIssues.map((issue) => issue.id);
-          where.OR = [
-            { userId },
-            ...(issueIds.length > 0 ? [{ actType: 'issue', actId: { in: issueIds } }] : []),
-          ];
-        } else {
-          where.userId = userId;
-        }
+        const assignedIssues = await prisma.issue.findMany({
+          where: {
+            OR: [
+              { assigneeId: userId },
+              ...(groupIds.length > 0 ? [{ assigneeGroupId: { in: groupIds } }] : []),
+            ],
+            ...(requestedProjectId
+              ? { projectId: requestedProjectId }
+              : visibleProjectIds !== null
+                ? { projectId: { in: visibleProjectIds } }
+                : {}),
+          },
+          select: { id: true },
+        });
+        const issueIds = assignedIssues.map((issue) => issue.id);
+        where.OR = [
+          { userId },
+          ...(issueIds.length > 0
+            ? [{ actType: { in: ['issue', 'issue_update', 'issue_comment'] }, actId: { in: issueIds } }]
+            : []),
+        ];
+      }
+
+      const type = req.query.type;
+      if (typeof type === 'string' && type.length > 0) {
+        where.actType = type;
       }
 
       const from = req.query.from;
@@ -124,7 +130,20 @@ router.get(
         }),
       ]);
 
-      return sendPaginated(res, rows, {
+      const userIds = Array.from(new Set(rows.map((row) => row.userId).filter((id): id is string => Boolean(id))));
+      const users = userIds.length
+        ? await prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, login: true, firstname: true, lastname: true },
+        })
+        : [];
+      const userMap = new Map(users.map((user) => [user.id, user]));
+      const enrichedRows = rows.map((row) => ({
+        ...row,
+        user: row.userId ? userMap.get(row.userId) ?? null : null,
+      }));
+
+      return sendPaginated(res, enrichedRows, {
         total,
         page,
         perPage,

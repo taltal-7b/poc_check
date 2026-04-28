@@ -33,6 +33,63 @@ function typeIcon(actType: string) {
   return ActivityIcon;
 }
 
+function activityTypeLabel(actType: string): string {
+  const key = actType.trim().toLowerCase();
+  const directMap: Record<string, string> = {
+    issue: 'チケット',
+    issue_create: 'チケット - 新規作成',
+    issue_update: 'チケット - 更新',
+    issue_comment: 'チケット - 新しいコメント',
+    issue_delete: 'チケット - 削除',
+    wiki: 'Wiki',
+    wiki_create: 'Wiki - 新規作成',
+    wiki_edit: 'Wiki - 更新',
+    wiki_delete: 'Wiki - 削除',
+    news: 'ニュース',
+    news_create: 'ニュース - 新規作成',
+    news_update: 'ニュース - 更新',
+    news_comment: 'ニュース - 新しいコメント',
+    news_delete: 'ニュース - 削除',
+    message: 'メッセージ',
+    message_create: 'メッセージ - 新規投稿',
+    message_update: 'メッセージ - 更新',
+    message_delete: 'メッセージ - 削除',
+    board: 'フォーラム',
+    board_create: 'フォーラム - 新規作成',
+    board_update: 'フォーラム - 更新',
+    board_delete: 'フォーラム - 削除',
+    document: '文書',
+    document_create: '文書 - 新規作成',
+    document_update: '文書 - 更新',
+    document_delete: '文書 - 削除',
+    file: 'ファイル',
+    file_add: 'ファイル - 追加',
+    file_delete: 'ファイル - 削除',
+    version: 'バージョン',
+    version_create: 'バージョン - 新規作成',
+    version_update: 'バージョン - 更新',
+    version_delete: 'バージョン - 削除',
+    time_entry: '工数',
+    time_entry_create: '工数 - 新規登録',
+    time_entry_update: '工数 - 更新',
+    time_entry_delete: '工数 - 削除',
+    changeset: '変更セット',
+  };
+  if (directMap[key]) return directMap[key];
+
+  if (key.startsWith('issue_')) return 'チケット関連';
+  if (key.startsWith('wiki_')) return 'Wiki関連';
+  if (key.startsWith('news_')) return 'ニュース関連';
+  if (key.startsWith('message_')) return 'メッセージ関連';
+  if (key.startsWith('board_')) return 'フォーラム関連';
+  if (key.startsWith('document_')) return '文書関連';
+  if (key.startsWith('time_entry_')) return '工数関連';
+  if (key.startsWith('version_')) return 'バージョン関連';
+  if (key.startsWith('file_')) return 'ファイル関連';
+
+  return 'その他';
+}
+
 export default function ActivityPage() {
   const { t } = useTranslation();
   const { identifier } = useParams<{ identifier?: string }>();
@@ -77,7 +134,7 @@ export default function ActivityPage() {
             <option value="">All</option>
             {types.map((x) => (
               <option key={x} value={x}>
-                {x}
+                {activityTypeLabel(x)}
               </option>
             ))}
           </select>
@@ -114,7 +171,7 @@ export default function ActivityPage() {
                         {r.project.name}
                       </Link>
                     )}
-                    <span>{r.actType}</span>
+                    <span>{activityTypeLabel(r.actType)}</span>
                     <span>{r.createdAt ? format(parseISO(r.createdAt), 'yyyy-MM-dd HH:mm') : ''}</span>
                   </div>
                 </div>
