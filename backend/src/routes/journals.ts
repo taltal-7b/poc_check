@@ -3,9 +3,20 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
 import { authenticate } from '../middleware/auth';
+import { notifyIssueEvent } from '../services/notification-service';
+import { logger } from '../utils/logger';
 import { z } from 'zod';
 
 const router = Router();
+
+function dispatchIssueCommentNotification(issueId: string, actorId: string) {
+  notifyIssueEvent(issueId, actorId, 'commented').catch((error) => {
+    logger.warn('チケットコメント通知の送信準備に失敗しました', {
+      issueId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}
 
 function catchAsync(
   fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>,
@@ -54,6 +65,7 @@ router.put(
       },
     });
 
+    dispatchIssueCommentNotification(journal.issueId, req.user!.userId);
     return sendSuccess(res, updated);
   }),
 );
@@ -83,6 +95,7 @@ router.delete(
       await prisma.journal.delete({ where: { id: journal.id } });
     }
 
+    dispatchIssueCommentNotification(journal.issueId, req.user!.userId);
     return sendSuccess(res, { deleted: true });
   }),
 );

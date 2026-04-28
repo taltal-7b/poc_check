@@ -5,6 +5,8 @@ import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
 import { authenticate } from '../middleware/auth';
 import { hasAnyProjectPermission } from '../utils/project-permissions';
+import { notifyBoardEvent, notifyMessageEvent } from '../services/notification-service';
+import { logger } from '../utils/logger';
 import { z } from 'zod';
 
 const router = Router({ mergeParams: true });
@@ -40,6 +42,30 @@ type MessageWithAuthor = Prisma.MessageGetPayload<{
   include: { author: { select: { id: true; login: true; firstname: true; lastname: true } } };
 }>;
 type MessageTree = MessageWithAuthor & { replies: MessageTree[] };
+
+function dispatchBoardNotification(boardId: string, actorId: string, action: 'created' | 'updated') {
+  notifyBoardEvent(boardId, actorId, action).catch((error) => {
+    logger.warn('フォーラム通知の送信準備に失敗しました', {
+      boardId,
+      action,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}
+
+function dispatchMessageNotification(
+  messageId: string,
+  actorId: string,
+  action: 'created' | 'updated' | 'commented',
+) {
+  notifyMessageEvent(messageId, actorId, action).catch((error) => {
+    logger.warn('フォーラムメッセージ通知の送信準備に失敗しました', {
+      messageId,
+      action,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}
 
 async function loadMessageReplyTree(boardId: string, rootId: string): Promise<MessageTree | null> {
   const root = await prisma.message.findFirst({
@@ -210,6 +236,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         position: parsed.data.position ?? 0,
       },
     });
+    dispatchBoardNotification(board.id, req.user!.userId, 'created');
     return sendSuccess(res, board, 201);
   } catch (e) {
     next(e);
@@ -294,6 +321,7 @@ router.post('/:id/messages', authenticate, async (req: Request, res: Response, n
         author: { select: { id: true, login: true, firstname: true, lastname: true } },
       },
     });
+    dispatchMessageNotification(message.id, req.user!.userId, 'created');
     return sendSuccess(res, message, 201);
   } catch (e) {
     next(e);
@@ -369,6 +397,7 @@ router.post('/:boardId/messages/:id/reply', authenticate, async (req: Request, r
         data: { updatedAt: new Date() },
       });
     }
+    dispatchMessageNotification(message.id, req.user!.userId, 'commented');
     return sendSuccess(res, message, 201);
   } catch (e) {
     next(e);
@@ -423,6 +452,7 @@ router.put('/:boardId/messages/:messageId', authenticate, async (req: Request, r
         });
       }
     }
+    dispatchMessageNotification(message.id, req.user!.userId, isComment ? 'commented' : 'updated');
     return sendSuccess(res, message);
   } catch (e) {
     next(e);
@@ -536,6 +566,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
         ...(parsed.data.position !== undefined && { position: parsed.data.position }),
       },
     });
+    dispatchBoardNotification(board.id, req.user!.userId, 'updated');
     return sendSuccess(res, board);
   } catch (e) {
     next(e);

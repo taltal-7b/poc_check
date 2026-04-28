@@ -1,13 +1,14 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import nodemailer from 'nodemailer';
 import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
 import { authenticate, requireAdmin } from '../middleware/auth';
 import { config } from '../config';
+import { sendMail } from '../services/mail-service';
 import { z } from 'zod';
 
 const router = Router();
+const TEST_EMAIL_RECIPIENT = 'yusuke-arauchi@emint.co.jp';
 
 router.use(authenticate, requireAdmin);
 
@@ -52,32 +53,13 @@ router.put('/', async (req: Request, res: Response, next: NextFunction) => {
 
 router.post('/test_email', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const transporter = nodemailer.createTransport({
-      host: config.SMTP_HOST,
-      port: config.SMTP_PORT,
-      secure: config.SMTP_PORT === 465,
-      auth:
-        config.SMTP_USER && config.SMTP_PASS
-          ? { user: config.SMTP_USER, pass: config.SMTP_PASS }
-          : undefined,
-    });
-
-    const adminUser = await prisma.user.findFirst({
-      where: { admin: true, status: 1 },
-      orderBy: { createdAt: 'asc' },
-    });
-    if (!adminUser?.mail) {
-      throw AppError.badRequest('管理者ユーザーのメールアドレスが見つかりません');
-    }
-
-    await transporter.sendMail({
-      from: config.SMTP_FROM,
-      to: adminUser.mail,
+    await sendMail({
+      to: [TEST_EMAIL_RECIPIENT],
       subject: 'TaskNova — メール送信テスト',
       text: 'これは SMTP 設定のテスト送信です。',
     });
 
-    return sendSuccess(res, { sent: true, to: adminUser.mail });
+    return sendSuccess(res, { sent: true, to: TEST_EMAIL_RECIPIENT });
   } catch (err) {
     next(err);
   }

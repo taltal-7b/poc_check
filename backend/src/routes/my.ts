@@ -156,6 +156,61 @@ router.put('/page', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+function preferenceOthersObject(value: Prisma.JsonValue | null | undefined): Prisma.InputJsonObject {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Prisma.InputJsonObject;
+  }
+  return {};
+}
+
+router.get('/mail_notifications', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const pref = await prisma.userPreference.findUnique({
+      where: { userId: req.user!.userId },
+    });
+    const others = preferenceOthersObject(pref?.others);
+    return sendSuccess(res, {
+      mailNotificationsEnabled: others.mailNotificationsEnabled !== false,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/mail_notifications', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z
+      .object({
+        mailNotificationsEnabled: z.boolean(),
+      })
+      .parse(req.body);
+
+    const current = await prisma.userPreference.findUnique({
+      where: { userId: req.user!.userId },
+    });
+    const others = {
+      ...preferenceOthersObject(current?.others),
+      mailNotificationsEnabled: body.mailNotificationsEnabled,
+    };
+
+    const pref = await prisma.userPreference.upsert({
+      where: { userId: req.user!.userId },
+      create: {
+        userId: req.user!.userId,
+        others,
+      },
+      update: { others },
+    });
+
+    const nextOthers = preferenceOthersObject(pref.others);
+    return sendSuccess(res, {
+      mailNotificationsEnabled: nextOthers.mailNotificationsEnabled !== false,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/api_key', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const apiKey = crypto.randomBytes(32).toString('hex');

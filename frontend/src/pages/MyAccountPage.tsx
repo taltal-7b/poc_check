@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
-import { useMe, useUpdateUser } from '../api/hooks';
+import { useMailNotificationPreference, useMe, useUpdateMailNotificationPreference, useUpdateMe } from '../api/hooks';
 import api from '../api/client';
 import type { User } from '../types';
 
@@ -23,6 +23,8 @@ export default function MyAccountPage() {
   const [firstname, setFirstname] = useState('');
   const [lastname, setLastname] = useState('');
   const [email, setEmail] = useState('');
+  const [mailNotificationsEnabled, setMailNotificationsEnabled] = useState(true);
+  const [profileMessage, setProfileMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     if (!me) return;
@@ -31,21 +33,40 @@ export default function MyAccountPage() {
     setEmail(me.mail);
   }, [me]);
 
-  const updateUser = useUpdateUser();
+  const updateMe = useUpdateMe();
+  const mailPreferenceQuery = useMailNotificationPreference();
+  const updateMailPreference = useUpdateMailNotificationPreference();
+
+  useEffect(() => {
+    const pref = mailPreferenceQuery.data?.data;
+    if (!pref) return;
+    setMailNotificationsEnabled(pref.mailNotificationsEnabled);
+  }, [mailPreferenceQuery.data]);
 
   const saveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!me) return;
-    await updateUser.mutateAsync({
-      id: me.id,
-      firstname,
-      lastname,
-      mail: email,
-      language: 'ja',
-    });
-    await i18n.changeLanguage('ja');
-    localStorage.setItem('language', 'ja');
-    qc.invalidateQueries({ queryKey: ['me'] });
+    try {
+      await updateMe.mutateAsync({
+        firstname,
+        lastname,
+        mail: email,
+        language: 'ja',
+      });
+      await i18n.changeLanguage('ja');
+      localStorage.setItem('language', 'ja');
+      qc.invalidateQueries({ queryKey: ['me'] });
+      setProfileMessage({ type: 'success', text: 'プロフィールを保存しました' });
+    } catch (error: any) {
+      const message = error?.response?.data?.error?.message || 'プロフィールの保存に失敗しました';
+      setProfileMessage({ type: 'error', text: message });
+    }
+    setTimeout(() => setProfileMessage(null), 5000);
+  };
+
+  const saveMailPreference = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await updateMailPreference.mutateAsync({ mailNotificationsEnabled });
   };
 
   const [currentPassword, setCurrentPassword] = useState('');
@@ -109,6 +130,17 @@ export default function MyAccountPage() {
 
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-800 mb-4">{t('myAccount.profile')}</h2>
+        {profileMessage && (
+          <div
+            className={`mb-4 rounded-lg px-4 py-3 text-sm ${
+              profileMessage.type === 'success'
+                ? 'bg-green-50 text-green-800 border border-green-200'
+                : 'bg-red-50 text-red-800 border border-red-200'
+            }`}
+          >
+            {profileMessage.text}
+          </div>
+        )}
         <form onSubmit={saveProfile} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <label className="block text-sm">
@@ -139,12 +171,39 @@ export default function MyAccountPage() {
           </label>
           <button
             type="submit"
-            disabled={updateUser.isPending}
+            disabled={updateMe.isPending}
             className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
           >
             {t('app.save')}
           </button>
         </form>
+      </section>
+
+      <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-800 mb-4">{t('myAccount.mailNotifications')}</h2>
+        {mailPreferenceQuery.isLoading ? (
+          <p className="text-sm text-gray-500">{t('app.loading')}</p>
+        ) : (
+          <form onSubmit={saveMailPreference} className="space-y-4">
+            <label className="flex items-center gap-2 text-sm text-gray-800">
+              <input
+                type="checkbox"
+                checked={mailNotificationsEnabled}
+                onChange={(e) => setMailNotificationsEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              {t('myAccount.mailNotificationsEnabled')}
+            </label>
+            <p className="text-sm text-gray-600">{t('myAccount.mailNotificationsHelp')}</p>
+            <button
+              type="submit"
+              disabled={updateMailPreference.isPending}
+              className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+            >
+              {updateMailPreference.isPending ? t('app.loading') : t('app.save')}
+            </button>
+          </form>
+        )}
       </section>
 
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">

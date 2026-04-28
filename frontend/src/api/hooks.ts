@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from './client';
 import { useAuthStore } from '../stores/auth';
-import type { ApiResponse, Project, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Version, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, WorkflowSnapshot, CopyWorkflowPayload, IssueStatusUsage } from '../types';
+import type { ApiResponse, Project, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Version, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, WorkflowSnapshot, CopyWorkflowPayload, IssueStatusUsage, MailNotificationPreference } from '../types';
 
 function get<T>(url: string, params?: Record<string, unknown>) {
   return api.get<ApiResponse<T>>(url, { params }).then(r => r.data);
@@ -31,12 +31,32 @@ export const useMe = () => {
     gcTime: 10 * 60 * 1000,
   });
 };
+export const useUpdateMe = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Pick<User, 'firstname' | 'lastname' | 'mail' | 'language'>) => put<User>('/my', body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+  });
+};
 export const useLogin = () =>
   useMutation({
     mutationFn: (body: { login: string; password: string; totpCode?: string }) =>
       post<{ accessToken: string; refreshToken: string; user: User; totpRequired?: boolean }>('/auth/login', body),
   });
 export const useRegister = () => useMutation({ mutationFn: (body: { login: string; firstname: string; lastname: string; mail: string; password: string }) => post('/auth/register', body) });
+
+export const useMailNotificationPreference = () =>
+  useQuery({
+    queryKey: ['mailNotificationPreference'],
+    queryFn: () => get<MailNotificationPreference>('/my/mail_notifications'),
+  });
+export const useUpdateMailNotificationPreference = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: MailNotificationPreference) => put<MailNotificationPreference>('/my/mail_notifications', body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['mailNotificationPreference'] }),
+  });
+};
 
 // ========== Projects ==========
 export const useProjects = (params?: Record<string, unknown>) => useQuery({ queryKey: ['projects', params], queryFn: () => get<Project[]>('/projects', params) });

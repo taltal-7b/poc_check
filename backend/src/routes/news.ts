@@ -4,9 +4,21 @@ import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
 import { authenticate } from '../middleware/auth';
 import { hasAnyProjectPermission } from '../utils/project-permissions';
+import { notifyNewsEvent } from '../services/notification-service';
+import { logger } from '../utils/logger';
 import { z } from 'zod';
 
 const router = Router({ mergeParams: true });
+
+function dispatchNewsNotification(newsId: string, actorId: string, action: 'created' | 'updated' | 'commented') {
+  notifyNewsEvent(newsId, actorId, action).catch((error) => {
+    logger.warn('ニュース通知の送信準備に失敗しました', {
+      newsId,
+      action,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}
 
 function param(req: Request, key: string): string | undefined {
   const v = req.params[key];
@@ -240,6 +252,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         comments: true,
       },
     });
+    dispatchNewsNotification(news.id, req.user!.userId, 'created');
     return sendSuccess(res, await withNewsAttachments(full), 201);
   } catch (e) {
     next(e);
@@ -280,6 +293,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
     });
     const { comments: putComments, ...putRest } = news;
     const putWithTree = { ...putRest, comments: buildCommentTree(putComments as CommentWithAuthor[]) };
+    dispatchNewsNotification(news.id, req.user!.userId, 'updated');
     return sendSuccess(res, await withNewsAttachments(putWithTree));
   } catch (e) {
     next(e);
@@ -337,6 +351,7 @@ router.post('/:id/comments', authenticate, async (req: Request, res: Response, n
         author: { select: commentAuthorSelect },
       },
     });
+    dispatchNewsNotification(id, req.user!.userId, 'commented');
     return sendSuccess(res, comment, 201);
   } catch (e) {
     next(e);

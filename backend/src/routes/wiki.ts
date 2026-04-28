@@ -5,10 +5,22 @@ import { AppError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
 import { authenticate, optionalAuth } from '../middleware/auth';
 import { hasAnyProjectPermission, userHasProjectRoleName } from '../utils/project-permissions';
+import { notifyWikiPageEvent } from '../services/notification-service';
+import { logger } from '../utils/logger';
 import { z } from 'zod';
 import PDFDocument from 'pdfkit';
 
 const router = Router({ mergeParams: true });
+
+function dispatchWikiNotification(pageId: string, actorId: string, action: 'created' | 'updated') {
+  notifyWikiPageEvent(pageId, actorId, action).catch((error) => {
+    logger.warn('Wiki通知の送信準備に失敗しました', {
+      pageId,
+      action,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}
 
 function param(req: Request, key: string): string | undefined {
   const v = req.params[key];
@@ -533,6 +545,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
         },
       },
     });
+    dispatchWikiNotification(page.id, userId, 'created');
     return sendSuccess(res, await withWikiAttachments(full), 201);
   } catch (e) {
     next(e);
@@ -922,6 +935,7 @@ router.put('/:title', authenticate, async (req: Request, res: Response, next: Ne
         },
       },
     });
+    dispatchWikiNotification(page.id, userId, 'updated');
     return sendSuccess(res, await withWikiAttachments(full));
   } catch (e) {
     next(e);

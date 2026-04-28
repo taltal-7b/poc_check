@@ -22,7 +22,7 @@
   "admin": { "title": "管理", "info": "システム情報", "plugins": "プラグイン", "testEmail": "テストメール送信", "selectedCount": "{{count}} 件選択中" },
   "enumerations": { "pageTitle": "列挙値", "priorities": "チケットの優先度", "documentCategories": "文書カテゴリ", "timeActivities": "作業分類", "isDefault": "既定", "active": "有効" },
   "myPage": { "title": "マイページ", "customize": "カスタマイズ", "assignedToMe": "担当しているチケット", "reportedByMe": "報告したチケット", "calendar7": "カレンダー（7日間）" },
-  "myAccount": { "profile": "プロフィール", "language": "言語", "apiKey": "APIキー", "regenerate": "再生成", "twoFactor": "二要素認証", "enableTotp": "2FAを有効にする", "qrCode": "QRコード", "deleteAccount": "アカウント削除", "deleteWarning": "この操作は取り消せません", "deleteConfirm": "削除を確認するためにDELETEと入力してください" },
+  "myAccount": { "profile": "プロフィール", "language": "言語", "mailNotifications": "メール通知", "mailNotificationsEnabled": "メール通知を受け取る", "mailNotificationsHelp": "担当しているチケットや作成したコンテンツの更新、参加プロジェクトへのメンバー追加などをメールで通知します。", "apiKey": "APIキー", "regenerate": "再生成", "twoFactor": "二要素認証", "enableTotp": "2FAを有効にする", "qrCode": "QRコード", "deleteAccount": "アカウント削除", "deleteWarning": "この操作は取り消せません", "deleteConfirm": "削除を確認するためにDELETEと入力してください" },
   "search": { "title": "検索", "placeholder": "検索キーワード...", "noResults": "検索結果がありません", "scope": { "all": "全プロジェクト" } },
   "activity": {
     "title": "アクティビティ",

@@ -5,8 +5,25 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
 import { authenticate, requireAdmin } from '../middleware/auth';
+import { notifyProjectMemberAdded } from '../services/notification-service';
+import { logger } from '../utils/logger';
 
 const router = Router();
+
+function dispatchMemberAddedNotification(params: {
+  projectId: string;
+  actorId: string;
+  userId?: string | null;
+  groupId?: string | null;
+}) {
+  notifyProjectMemberAdded(params).catch((error) => {
+    logger.warn('グループ管理のプロジェクト追加通知に失敗しました', {
+      projectId: params.projectId,
+      groupId: params.groupId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}
 
 router.use(authenticate, requireAdmin);
 
@@ -225,6 +242,7 @@ router.post('/:id/projects', async (req: Request, res: Response, next: NextFunct
       });
     });
 
+    dispatchMemberAddedNotification({ projectId: body.projectId, actorId: req.user!.userId, groupId });
     return sendSuccess(
       res,
       {

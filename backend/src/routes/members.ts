@@ -4,9 +4,27 @@ import { AppError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
 import { authenticate } from '../middleware/auth';
 import { userCanManageProject } from '../utils/project-permissions';
+import { notifyProjectMemberAdded } from '../services/notification-service';
+import { logger } from '../utils/logger';
 import { z } from 'zod';
 
 const router = Router({ mergeParams: true });
+
+function dispatchMemberAddedNotification(params: {
+  projectId: string;
+  actorId: string;
+  userId?: string | null;
+  groupId?: string | null;
+}) {
+  notifyProjectMemberAdded(params).catch((error) => {
+    logger.warn('プロジェクトメンバー追加通知の送信準備に失敗しました', {
+      projectId: params.projectId,
+      userId: params.userId,
+      groupId: params.groupId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}
 
 function catchAsync(
   fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>,
@@ -158,6 +176,7 @@ router.post(
           },
         });
       });
+      dispatchMemberAddedNotification({ projectId, actorId: req.user!.userId, userId });
       return sendSuccess(res, member, 201);
     }
 
@@ -198,6 +217,7 @@ router.post(
         },
       });
     });
+    dispatchMemberAddedNotification({ projectId, actorId: req.user!.userId, groupId });
     return sendSuccess(res, member, 201);
   }),
 );

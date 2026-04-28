@@ -6,10 +6,27 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
 import { authenticate, requireAdmin } from '../middleware/auth';
+import { notifyProjectMemberAdded } from '../services/notification-service';
+import { logger } from '../utils/logger';
 
 const router = Router();
 
 const BCRYPT_ROUNDS = 12;
+
+function dispatchMemberAddedNotification(params: {
+  projectId: string;
+  actorId: string;
+  userId?: string | null;
+  groupId?: string | null;
+}) {
+  notifyProjectMemberAdded(params).catch((error) => {
+    logger.warn('ユーザー管理のプロジェクト追加通知に失敗しました', {
+      projectId: params.projectId,
+      userId: params.userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}
 
 function serializeUser(user: {
   id: string;
@@ -290,6 +307,7 @@ router.post('/:id/projects', requireAdmin, async (req: Request, res: Response, n
       });
     });
 
+    dispatchMemberAddedNotification({ projectId: body.projectId, actorId: req.user!.userId, userId });
     return sendSuccess(res, serializeUserProject(member), 201);
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {

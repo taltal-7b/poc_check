@@ -4,6 +4,8 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
 import { authenticate, optionalAuth, type AuthPayload } from '../middleware/auth';
+import { notifyIssueEvent } from '../services/notification-service';
+import { logger } from '../utils/logger';
 import {
   getUserGroupIds,
   getUserProjectPermissionSet,
@@ -14,6 +16,20 @@ import { z } from 'zod';
 const router = Router({ mergeParams: true });
 
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+function dispatchIssueNotification(
+  issueId: string,
+  actorId: string,
+  action: 'created' | 'updated' | 'commented',
+) {
+  notifyIssueEvent(issueId, actorId, action).catch((error) => {
+    logger.warn('チケット通知の送信準備に失敗しました', {
+      issueId,
+      action,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}
 
 const ISSUE_JOURNAL_KEYS = [
   'projectId',
@@ -943,6 +959,7 @@ router.post(
         return next;
       });
 
+      dispatchIssueNotification(after.id, req.user!.userId, 'updated');
       updated.push(after);
     }
 
@@ -1119,6 +1136,7 @@ router.post(
       });
     });
 
+    dispatchIssueNotification(created.id, req.user!.userId, 'created');
     return sendSuccess(res, created, 201);
   }),
 );
@@ -1517,6 +1535,9 @@ router.put(
       return { ...issueResult, journalId: newJournalId };
     });
 
+    if (updated.journalId) {
+      dispatchIssueNotification(updated.id, req.user!.userId, onlyNotesUpdate ? 'commented' : 'updated');
+    }
     return sendSuccess(res, updated);
   }),
 );
@@ -1609,6 +1630,7 @@ router.post(
       });
     });
 
+    dispatchIssueNotification(created.id, req.user!.userId, 'created');
     return sendSuccess(res, created, 201);
   }),
 );

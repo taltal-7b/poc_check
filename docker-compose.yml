@@ -29,7 +29,12 @@ services:
       JWT_SECRET: change-me-in-production-jwt-secret-key
       JWT_REFRESH_SECRET: change-me-in-production-refresh-secret-key
       PORT: "3000"
-      FRONTEND_URL: http://localhost:5174
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5174}
+      SMTP_HOST: ${SMTP_HOST:-localhost}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@tasknova.local}
       UPLOAD_DIR: /app/uploads
       NODE_ENV: development
     ports:

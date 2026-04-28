@@ -277,6 +277,10 @@ export interface UserDetail extends User {
   projects?: UserProjectAssignment[];
 }
 
+export interface MailNotificationPreference {
+  mailNotificationsEnabled: boolean;
+}
+
 export interface Member {
   id: string;
   projectId: string;
