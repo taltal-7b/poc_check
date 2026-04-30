@@ -2,42 +2,34 @@ import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { format, parseISO } from 'date-fns';
+import { Search } from 'lucide-react';
 import { useSearch } from '../api/hooks';
+import type { SearchResultItem, SearchResultType } from '../types';
 
-type ResultItem = {
-  id?: string;
-  title?: string;
-  subject?: string;
-  name?: string;
-  excerpt?: string;
-  summary?: string;
-  description?: string;
-  project?: { name?: string; identifier?: string };
-  projectId?: string;
-  createdAt?: string;
-  updatedAt?: string;
+const SEARCH_TYPES = ['issues', 'wiki', 'news', 'documents', 'messages'] as const;
+
+const TYPE_LABELS: Record<SearchResultType, string> = {
+  issues: 'チケット',
+  wiki: 'Wiki',
+  news: 'ニュース',
+  documents: '文書',
+  messages: 'フォーラム',
 };
 
-function unwrapRecord(raw: unknown): Record<string, unknown[]> {
-  if (raw == null) return {};
-  if (typeof raw === 'object' && raw !== null && 'data' in raw && typeof (raw as { data: unknown }).data === 'object') {
-    return ((raw as { data: Record<string, unknown[]> }).data ?? {}) as Record<string, unknown[]>;
+function formatDate(value?: string | null) {
+  if (!value) return '';
+  try {
+    return format(parseISO(value), 'yyyy-MM-dd HH:mm');
+  } catch {
+    return '';
   }
-  return raw as Record<string, unknown[]>;
 }
 
-function asList(v: unknown): ResultItem[] {
-  if (!Array.isArray(v)) return [];
-  return v as ResultItem[];
-}
-
-function titleOf(r: ResultItem) {
-  return r.title ?? r.subject ?? r.name ?? '—';
-}
-
-function excerptOf(r: ResultItem) {
-  const t = r.excerpt ?? r.summary ?? r.description ?? '';
-  return t.length > 200 ? `${t.slice(0, 200)}…` : t;
+function subtypeLabel(item: SearchResultItem) {
+  if (item.subtype === 'issue_comment') return 'コメント';
+  if (item.subtype === 'news_comment') return 'コメント';
+  if (item.subtype === 'reply') return '返信';
+  return TYPE_LABELS[item.type];
 }
 
 export default function SearchPage() {
@@ -45,83 +37,98 @@ export default function SearchPage() {
   const [searchParams] = useSearchParams();
   const q = (searchParams.get('q') ?? '').trim();
 
-  const { data: raw, isLoading, isFetching } = useSearch({
+  const { data: response, isLoading, isFetching, isError } = useSearch({
     q,
-    types: 'issues,wiki,news,documents,messages',
+    types: SEARCH_TYPES.join(','),
   });
 
-  const grouped = useMemo(() => {
-    const rec = unwrapRecord(raw);
-    return {
-      issues: asList(rec.issues ?? rec.issue),
-      wiki: asList(rec.wiki ?? rec.wiki_pages),
-      news: asList(rec.news),
-      documents: asList(rec.documents ?? rec.document),
-      messages: asList(rec.messages ?? rec.message),
-    };
-  }, [raw]);
-
-  const sections: { key: keyof typeof grouped; label: string }[] = [
-    { key: 'issues', label: t('issues.title') },
-    { key: 'wiki', label: t('wiki.title') },
-    { key: 'news', label: t('news.title') },
-    { key: 'documents', label: t('documents.title') },
-    { key: 'messages', label: t('forums.title') },
-  ];
-
+  const grouped = response?.data.results ?? {};
+  const total = response?.data.total ?? 0;
+  const flatResults = useMemo(
+    () =>
+      SEARCH_TYPES.flatMap((type) =>
+        (grouped[type] ?? []).map((item) => ({
+          ...item,
+          groupType: type,
+        })),
+      ),
+    [grouped],
+  );
   const loading = isLoading || isFetching;
 
   return (
-    <div className="space-y-8">
-      <h1 className="text-2xl font-bold text-gray-900">{t('search.title')}</h1>
-      {!q ? (
-        <p className="text-gray-500">{t('search.placeholder')}</p>
-      ) : loading ? (
-        <p className="text-gray-500">{t('app.loading')}</p>
-      ) : (
-        sections.map(({ key, label }) => {
-          const list = grouped[key];
-          if (!list.length) return null;
-          return (
-            <section key={key}>
-              <h2 className="text-lg font-semibold text-gray-800 mb-3">{label}</h2>
-              <ul className="space-y-3">
-                {list.map((item, idx) => {
-                  const pid = item.project?.identifier;
-                  const href =
-                    key === 'issues' && item.id && pid
-                      ? `/projects/${pid}/issues/${item.id}`
-                      : key === 'wiki' && item.title && pid
-                        ? `/projects/${pid}/wiki/${encodeURIComponent(item.title)}`
-                        : key === 'news' && pid
-                          ? `/projects/${pid}/news`
-                          : '#';
-                  const date = item.updatedAt ?? item.createdAt;
-                  return (
-                    <li key={item.id ?? idx} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                      {href !== '#' ? (
-                        <Link to={href} className="font-medium text-primary-700 hover:underline">
-                          {titleOf(item)}
-                        </Link>
-                      ) : (
-                        <span className="font-medium text-gray-900">{titleOf(item)}</span>
-                      )}
-                      {excerptOf(item) && <p className="mt-1 text-sm text-gray-600">{excerptOf(item)}</p>}
-                      <div className="mt-2 text-xs text-gray-500 flex flex-wrap gap-2">
-                        {item.project?.name && <span>{item.project.name}</span>}
-                        {date && <span>{format(parseISO(date), 'yyyy-MM-dd')}</span>}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          );
-        })
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-gray-200 pb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">{t('search.title')}</h1>
+          {q && (
+            <p className="mt-1 text-sm text-gray-600">
+              「{q}」の検索結果{!loading && `: ${total}件`}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {!q && (
+        <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600">
+          右上の検索ボックスにキーワードを入力してください。
+        </div>
       )}
-      {q && !loading && sections.every(({ key }) => grouped[key].length === 0) && (
-        <p className="text-gray-500">{t('search.noResults')}</p>
+
+      {q && loading && <p className="text-sm text-gray-500">{t('app.loading')}</p>}
+      {q && isError && <p className="text-sm text-red-600">{t('app.error')}</p>}
+
+      {q && !loading && !isError && total === 0 && (
+        <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600">
+          {t('search.noResults')}
+        </div>
       )}
+
+      {q && !loading && !isError && total > 0 && (
+        <div className="space-y-8">
+          {SEARCH_TYPES.map((type) => {
+            const list = grouped[type] ?? [];
+            if (!list.length) return null;
+            return (
+              <section key={type} className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold text-gray-900">{TYPE_LABELS[type]}</h2>
+                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{list.length}</span>
+                </div>
+                <ul className="divide-y divide-gray-200 rounded-lg border border-gray-200 bg-white">
+                  {list.map((item) => {
+                    const date = formatDate(item.updatedAt ?? item.createdAt);
+                    return (
+                      <li key={`${item.type}-${item.id}`} className="p-4">
+                        <div className="flex items-start gap-3">
+                          <Search size={16} className="mt-1 shrink-0 text-gray-400" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Link to={item.href} className="font-medium text-primary-700 hover:underline">
+                                {item.title}
+                              </Link>
+                              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
+                                {subtypeLabel(item)}
+                              </span>
+                            </div>
+                            {item.excerpt && <p className="mt-1 text-sm text-gray-700">{item.excerpt}</p>}
+                            <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+                              <span>{item.project.name}</span>
+                              {date && <span>{date}</span>}
+                            </div>
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
+      )}
+
+      {flatResults.length > 0 && <div className="sr-only">{flatResults.length} results</div>}
     </div>
   );
 }

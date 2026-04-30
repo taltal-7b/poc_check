@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from './client';
 import { useAuthStore } from '../stores/auth';
-import type { ApiResponse, Project, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Version, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, WorkflowSnapshot, CopyWorkflowPayload, IssueStatusUsage, MailNotificationPreference, TotpSetup, TotpStatus } from '../types';
+import type { ApiResponse, Project, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Version, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, WorkflowSnapshot, CopyWorkflowPayload, IssueStatusUsage, MailNotificationPreference, TotpSetup, TotpStatus, SearchResponse } from '../types';
 
 function get<T>(url: string, params?: Record<string, unknown>) {
   return api.get<ApiResponse<T>>(url, { params }).then(r => r.data);
@@ -618,4 +618,4 @@ export const useDeleteEnumeration = () => {
 };
 
 // ========== Search ==========
-export const useSearch = (params: { q: string; scope?: string; types?: string }) => useQuery({ queryKey: ['search', params], queryFn: () => get<Record<string, unknown[]>>('/search', params), enabled: !!params.q });
+export const useSearch = (params: { q: string; scope?: string; types?: string }) => useQuery({ queryKey: ['search', params], queryFn: () => get<SearchResponse>('/search', params), enabled: !!params.q });

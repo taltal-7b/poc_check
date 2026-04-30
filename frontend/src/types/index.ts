@@ -384,6 +384,28 @@ export interface Setting {
   value: string;
 }
 
+export type SearchResultType = 'issues' | 'news' | 'documents' | 'wiki' | 'messages';
+
+export interface SearchResultItem {
+  id: string;
+  type: SearchResultType;
+  subtype?: string;
+  title: string;
+  excerpt: string;
+  href: string;
+  project: { id: string; name: string; identifier: string };
+  createdAt?: string;
+  updatedAt?: string | null;
+}
+
+export interface SearchResponse {
+  q: string;
+  scope: string;
+  types: SearchResultType[];
+  total: number;
+  results: Partial<Record<SearchResultType, SearchResultItem[]>>;
+}
+
 export interface Pagination {
   total: number;
   page: number;
