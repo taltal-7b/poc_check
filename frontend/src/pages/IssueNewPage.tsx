@@ -320,6 +320,7 @@ export default function IssueNewPage() {
             type="range"
             min={0}
             max={100}
+            step={10}
             value={doneRatio}
             onChange={(e) => setDoneRatio(Number(e.target.value))}
             className="w-full accent-primary-600"

@@ -519,6 +519,7 @@ const createIssueSchema = z.object({
   startDate: z.coerce.date().nullable().optional(),
   dueDate: z.coerce.date().nullable().optional(),
   estimatedHours: z.number().nullable().optional(),
+  doneRatio: z.number().int().min(0).max(100).optional(),
   repository: z.string().nullable().optional(),
 });
 
@@ -1609,6 +1610,7 @@ router.post(
           startDate: body.startDate ?? null,
           dueDate: body.dueDate ?? null,
           estimatedHours: body.estimatedHours ?? null,
+          doneRatio: body.doneRatio ?? 0,
           repository: body.repository ?? null,
           closedOn: st.isClosed ? new Date() : null,
         },
