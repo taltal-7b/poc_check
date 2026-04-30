@@ -20,6 +20,8 @@ const TWO_FACTOR_PENDING_EXPIRES: jwt.SignOptions['expiresIn'] = '5m';
 const EMAIL_OTP_EXPIRES_MINUTES = 5;
 const EMAIL_OTP_LOGIN_ACTION = 'email_2fa_login';
 const EMAIL_OTP_SETUP_ACTION = 'email_2fa_setup';
+const PASSWORD_RESET_ACTION = 'password_reset';
+const PASSWORD_RESET_EXPIRES_MINUTES = 60;
 
 function serializeUser(user: {
   id: string;
@@ -75,6 +77,14 @@ function generateEmailOtp(): string {
   return String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
 }
 
+function sha256(value: string): string {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function randomToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
 async function verifyPassword(userId: string, currentPassword: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) {
@@ -89,6 +99,10 @@ async function verifyPassword(userId: string, currentPassword: string) {
 
 function otpExpiresAt(): Date {
   return new Date(Date.now() + EMAIL_OTP_EXPIRES_MINUTES * 60 * 1000);
+}
+
+function passwordResetExpiresAt(): Date {
+  return new Date(Date.now() + PASSWORD_RESET_EXPIRES_MINUTES * 60 * 1000);
 }
 
 async function issueEmailOtp(user: { id: string; login: string; mail: string }, action: string): Promise<void> {
@@ -137,6 +151,35 @@ async function consumeEmailOtp(userId: string, action: string, code: string): Pr
     }
   }
   return false;
+}
+
+async function issuePasswordResetMail(user: { id: string; login: string; mail: string }): Promise<void> {
+  const token = randomToken();
+  const resetUrl = `${config.FRONTEND_URL.replace(/\/+$/, '')}/password/reset?token=${encodeURIComponent(token)}`;
+  await prisma.$transaction(async (tx) => {
+    await tx.token.deleteMany({ where: { userId: user.id, action: PASSWORD_RESET_ACTION } });
+    await tx.token.create({
+      data: {
+        userId: user.id,
+        action: PASSWORD_RESET_ACTION,
+        value: sha256(token),
+        expiresAt: passwordResetExpiresAt(),
+      },
+    });
+  });
+  await sendMail({
+    to: [user.mail],
+    subject: 'TaskNova パスワード再設定のお知らせ',
+    text: [
+      'TaskNova のパスワード再設定リクエストを受け付けました。',
+      '',
+      '以下のリンクから新しいパスワードを設定してください。',
+      resetUrl,
+      '',
+      `このリンクの有効期限は ${PASSWORD_RESET_EXPIRES_MINUTES} 分です。`,
+      'このメールに心当たりがない場合は、破棄してください。',
+    ].join('\n'),
+  });
 }
 
 async function issueTokensForUser(userId: string) {
@@ -357,13 +400,70 @@ router.post(
     try {
       const body = z
         .object({
-          mail: z.string().email().optional(),
+          mail: z.string().email(),
         })
-        .passthrough()
         .parse(_req.body);
 
-      void body;
-      return sendSuccess(res, { ok: true, message: '繝ｪ繧ｯ繧ｨ繧ｹ繝医ｒ蜿励￠莉倥￠縺ｾ縺励◆' });
+      const user = await prisma.user.findUnique({
+        where: { mail: body.mail },
+        select: { id: true, login: true, mail: true, status: true },
+      });
+
+      if (user?.status === 1) {
+        await issuePasswordResetMail(user);
+      }
+
+      return sendSuccess(res, {
+        ok: true,
+        message: 'パスワード再設定用のメールを送信しました。',
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.post(
+  '/password/reset/confirm',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = z
+        .object({
+          token: z.string().min(1),
+          password: z.string().min(8).max(128),
+          passwordConfirmation: z.string().min(1),
+        })
+        .parse(req.body);
+
+      if (body.password !== body.passwordConfirmation) {
+        throw AppError.badRequest('新しいパスワードと確認用パスワードが一致しません');
+      }
+
+      const tokenHash = sha256(body.token);
+      const row = await prisma.token.findFirst({
+        where: {
+          action: PASSWORD_RESET_ACTION,
+          value: tokenHash,
+          expiresAt: { gt: new Date() },
+        },
+        include: { user: true },
+      });
+      if (!row || row.user.status !== 1) {
+        throw AppError.badRequest('パスワード再設定リンクが無効、または有効期限切れです');
+      }
+
+      const hashedPassword = await bcrypt.hash(body.password, BCRYPT_ROUNDS);
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: row.userId },
+          data: { hashedPassword },
+        }),
+        prisma.token.deleteMany({
+          where: { userId: row.userId, action: PASSWORD_RESET_ACTION },
+        }),
+      ]);
+
+      return sendSuccess(res, { ok: true, message: 'パスワードを再設定しました' });
     } catch (err) {
       next(err);
     }

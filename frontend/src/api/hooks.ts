@@ -49,6 +49,15 @@ export const useLoginTotp = () =>
       post<{ accessToken: string; refreshToken: string; user: User }>('/auth/login/totp', body),
   });
 export const useRegister = () => useMutation({ mutationFn: (body: { login: string; firstname: string; lastname: string; mail: string; password: string }) => post('/auth/register', body) });
+export const useRequestPasswordReset = () =>
+  useMutation({
+    mutationFn: (body: { mail: string }) => post<{ ok: boolean; message: string }>('/auth/password/reset', body),
+  });
+export const useConfirmPasswordReset = () =>
+  useMutation({
+    mutationFn: (body: { token: string; password: string; passwordConfirmation: string }) =>
+      post<{ ok: boolean; message: string }>('/auth/password/reset/confirm', body),
+  });
 
 export const useTotpStatus = () =>
   useQuery({

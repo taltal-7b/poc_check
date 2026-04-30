@@ -5,6 +5,8 @@ import { useProject } from './api/hooks';
 
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import HomePage from './pages/HomePage';
 import ProjectsPage from './pages/ProjectsPage';
 import ProjectNewPage from './pages/ProjectNewPage';
@@ -124,6 +126,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/password/forgot" element={<ForgotPasswordPage />} />
+      <Route path="/password/reset" element={<ResetPasswordPage />} />
 
       <Route element={<MainLayout />}>
         <Route index element={<HomePage />} />

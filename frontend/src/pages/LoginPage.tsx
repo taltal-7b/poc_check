@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
@@ -22,6 +22,7 @@ export default function LoginPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   const registered = searchParams.get('registered') === '1';
+  const reset = searchParams.get('reset') === '1';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,6 +94,11 @@ export default function LoginPage() {
               {t('auth.registerSuccess')}
             </div>
           )}
+          {reset && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              パスワードを再設定しました。新しいパスワードでログインしてください。
+            </div>
+          )}
           {formError && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</div>
           )}
@@ -159,8 +165,14 @@ export default function LoginPage() {
               {t('auth.register')}
             </Link>
           </p>
+          <p className="text-center text-sm text-slate-600">
+            <Link to="/password/forgot" className="font-medium text-primary-600 hover:text-primary-700">
+              {t('auth.forgotPassword')}
+            </Link>
+          </p>
         </form>
       </div>
     </div>
   );
 }
+
