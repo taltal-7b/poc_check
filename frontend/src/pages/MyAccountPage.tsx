@@ -25,6 +25,9 @@ export default function MyAccountPage() {
   const [email, setEmail] = useState('');
   const [mailNotificationsEnabled, setMailNotificationsEnabled] = useState(true);
   const [profileMessage, setProfileMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [mailPreferenceMessage, setMailPreferenceMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!me) return;
@@ -66,7 +69,14 @@ export default function MyAccountPage() {
 
   const saveMailPreference = async (e: React.FormEvent) => {
     e.preventDefault();
-    await updateMailPreference.mutateAsync({ mailNotificationsEnabled });
+    try {
+      await updateMailPreference.mutateAsync({ mailNotificationsEnabled });
+      setMailPreferenceMessage({ type: 'success', text: 'メール通知設定を保存しました' });
+    } catch (error: any) {
+      const message = error?.response?.data?.error?.message || 'メール通知設定の保存に失敗しました';
+      setMailPreferenceMessage({ type: 'error', text: message });
+    }
+    setTimeout(() => setMailPreferenceMessage(null), 5000);
   };
 
   const [currentPassword, setCurrentPassword] = useState('');
@@ -181,6 +191,17 @@ export default function MyAccountPage() {
 
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-800 mb-4">{t('myAccount.mailNotifications')}</h2>
+        {mailPreferenceMessage && (
+          <div
+            className={`mb-4 rounded-lg px-4 py-3 text-sm ${
+              mailPreferenceMessage.type === 'success'
+                ? 'bg-green-50 text-green-800 border border-green-200'
+                : 'bg-red-50 text-red-800 border border-red-200'
+            }`}
+          >
+            {mailPreferenceMessage.text}
+          </div>
+        )}
         {mailPreferenceQuery.isLoading ? (
           <p className="text-sm text-gray-500">{t('app.loading')}</p>
         ) : (
