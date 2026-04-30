@@ -281,6 +281,19 @@ export interface MailNotificationPreference {
   mailNotificationsEnabled: boolean;
 }
 
+export interface TotpStatus {
+  totpEnabled: boolean;
+  delivery: 'email';
+  mail?: string;
+  expiresInMinutes: number;
+}
+
+export interface TotpSetup {
+  delivery: 'email';
+  mail: string;
+  expiresInMinutes: number;
+}
+
 export interface Member {
   id: string;
   projectId: string;

@@ -1,8 +1,17 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
-import { useMailNotificationPreference, useMe, useUpdateMailNotificationPreference, useUpdateMe } from '../api/hooks';
+import {
+  useConfirmTotp,
+  useDisableTotp,
+  useMailNotificationPreference,
+  useMe,
+  useSetupTotp,
+  useTotpStatus,
+  useUpdateMailNotificationPreference,
+  useUpdateMe,
+} from '../api/hooks';
 import api from '../api/client';
 import type { User } from '../types';
 
@@ -28,6 +37,10 @@ export default function MyAccountPage() {
   const [mailPreferenceMessage, setMailPreferenceMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null,
   );
+  const [totpMessage, setTotpMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [totpCurrentPassword, setTotpCurrentPassword] = useState('');
+  const [totpCode, setTotpCode] = useState('');
+  const [totpSetupStarted, setTotpSetupStarted] = useState(false);
 
   useEffect(() => {
     if (!me) return;
@@ -39,6 +52,10 @@ export default function MyAccountPage() {
   const updateMe = useUpdateMe();
   const mailPreferenceQuery = useMailNotificationPreference();
   const updateMailPreference = useUpdateMailNotificationPreference();
+  const totpStatusQuery = useTotpStatus();
+  const setupTotp = useSetupTotp();
+  const confirmTotp = useConfirmTotp();
+  const disableTotp = useDisableTotp();
 
   useEffect(() => {
     const pref = mailPreferenceQuery.data?.data;
@@ -59,9 +76,9 @@ export default function MyAccountPage() {
       await i18n.changeLanguage('ja');
       localStorage.setItem('language', 'ja');
       qc.invalidateQueries({ queryKey: ['me'] });
-      setProfileMessage({ type: 'success', text: 'プロフィールを保存しました' });
+      setProfileMessage({ type: 'success', text: '繝励Ο繝輔ぅ繝ｼ繝ｫ繧剃ｿ晏ｭ倥＠縺ｾ縺励◆' });
     } catch (error: any) {
-      const message = error?.response?.data?.error?.message || 'プロフィールの保存に失敗しました';
+      const message = error?.response?.data?.error?.message || '繝励Ο繝輔ぅ繝ｼ繝ｫ縺ｮ菫晏ｭ倥↓螟ｱ謨励＠縺ｾ縺励◆';
       setProfileMessage({ type: 'error', text: message });
     }
     setTimeout(() => setProfileMessage(null), 5000);
@@ -71,14 +88,52 @@ export default function MyAccountPage() {
     e.preventDefault();
     try {
       await updateMailPreference.mutateAsync({ mailNotificationsEnabled });
-      setMailPreferenceMessage({ type: 'success', text: 'メール通知設定を保存しました' });
+      setMailPreferenceMessage({ type: 'success', text: '繝｡繝ｼ繝ｫ騾夂衍險ｭ螳壹ｒ菫晏ｭ倥＠縺ｾ縺励◆' });
     } catch (error: any) {
-      const message = error?.response?.data?.error?.message || 'メール通知設定の保存に失敗しました';
+      const message = error?.response?.data?.error?.message || '繝｡繝ｼ繝ｫ騾夂衍險ｭ螳壹・菫晏ｭ倥↓螟ｱ謨励＠縺ｾ縺励◆';
       setMailPreferenceMessage({ type: 'error', text: message });
     }
     setTimeout(() => setMailPreferenceMessage(null), 5000);
   };
 
+  const showTotpMessage = (message: { type: 'success' | 'error'; text: string }) => {
+    setTotpMessage(message);
+    setTimeout(() => setTotpMessage(null), 5000);
+  };
+
+  const startTotpSetup = async () => {
+    setTotpCode('');
+    try {
+      await setupTotp.mutateAsync({ currentPassword: totpCurrentPassword });
+      setTotpSetupStarted(true);
+      showTotpMessage({ type: 'success', text: '認証コードをメールで送信しました' });
+    } catch (error: any) {
+      showTotpMessage({ type: 'error', text: error?.response?.data?.error?.message || '認証コードの送信に失敗しました' });
+    }
+  };
+
+  const confirmTotpSetup = async () => {
+    try {
+      await confirmTotp.mutateAsync({ code: totpCode });
+      setTotpSetupStarted(false);
+      setTotpCurrentPassword('');
+      setTotpCode('');
+      showTotpMessage({ type: 'success', text: '二段階認証を有効にしました' });
+    } catch (error: any) {
+      showTotpMessage({ type: 'error', text: error?.response?.data?.error?.message || '認証コードが正しくありません' });
+    }
+  };
+
+  const onDisableTotp = async () => {
+    try {
+      await disableTotp.mutateAsync({ currentPassword: totpCurrentPassword });
+      setTotpCurrentPassword('');
+      setTotpCode('');
+      showTotpMessage({ type: 'success', text: '二段階認証を無効にしました' });
+    } catch (error: any) {
+      showTotpMessage({ type: 'error', text: error?.response?.data?.error?.message || '二段階認証の無効化に失敗しました' });
+    }
+  };
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -96,11 +151,11 @@ export default function MyAccountPage() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      setPasswordMessage({ type: 'success', text: 'パスワードを変更しました' });
+      setPasswordMessage({ type: 'success', text: '繝代せ繝ｯ繝ｼ繝峨ｒ螟画峩縺励∪縺励◆' });
       setTimeout(() => setPasswordMessage(null), 5000);
     },
     onError: (error: any) => {
-      const message = error?.response?.data?.error?.message || 'パスワードの変更に失敗しました';
+      const message = error?.response?.data?.error?.message || '繝代せ繝ｯ繝ｼ繝峨・螟画峩縺ｫ螟ｱ謨励＠縺ｾ縺励◆';
       setPasswordMessage({ type: 'error', text: message });
       setTimeout(() => setPasswordMessage(null), 5000);
     },
@@ -245,7 +300,7 @@ export default function MyAccountPage() {
           onSubmit={(e) => {
             e.preventDefault();
             if (newPassword !== confirmPassword) {
-              setPasswordMessage({ type: 'error', text: '新しいパスワードと確認用パスワードが一致しません' });
+              setPasswordMessage({ type: 'error', text: '譁ｰ縺励＞繝代せ繝ｯ繝ｼ繝峨→遒ｺ隱咲畑繝代せ繝ｯ繝ｼ繝峨′荳閾ｴ縺励∪縺帙ｓ' });
               setTimeout(() => setPasswordMessage(null), 5000);
               return;
             }
@@ -290,8 +345,114 @@ export default function MyAccountPage() {
       </section>
 
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-800 mb-4">{t('myAccount.twoFactor')}</h2>
+        {totpMessage && (
+          <div
+            className={`mb-4 rounded-lg px-4 py-3 text-sm ${
+              totpMessage.type === 'success'
+                ? 'bg-green-50 text-green-800 border border-green-200'
+                : 'bg-red-50 text-red-800 border border-red-200'
+            }`}
+          >
+            {totpMessage.text}
+          </div>
+        )}
+        {totpStatusQuery.isLoading ? (
+          <p className="text-sm text-gray-500">{t('app.loading')}</p>
+        ) : (
+          <div className="space-y-4">
+            <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+              {totpStatusQuery.data?.data.totpEnabled ? '現在有効です' : '現在無効です'}
+              <span className="ml-2 text-gray-500">
+                認証コードは {totpStatusQuery.data?.data.mail ?? me.mail} に送信されます。
+              </span>
+            </div>
+
+            {!totpStatusQuery.data?.data.totpEnabled && !totpSetupStarted && (
+              <div className="space-y-3">
+                <label className="block text-sm">
+                  <span className="text-gray-700">{t('auth.currentPassword')}</span>
+                  <input
+                    type="password"
+                    value={totpCurrentPassword}
+                    onChange={(e) => setTotpCurrentPassword(e.target.value)}
+                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={startTotpSetup}
+                  disabled={setupTotp.isPending || !totpCurrentPassword}
+                  className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {setupTotp.isPending ? t('app.loading') : 'メール認証を有効にする'}
+                </button>
+              </div>
+            )}
+
+            {!totpStatusQuery.data?.data.totpEnabled && totpSetupStarted && (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600">
+                  メールで届いた6桁の認証コードを{totpStatusQuery.data?.data.expiresInMinutes ?? 5}分以内に入力してください。
+                </p>
+                <label className="block text-sm">
+                  <span className="text-gray-700">認証コード</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={totpCode}
+                    onChange={(e) => setTotpCode(e.target.value)}
+                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={confirmTotpSetup}
+                    disabled={confirmTotp.isPending || !totpCode}
+                    className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+                  >
+                    {confirmTotp.isPending ? t('app.loading') : '確認して有効化'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startTotpSetup}
+                    disabled={setupTotp.isPending || !totpCurrentPassword}
+                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    再送信
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {totpStatusQuery.data?.data.totpEnabled && (
+              <div className="space-y-3">
+                <label className="block text-sm">
+                  <span className="text-gray-700">{t('auth.currentPassword')}</span>
+                  <input
+                    type="password"
+                    value={totpCurrentPassword}
+                    onChange={(e) => setTotpCurrentPassword(e.target.value)}
+                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={onDisableTotp}
+                  disabled={disableTotp.isPending || !totpCurrentPassword}
+                  className="rounded-lg border border-rose-600 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                >
+                  無効にする
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+      <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-800 mb-4">{t('myAccount.apiKey')}</h2>
-        <p className="text-sm text-gray-600 mb-3">個人用APIアクセストークンを再生成します。</p>
+        <p className="text-sm text-gray-600 mb-3">個人用APIアクセスキーを再生成します。</p>
         {apiKeyPreview && (
           <pre className="mb-3 rounded bg-gray-100 p-3 text-xs break-all">{apiKeyPreview}</pre>
         )}
@@ -348,3 +509,6 @@ export default function MyAccountPage() {
     </div>
   );
 }
+
+
+

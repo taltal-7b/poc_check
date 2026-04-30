@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import { useLogin } from '../api/hooks';
+import { useLogin, useLoginTotp } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 
 export default function LoginPage() {
@@ -11,12 +11,14 @@ export default function LoginPage() {
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const loginMutation = useLogin();
+  const loginTotpMutation = useLoginTotp();
   const authLogin = useAuthStore((s) => s.login);
 
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [totpCode, setTotpCode] = useState('');
   const [totpRequired, setTotpRequired] = useState(false);
+  const [totpToken, setTotpToken] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
   const registered = searchParams.get('registered') === '1';
@@ -24,11 +26,34 @@ export default function LoginPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+    if (totpRequired) {
+      loginTotpMutation.mutate(
+        {
+          token: totpToken,
+          code: totpCode.trim(),
+        },
+        {
+          onSuccess: (res) => {
+            const payload = res.data;
+            if (payload?.accessToken && payload?.refreshToken && payload?.user) {
+              queryClient.clear();
+              authLogin(payload.user, payload.accessToken, payload.refreshToken);
+              navigate('/');
+              return;
+            }
+            setFormError(t('auth.loginFailed'));
+          },
+          onError: () => {
+            setFormError(t('auth.loginFailed'));
+          },
+        },
+      );
+      return;
+    }
     loginMutation.mutate(
       {
         login: loginId.trim(),
         password,
-        ...(totpRequired && totpCode.trim() ? { totpCode: totpCode.trim() } : {}),
       },
       {
         onSuccess: (res) => {
@@ -41,6 +66,9 @@ export default function LoginPage() {
           }
           if (payload?.totpRequired) {
             setTotpRequired(true);
+            setTotpToken(payload.token ?? '');
+            setTotpCode('');
+            setFormError(null);
             return;
           }
           setFormError(t('auth.loginFailed'));
@@ -79,6 +107,7 @@ export default function LoginPage() {
               autoComplete="username"
               value={loginId}
               onChange={(e) => setLoginId(e.target.value)}
+              disabled={totpRequired}
               required
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
             />
@@ -94,6 +123,7 @@ export default function LoginPage() {
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              disabled={totpRequired}
               required
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
             />
@@ -101,7 +131,7 @@ export default function LoginPage() {
           {totpRequired && (
             <div>
               <label htmlFor="totp" className="mb-1 block text-sm font-medium text-slate-700">
-                {t('auth.totpCode')}
+                メール認証コード
               </label>
               <input
                 id="totp"
@@ -111,18 +141,18 @@ export default function LoginPage() {
                 autoComplete="one-time-code"
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value)}
-                placeholder={t('auth.totpRequired')}
+                placeholder="6桁の認証コード"
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
               />
-              <p className="mt-1 text-xs text-slate-500">{t('auth.totpRequired')}</p>
+              <p className="mt-1 text-xs text-slate-500">登録メールアドレスに送信されたコードを入力してください。</p>
             </div>
           )}
           <button
             type="submit"
-            disabled={loginMutation.isPending}
+            disabled={loginMutation.isPending || loginTotpMutation.isPending}
             className="w-full rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loginMutation.isPending ? t('app.loading') : t('auth.login')}
+            {loginMutation.isPending || loginTotpMutation.isPending ? t('app.loading') : t('auth.login')}
           </button>
           <p className="text-center text-sm text-slate-600">
             <Link to="/register" className="font-medium text-primary-600 hover:text-primary-700">

@@ -50,6 +50,21 @@ export default function SettingsPage() {
     </label>
   );
 
+  const TwoFactorField = () => (
+    <label className="block text-sm">
+      <span className="block font-medium text-gray-700">二要素認証</span>
+      <select
+        className="mt-1 w-full max-w-xl rounded border border-gray-300 px-3 py-2 text-sm"
+        value={values.two_factor_authentication ?? 'optional'}
+        onChange={(e) => setField('two_factor_authentication', e.target.value)}
+      >
+        <option value="optional">任意</option>
+        <option value="required">必須</option>
+        <option value="admin">システム管理者のみ必須</option>
+      </select>
+    </label>
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -101,6 +116,7 @@ export default function SettingsPage() {
             <div className="space-y-3">
               <CheckboxField k="login_required" label={t('settings.loginRequired')} />
               <CheckboxField k="self_registration" label={t('settings.selfRegistration')} />
+              <TwoFactorField />
             </div>
           )}
           {tab === 'notifications' && (

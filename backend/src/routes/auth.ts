@@ -1,21 +1,25 @@
-import { Router, Request, Response, NextFunction } from 'express';
+﻿import { Router, Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
-import { authenticator } from 'otplib';
+import crypto from 'crypto';
 import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
 import { authenticate, AuthPayload } from '../middleware/auth';
 import { config } from '../config';
 import { Prisma } from '@prisma/client';
+import { sendMail } from '../services/mail-service';
 
 const router = Router();
 
 const BCRYPT_ROUNDS = 12;
 const ACCESS_EXPIRES: jwt.SignOptions['expiresIn'] = '15m';
 const REFRESH_EXPIRES: jwt.SignOptions['expiresIn'] = '7d';
-const TOTP_PENDING_EXPIRES: jwt.SignOptions['expiresIn'] = '5m';
+const TWO_FACTOR_PENDING_EXPIRES: jwt.SignOptions['expiresIn'] = '5m';
+const EMAIL_OTP_EXPIRES_MINUTES = 5;
+const EMAIL_OTP_LOGIN_ACTION = 'email_2fa_login';
+const EMAIL_OTP_SETUP_ACTION = 'email_2fa_setup';
 
 function serializeUser(user: {
   id: string;
@@ -57,16 +61,88 @@ function signRefreshToken(userId: string): string {
   });
 }
 
-function signTotpPendingToken(userId: string): string {
-  return jwt.sign({ userId, typ: 'totp_pending' }, config.JWT_REFRESH_SECRET, {
-    expiresIn: TOTP_PENDING_EXPIRES,
+function signTwoFactorPendingToken(userId: string): string {
+  return jwt.sign({ userId, typ: 'two_factor_pending' }, config.JWT_REFRESH_SECRET, {
+    expiresIn: TWO_FACTOR_PENDING_EXPIRES,
   });
+}
+
+function normalizeOtpCode(code: string): string {
+  return code.replace(/\s/g, '').trim();
+}
+
+function generateEmailOtp(): string {
+  return String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+}
+
+async function verifyPassword(userId: string, currentPassword: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw AppError.notFound('繝ｦ繝ｼ繧ｶ繝ｼ縺瑚ｦ九▽縺九ｊ縺ｾ縺帙ｓ');
+  }
+  const ok = await bcrypt.compare(currentPassword, user.hashedPassword);
+  if (!ok) {
+    throw AppError.unauthorized('迴ｾ蝨ｨ縺ｮ繝代せ繝ｯ繝ｼ繝峨′豁｣縺励￥縺ゅｊ縺ｾ縺帙ｓ');
+  }
+  return user;
+}
+
+function otpExpiresAt(): Date {
+  return new Date(Date.now() + EMAIL_OTP_EXPIRES_MINUTES * 60 * 1000);
+}
+
+async function issueEmailOtp(user: { id: string; login: string; mail: string }, action: string): Promise<void> {
+  const code = generateEmailOtp();
+  const codeHash = await bcrypt.hash(code, BCRYPT_ROUNDS);
+  await prisma.$transaction(async (tx) => {
+    await tx.token.deleteMany({ where: { userId: user.id, action } });
+    await tx.token.create({
+      data: {
+        userId: user.id,
+        action,
+        value: codeHash,
+        expiresAt: otpExpiresAt(),
+      },
+    });
+  });
+  await sendMail({
+    to: [user.mail],
+    subject: 'TaskNova 二段階認証コードのお知らせ',
+    text: [
+      'TaskNova の二段階認証コードは以下です。',
+      '',
+      code,
+      '',
+      `このコードの有効期限は ${EMAIL_OTP_EXPIRES_MINUTES} 分です。`,
+      'このメールに心当たりがない場合は、破棄してください。',
+    ].join('\n'),
+  });
+}
+
+async function consumeEmailOtp(userId: string, action: string, code: string): Promise<boolean> {
+  const normalized = normalizeOtpCode(code);
+  if (!/^\d{6}$/.test(normalized)) return false;
+  const rows = await prisma.token.findMany({
+    where: {
+      userId,
+      action,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  for (const row of rows) {
+    if (await bcrypt.compare(normalized, row.value)) {
+      await prisma.token.deleteMany({ where: { userId, action } });
+      return true;
+    }
+  }
+  return false;
 }
 
 async function issueTokensForUser(userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user || user.status !== 1) {
-    throw AppError.unauthorized('アカウントが利用できません');
+    throw AppError.unauthorized('繧｢繧ｫ繧ｦ繝ｳ繝医′蛻ｩ逕ｨ縺ｧ縺阪∪縺帙ｓ');
   }
   const payload: AuthPayload = {
     userId: user.id,
@@ -99,30 +175,33 @@ router.post(
         where: { login: body.login },
       });
       if (!user) {
-        throw AppError.unauthorized('ログインまたはパスワードが正しくありません');
+        throw AppError.unauthorized('繝ｭ繧ｰ繧､繝ｳ縺ｾ縺溘・繝代せ繝ｯ繝ｼ繝峨′豁｣縺励￥縺ゅｊ縺ｾ縺帙ｓ');
       }
 
       const ok = await bcrypt.compare(body.password, user.hashedPassword);
       if (!ok) {
-        throw AppError.unauthorized('ログインまたはパスワードが正しくありません');
+        throw AppError.unauthorized('繝ｭ繧ｰ繧､繝ｳ縺ｾ縺溘・繝代せ繝ｯ繝ｼ繝峨′豁｣縺励￥縺ゅｊ縺ｾ縺帙ｓ');
       }
 
       if (user.status === 3) {
-        throw AppError.forbidden('アカウントはロックされています');
+        throw AppError.forbidden('Account is locked');
       }
       if (user.status === 2) {
-        throw AppError.forbidden('アカウントはまだ有効化されていません');
+        throw AppError.forbidden('繧｢繧ｫ繧ｦ繝ｳ繝医・縺ｾ縺譛牙柑蛹悶＆繧後※縺・∪縺帙ｓ');
       }
       if (user.status !== 1) {
-        throw AppError.forbidden('アカウントの状態が無効です');
+        throw AppError.forbidden('Account is inactive');
       }
 
       if (user.totpEnabled) {
-        if (!user.totpSecret) {
-          throw AppError.badRequest('二要素設定が不完全です');
-        }
-        const token = signTotpPendingToken(user.id);
-        return sendSuccess(res, { totpRequired: true, token });
+        await issueEmailOtp(user, EMAIL_OTP_LOGIN_ACTION);
+        const token = signTwoFactorPendingToken(user.id);
+        return sendSuccess(res, {
+          totpRequired: true,
+          token,
+          delivery: 'email',
+          expiresInMinutes: EMAIL_OTP_EXPIRES_MINUTES,
+        });
       }
 
       const tokens = await issueTokensForUser(user.id);
@@ -155,32 +234,32 @@ router.post(
           typ: string;
         };
       } catch {
-        throw AppError.unauthorized('一時トークンが無効または期限切れです');
+        throw AppError.unauthorized('Temporary token is invalid or expired');
       }
 
-      if (decoded.typ !== 'totp_pending' || !decoded.userId) {
-        throw AppError.unauthorized('一時トークンが無効です');
+      if (decoded.typ !== 'two_factor_pending' || !decoded.userId) {
+        throw AppError.unauthorized('Temporary token is invalid');
       }
 
       const user = await prisma.user.findUnique({
         where: { id: decoded.userId },
       });
-      if (!user || !user.totpEnabled || !user.totpSecret) {
-        throw AppError.unauthorized('二要素認証が利用できません');
+      if (!user || !user.totpEnabled) {
+        throw AppError.unauthorized('莠瑚ｦ∫ｴ隱崎ｨｼ縺悟茜逕ｨ縺ｧ縺阪∪縺帙ｓ');
       }
       if (user.status === 3) {
-        throw AppError.forbidden('アカウントはロックされています');
+        throw AppError.forbidden('Account is locked');
       }
       if (user.status === 2) {
-        throw AppError.forbidden('アカウントはまだ有効化されていません');
+        throw AppError.forbidden('繧｢繧ｫ繧ｦ繝ｳ繝医・縺ｾ縺譛牙柑蛹悶＆繧後※縺・∪縺帙ｓ');
       }
       if (user.status !== 1) {
-        throw AppError.forbidden('アカウントの状態が無効です');
+        throw AppError.forbidden('Account is inactive');
       }
 
-      const valid = authenticator.check(body.code, user.totpSecret);
+      const valid = await consumeEmailOtp(user.id, EMAIL_OTP_LOGIN_ACTION, body.code);
       if (!valid) {
-        throw AppError.unauthorized('認証コードが正しくありません');
+        throw AppError.unauthorized('隱崎ｨｼ繧ｳ繝ｼ繝峨′豁｣縺励￥縺ゅｊ縺ｾ縺帙ｓ');
       }
 
       const tokens = await issueTokensForUser(user.id);
@@ -212,11 +291,11 @@ router.post(
           typ: string;
         };
       } catch {
-        throw AppError.unauthorized('リフレッシュトークンが無効または期限切れです');
+        throw AppError.unauthorized('Refresh token is invalid or expired');
       }
 
       if (decoded.typ !== 'refresh' || !decoded.userId) {
-        throw AppError.unauthorized('リフレッシュトークンが無効です');
+        throw AppError.unauthorized('Refresh token is invalid');
       }
 
       const tokens = await issueTokensForUser(decoded.userId);
@@ -265,7 +344,7 @@ router.post(
       return sendSuccess(res, serializeUser(user), 201);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        return next(AppError.conflict('ログイン名またはメールアドレスが既に使用されています'));
+        return next(AppError.conflict('Login or email is already in use'));
       }
       next(err);
     }
@@ -284,7 +363,7 @@ router.post(
         .parse(_req.body);
 
       void body;
-      return sendSuccess(res, { ok: true, message: 'リクエストを受け付けました' });
+      return sendSuccess(res, { ok: true, message: '繝ｪ繧ｯ繧ｨ繧ｹ繝医ｒ蜿励￠莉倥￠縺ｾ縺励◆' });
     } catch (err) {
       next(err);
     }
@@ -300,7 +379,7 @@ router.get(
         where: { id: req.user!.userId },
       });
       if (!user) {
-        throw AppError.notFound('ユーザーが見つかりません');
+        throw AppError.notFound('繝ｦ繝ｼ繧ｶ繝ｼ縺瑚ｦ九▽縺九ｊ縺ｾ縺帙ｓ');
       }
       return sendSuccess(res, serializeUser(user));
     } catch (err) {
@@ -309,6 +388,102 @@ router.get(
   },
 );
 
+router.get('/totp/status', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.userId },
+      select: { totpEnabled: true, mail: true },
+    });
+    if (!user) throw AppError.notFound('ユーザーが見つかりません');
+    return sendSuccess(res, {
+      totpEnabled: user.totpEnabled,
+      delivery: 'email',
+      mail: user.mail,
+      expiresInMinutes: EMAIL_OTP_EXPIRES_MINUTES,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/totp/setup', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({ currentPassword: z.string().min(1) }).parse(req.body);
+    const user = await verifyPassword(req.user!.userId, body.currentPassword);
+    if (user.totpEnabled) {
+      throw AppError.badRequest('二段階認証は既に有効です');
+    }
+
+    await issueEmailOtp(user, EMAIL_OTP_SETUP_ACTION);
+    return sendSuccess(res, {
+      delivery: 'email',
+      mail: user.mail,
+      expiresInMinutes: EMAIL_OTP_EXPIRES_MINUTES,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/totp/confirm', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({ code: z.string().min(1) }).parse(req.body);
+    const valid = await consumeEmailOtp(req.user!.userId, EMAIL_OTP_SETUP_ACTION, body.code);
+    if (!valid) {
+      throw AppError.unauthorized('認証コードが正しくありません');
+    }
+
+    await prisma.user.update({
+      where: { id: req.user!.userId },
+      data: {
+        totpSecret: 'email',
+        totpEnabled: true,
+      },
+    });
+
+    return sendSuccess(res, {
+      totpEnabled: true,
+      delivery: 'email',
+      expiresInMinutes: EMAIL_OTP_EXPIRES_MINUTES,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/totp/disable', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({ currentPassword: z.string().min(1) }).parse(req.body);
+    const user = await verifyPassword(req.user!.userId, body.currentPassword);
+    if (!user.totpEnabled) {
+      throw AppError.badRequest('二段階認証が有効ではありません');
+    }
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          totpSecret: null,
+          totpEnabled: false,
+        },
+      }),
+      prisma.token.deleteMany({
+        where: {
+          userId: user.id,
+          action: { in: [EMAIL_OTP_LOGIN_ACTION, EMAIL_OTP_SETUP_ACTION] },
+        },
+      }),
+    ]);
+
+    return sendSuccess(res, {
+      totpEnabled: false,
+      delivery: 'email',
+      expiresInMinutes: EMAIL_OTP_EXPIRES_MINUTES,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 router.put(
   '/password',
   authenticate,
@@ -323,18 +498,18 @@ router.put(
         .parse(req.body);
 
       if (body.newPassword !== body.newPasswordConfirmation) {
-        throw AppError.badRequest('新しいパスワードと確認用パスワードが一致しません');
+        throw AppError.badRequest('譁ｰ縺励＞繝代せ繝ｯ繝ｼ繝峨→遒ｺ隱咲畑繝代せ繝ｯ繝ｼ繝峨′荳閾ｴ縺励∪縺帙ｓ');
       }
 
       if (body.currentPassword === body.newPassword) {
-        throw AppError.badRequest('新しいパスワードは現在のパスワードと異なるものを設定してください');
+        throw AppError.badRequest('譁ｰ縺励＞繝代せ繝ｯ繝ｼ繝峨・迴ｾ蝨ｨ縺ｮ繝代せ繝ｯ繝ｼ繝峨→逡ｰ縺ｪ繧九ｂ縺ｮ繧定ｨｭ螳壹＠縺ｦ縺上□縺輔＞');
       }
 
       const user = await prisma.user.findUnique({
         where: { id: req.user!.userId },
       });
       if (!user) {
-        throw AppError.notFound('ユーザーが見つかりません');
+        throw AppError.notFound('繝ｦ繝ｼ繧ｶ繝ｼ縺瑚ｦ九▽縺九ｊ縺ｾ縺帙ｓ');
       }
 
       console.log('[DEBUG] Password change attempt:', {
@@ -350,7 +525,7 @@ router.put(
       console.log('[DEBUG] Password comparison result:', ok);
       
       if (!ok) {
-        throw AppError.unauthorized('現在のパスワードが正しくありません');
+        throw AppError.unauthorized('迴ｾ蝨ｨ縺ｮ繝代せ繝ｯ繝ｼ繝峨′豁｣縺励￥縺ゅｊ縺ｾ縺帙ｓ');
       }
 
       const hashedPassword = await bcrypt.hash(body.newPassword, BCRYPT_ROUNDS);
@@ -359,7 +534,7 @@ router.put(
         data: { hashedPassword },
       });
 
-      return sendSuccess(res, { ok: true, message: 'パスワードを変更しました' });
+      return sendSuccess(res, { ok: true, message: '繝代せ繝ｯ繝ｼ繝峨ｒ螟画峩縺励∪縺励◆' });
     } catch (err) {
       next(err);
     }
@@ -367,3 +542,5 @@ router.put(
 );
 
 export default router;
+
+

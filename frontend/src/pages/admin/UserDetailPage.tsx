@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   useAddGroupUser,
+  useAdminDisableTotp,
   useAddUserProject,
   useGroups,
   useProjects,
@@ -44,6 +45,7 @@ export default function UserDetailPage() {
   const removeGroupUser = useRemoveGroupUser();
   const addProject = useAddUserProject();
   const removeProject = useRemoveUserProject();
+  const adminDisableTotp = useAdminDisableTotp();
 
   const user = userQuery.data?.data;
   const groups = groupsQuery.data?.data ?? [];
@@ -178,6 +180,27 @@ export default function UserDetailPage() {
     }
   };
 
+  const onDisableTotp = async () => {
+    if (!userId) return;
+    setError('');
+    setMessage('');
+    try {
+      await adminDisableTotp.mutateAsync(userId);
+      await userQuery.refetch();
+      setMessage('二要素認証を無効化しました');
+    } catch (err: unknown) {
+      const msg =
+        typeof err === 'object' &&
+        err &&
+        'response' in err &&
+        typeof (err as { response?: { data?: { error?: { message?: string } } } }).response?.data?.error?.message ===
+          'string'
+          ? (err as { response?: { data?: { error?: { message?: string } } } }).response!.data!.error!.message!
+          : t('app.error');
+      setError(msg);
+    }
+  };
+
   if (!userId) return <p className="text-gray-500">{t('app.noData')}</p>;
   if (userQuery.isLoading) return <p className="text-gray-500">{t('app.loading')}</p>;
   if (!user) return <p className="text-red-600">{t('app.error')}</p>;
@@ -237,6 +260,22 @@ export default function UserDetailPage() {
             <div>
               <dt className="text-gray-500">{t('users.admin')}</dt>
               <dd className="text-gray-900">{user.admin ? t('app.yes') : t('app.no')}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">{t('myAccount.twoFactor')}</dt>
+              <dd className="flex items-center gap-3 text-gray-900">
+                <span>{user.totpEnabled ? t('app.yes') : t('app.no')}</span>
+                {user.totpEnabled && (
+                  <button
+                    type="button"
+                    onClick={onDisableTotp}
+                    disabled={adminDisableTotp.isPending}
+                    className="rounded border border-rose-600 px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                  >
+                    無効化
+                  </button>
+                )}
+              </dd>
             </div>
           </dl>
         )}

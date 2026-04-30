@@ -97,6 +97,7 @@ async function main() {
     { name: 'default_language', value: 'ja' },
     { name: 'text_formatting', value: 'markdown' },
     { name: 'self_registration', value: '0' },
+    { name: 'two_factor_authentication', value: 'optional' },
     { name: 'default_notification_option', value: 'only_assigned' },
     { name: 'per_page_options', value: '25,50,100' },
     { name: 'wiki_tablesort_enabled', value: '1' },

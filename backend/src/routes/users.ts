@@ -334,6 +334,36 @@ router.delete('/:id/projects/:projectId', requireAdmin, async (req: Request, res
   }
 });
 
+router.post('/:id/totp/disable', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = z.string().uuid().parse(req.params.id);
+    const user = await prisma.user.findUnique({ where: { id }, select: { id: true } });
+    if (!user) {
+      throw AppError.notFound('ユーザーが見つかりません');
+    }
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id },
+        data: {
+          totpSecret: null,
+          totpEnabled: false,
+        },
+      }),
+      prisma.token.deleteMany({
+        where: {
+          userId: id,
+          action: { in: ['email_2fa_login', 'email_2fa_setup'] },
+        },
+      }),
+    ]);
+
+    return sendSuccess(res, { totpEnabled: false });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = z

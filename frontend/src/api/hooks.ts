@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from './client';
 import { useAuthStore } from '../stores/auth';
-import type { ApiResponse, Project, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Version, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, WorkflowSnapshot, CopyWorkflowPayload, IssueStatusUsage, MailNotificationPreference } from '../types';
+import type { ApiResponse, Project, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Version, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, WorkflowSnapshot, CopyWorkflowPayload, IssueStatusUsage, MailNotificationPreference, TotpSetup, TotpStatus } from '../types';
 
 function get<T>(url: string, params?: Record<string, unknown>) {
   return api.get<ApiResponse<T>>(url, { params }).then(r => r.data);
@@ -40,10 +40,42 @@ export const useUpdateMe = () => {
 };
 export const useLogin = () =>
   useMutation({
-    mutationFn: (body: { login: string; password: string; totpCode?: string }) =>
-      post<{ accessToken: string; refreshToken: string; user: User; totpRequired?: boolean }>('/auth/login', body),
+    mutationFn: (body: { login: string; password: string }) =>
+      post<{ accessToken?: string; refreshToken?: string; user?: User; totpRequired?: boolean; token?: string }>('/auth/login', body),
+  });
+export const useLoginTotp = () =>
+  useMutation({
+    mutationFn: (body: { token: string; code: string }) =>
+      post<{ accessToken: string; refreshToken: string; user: User }>('/auth/login/totp', body),
   });
 export const useRegister = () => useMutation({ mutationFn: (body: { login: string; firstname: string; lastname: string; mail: string; password: string }) => post('/auth/register', body) });
+
+export const useTotpStatus = () =>
+  useQuery({
+    queryKey: ['totpStatus'],
+    queryFn: () => get<TotpStatus>('/auth/totp/status'),
+  });
+export const useSetupTotp = () => useMutation({ mutationFn: (body: { currentPassword: string }) => post<TotpSetup>('/auth/totp/setup', body) });
+export const useConfirmTotp = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { code: string }) => post<TotpStatus>('/auth/totp/confirm', body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['totpStatus'] });
+      qc.invalidateQueries({ queryKey: ['me'] });
+    },
+  });
+};
+export const useDisableTotp = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { currentPassword: string }) => post<TotpStatus>('/auth/totp/disable', body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['totpStatus'] });
+      qc.invalidateQueries({ queryKey: ['me'] });
+    },
+  });
+};
 
 export const useMailNotificationPreference = () =>
   useQuery({
@@ -309,6 +341,16 @@ export const useUser = (id: string) => useQuery({ queryKey: ['user', id], queryF
 export const useCreateUser = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (body: Record<string, unknown>) => post<User>('/users', body), onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }) }); };
 export const useUpdateUser = () => { const qc = useQueryClient(); return useMutation({ mutationFn: ({ id, ...body }: { id: string } & Record<string, unknown>) => put<User>(`/users/${id}`, body), onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }) }); };
 export const useDeleteUser = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (id: string) => del(`/users/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }) }); };
+export const useAdminDisableTotp = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => post<{ totpEnabled: boolean }>(`/users/${id}/totp/disable`),
+    onSuccess: (_res, id) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: ['user', id] });
+    },
+  });
+};
 export const useAddUserProject = () => {
   const qc = useQueryClient();
   return useMutation({
