@@ -146,6 +146,7 @@ model Project {
   projectTrackers ProjectTracker[]
   activities     Activity[]
   files          ProjectFile[]
+  projectCustomFields ProjectCustomField[]
 
   @@map("projects")
 }
@@ -254,9 +255,9 @@ model WorkflowTransition {
 
 model CustomField {
   id            String   @id @default(uuid())
-  type          String   // "IssueCustomField", "ProjectCustomField", "UserCustomField", "TimeEntryCustomField", "VersionCustomField"
+  type          String   // "IssueCustomField"
   name          String
-  fieldFormat   String   @map("field_format") // "string","text","int","float","list","date","bool","user","version"
+  fieldFormat   String   @map("field_format") // "string","text","int","float","list","date","bool","user","issue","attachment"
   possibleValues Json?   @map("possible_values")
   regexp        String?
   minLength     Int?     @map("min_length")
@@ -265,6 +266,7 @@ model CustomField {
   isFilter      Boolean  @default(false) @map("is_filter")
   searchable    Boolean  @default(false)
   multiple      Boolean  @default(false)
+  isForAll       Boolean  @default(true) @map("is_for_all")
   defaultValue  String?  @map("default_value")
   position      Int      @default(0)
   visible       Boolean  @default(true)
@@ -273,9 +275,21 @@ model CustomField {
 
   customValues        CustomValue[]
   customFieldTrackers CustomFieldTracker[]
+  projectCustomFields ProjectCustomField[]
   enumerations        CustomFieldEnumeration[]
 
   @@map("custom_fields")
+}
+
+model ProjectCustomField {
+  id            String      @id @default(uuid())
+  projectId     String      @map("project_id")
+  project       Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  customFieldId String      @map("custom_field_id")
+  customField   CustomField @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, customFieldId])
+  @@map("project_custom_fields")
 }
 
 model CustomFieldTracker {
@@ -297,6 +311,7 @@ model CustomValue {
   customizedId  String      @map("customized_id")
   value         String?
 
+  @@index([customizedType, customizedId])
   @@map("custom_values")
 }
 

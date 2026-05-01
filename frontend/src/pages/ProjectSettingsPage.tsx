@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import ProjectSubNav from '../components/ProjectSubNav';
-import { useDeleteProject, useProject, useProjects, useTrackers, useUpdateProject } from '../api/hooks';
+import { useDeleteProject, useProject, useProjectCustomFields, useProjects, useTrackers, useUpdateProject } from '../api/hooks';
 
 const DEFAULT_MODULES = [
   'issue_tracking',
@@ -52,6 +52,7 @@ export default function ProjectSettingsPage() {
 
   const projectsQuery = useProjects();
   const trackersQuery = useTrackers();
+  const customFieldsQuery = useProjectCustomFields(id, canManageProject);
   const updateMutation = useUpdateProject();
   const deleteMutation = useDeleteProject();
 
@@ -62,6 +63,7 @@ export default function ProjectSettingsPage() {
   const [parentId, setParentId] = useState('');
   const [enabledModules, setEnabledModules] = useState<Record<string, boolean>>({});
   const [selectedTrackerIds, setSelectedTrackerIds] = useState<Record<string, boolean>>({});
+  const [selectedCustomFieldIds, setSelectedCustomFieldIds] = useState<Record<string, boolean>>({});
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [initialSnapshot, setInitialSnapshot] = useState<{
     name: string;
@@ -71,10 +73,15 @@ export default function ProjectSettingsPage() {
     parentId: string;
     modules: string[];
     trackers: string[];
+    customFields: string[];
   } | null>(null);
 
   const projects = projectsQuery.data?.data ?? [];
   const trackers = trackersQuery.data?.data ?? [];
+  const issueCustomFields = useMemo(
+    () => customFieldsQuery.data?.data ?? [],
+    [customFieldsQuery.data],
+  );
 
   useEffect(() => {
     if (!project) return;
@@ -93,6 +100,11 @@ export default function ProjectSettingsPage() {
       tr[x.id] = true;
     });
     setSelectedTrackerIds(tr);
+    const cf: Record<string, boolean> = {};
+    issueCustomFields.forEach((field) => {
+      cf[field.id] = project.projectCustomFields?.some((row) => row.customFieldId === field.id) ?? false;
+    });
+    setSelectedCustomFieldIds(cf);
     setInitialSnapshot({
       name: project.name.trim(),
       slug: project.identifier.trim(),
@@ -101,8 +113,9 @@ export default function ProjectSettingsPage() {
       parentId: project.parentId ?? '',
       modules: normalizeSelectedKeys(mods),
       trackers: normalizeSelectedKeys(tr),
+      customFields: normalizeSelectedKeys(cf),
     });
-  }, [project, trackers]);
+  }, [project, trackers, issueCustomFields]);
 
   const moduleList = useMemo(
     () => Object.entries(enabledModules).filter(([, v]) => v).map(([k]) => k),
@@ -111,6 +124,10 @@ export default function ProjectSettingsPage() {
   const trackerIds = useMemo(
     () => Object.entries(selectedTrackerIds).filter(([, v]) => v).map(([x]) => x),
     [selectedTrackerIds],
+  );
+  const customFieldIds = useMemo(
+    () => Object.entries(selectedCustomFieldIds).filter(([, v]) => v).map(([x]) => x),
+    [selectedCustomFieldIds],
   );
 
   const currentSnapshot = useMemo(
@@ -122,8 +139,9 @@ export default function ProjectSettingsPage() {
       parentId,
       modules: normalizeSelectedKeys(enabledModules),
       trackers: normalizeSelectedKeys(selectedTrackerIds),
+      customFields: normalizeSelectedKeys(selectedCustomFieldIds),
     }),
-    [name, slug, description, isPublic, parentId, enabledModules, selectedTrackerIds],
+    [name, slug, description, isPublic, parentId, enabledModules, selectedTrackerIds, selectedCustomFieldIds],
   );
 
   const hasChanges = useMemo(() => {
@@ -149,6 +167,7 @@ export default function ProjectSettingsPage() {
       parentId: parentId || null,
       enabledModules: moduleList,
       trackerIds,
+      customFieldIds,
       },
       { onSuccess: () => setConfirmAction(null) },
     );
@@ -198,6 +217,10 @@ export default function ProjectSettingsPage() {
 
   const toggleTracker = (tid: string) => {
     setSelectedTrackerIds((prev) => ({ ...prev, [tid]: !prev[tid] }));
+  };
+
+  const toggleCustomField = (fieldId: string) => {
+    setSelectedCustomFieldIds((prev) => ({ ...prev, [fieldId]: !prev[fieldId] }));
   };
 
   if (isLoading || !project) {
@@ -308,6 +331,24 @@ export default function ProjectSettingsPage() {
             ))}
           </div>
         </fieldset>
+        {issueCustomFields.length > 0 && (
+          <fieldset>
+            <legend className="mb-2 text-sm font-medium text-slate-700">カスタムフィールド</legend>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {issueCustomFields.map((field) => (
+                <label key={field.id} className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={!!selectedCustomFieldIds[field.id]}
+                    onChange={() => toggleCustomField(field.id)}
+                    className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  {field.name}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
         </fieldset>
         {canManageProject && (
         <div className="flex flex-wrap gap-3">

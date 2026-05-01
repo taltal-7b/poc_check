@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from './client';
 import { useAuthStore } from '../stores/auth';
-import type { ApiResponse, Project, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Version, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, WorkflowSnapshot, CopyWorkflowPayload, IssueStatusUsage, MailNotificationPreference, TotpSetup, TotpStatus, SearchResponse } from '../types';
+import type { ApiResponse, Project, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, WorkflowSnapshot, CopyWorkflowPayload, IssueStatusUsage, MailNotificationPreference, TotpSetup, TotpStatus, SearchResponse } from '../types';
 
 function get<T>(url: string, params?: Record<string, unknown>) {
   return api.get<ApiResponse<T>>(url, { params }).then(r => r.data);
@@ -114,6 +114,7 @@ export const useProject = (
 type ProjectWriteBody = Omit<Partial<Project>, 'enabledModules'> & {
   enabledModules?: string[];
   trackerIds?: string[];
+  customFieldIds?: string[];
 };
 
 export const useCreateProject = () => {
@@ -340,10 +341,6 @@ export const useBoardMessage = (projectId: string, boardId: string, messageId: s
     enabled: !!projectId && !!boardId && !!messageId,
   });
 
-// ========== Versions ==========
-export const useVersions = (projectId: string) => useQuery({ queryKey: ['versions', projectId], queryFn: () => get<Version[]>(`/projects/${projectId}/versions`), enabled: !!projectId });
-export const useCreateVersion = (projectId: string) => { const qc = useQueryClient(); return useMutation({ mutationFn: (body: Partial<Version>) => post<Version>(`/projects/${projectId}/versions`, body), onSuccess: () => qc.invalidateQueries({ queryKey: ['versions', projectId] }) }); };
-
 // ========== Users (admin) ==========
 export const useUsers = (params?: Record<string, unknown>) => useQuery({ queryKey: ['users', params], queryFn: () => get<User[]>('/users', params) });
 export const useUser = (id: string) => useQuery({ queryKey: ['user', id], queryFn: () => get<UserDetail>(`/users/${id}`), enabled: !!id });
@@ -495,6 +492,18 @@ export const useProjectMemberGroups = (projectId: string) =>
 
 // ========== Custom Fields ==========
 export const useCustomFields = () => useQuery({ queryKey: ['customFields'], queryFn: () => get<CustomField[]>('/custom_fields') });
+export const useProjectCustomFields = (projectId: string, enabled = true) =>
+  useQuery({
+    queryKey: ['projectCustomFields', projectId],
+    queryFn: () => get<CustomField[]>(`/projects/${projectId}/custom_fields`),
+    enabled: enabled && !!projectId,
+  });
+export const useIssueCustomFields = (projectId: string, trackerId: string) =>
+  useQuery({
+    queryKey: ['issueCustomFields', projectId, trackerId],
+    queryFn: () => get<CustomField[]>(`/projects/${projectId}/issues/custom_fields`, { trackerId }),
+    enabled: !!projectId && !!trackerId,
+  });
 
 // ========== Queries ==========
 export const useSavedQueries = () => useQuery({ queryKey: ['queries'], queryFn: () => get<SavedQuery[]>('/queries') });

@@ -25,6 +25,7 @@ export interface Project {
   updatedAt: string;
   enabledModules?: { name: string }[];
   projectTrackers?: { trackerId: string; tracker: Tracker }[];
+  projectCustomFields?: { customFieldId: string; customField: CustomField }[];
   permissions?: {
     canCreateIssue: boolean;
     canEditIssue: boolean;
@@ -62,7 +63,6 @@ export interface Issue {
   assigneeId: string | null;
   assigneeGroupId: string | null;
   categoryId: string | null;
-  versionId: string | null;
   parentId: string | null;
   startDate: string | null;
   dueDate: string | null;
@@ -80,6 +80,22 @@ export interface Issue {
   parent?: { id: string; subject: string };
   children?: { id: string; number: number; subject: string }[];
   journals?: Journal[];
+  customFields?: IssueCustomFieldValue[];
+}
+
+export interface IssueCustomFieldValue {
+  id: string;
+  name: string;
+  fieldFormat: string;
+  isRequired: boolean;
+  isFilter?: boolean;
+  searchable?: boolean;
+  multiple?: boolean;
+  defaultValue?: string | null;
+  possibleValues?: string[] | string | null;
+  trackerIds?: string[];
+  projectIds?: string[];
+  value?: string | string[] | null;
 }
 
 export interface Journal {
@@ -101,6 +117,7 @@ export interface JournalDetail {
   propKey: string;
   oldValue: string | null;
   newValue: string | null;
+  customFieldName?: string | null;
 }
 
 export interface TimeEntry {
@@ -346,11 +363,13 @@ export interface CustomField {
   isRequired: boolean;
   position: number;
   defaultValue?: string | null;
-  possibleValues?: string | null;
+  possibleValues?: string[] | string | null;
   isFilter?: boolean;
   searchable?: boolean;
   multiple?: boolean;
+  isForAll?: boolean;
   trackerIds?: string[];
+  projectIds?: string[];
 }
 
 /** User account status (numeric codes used by the API). */

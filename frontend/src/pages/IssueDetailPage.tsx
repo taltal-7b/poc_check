@@ -6,9 +6,10 @@ import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { Pencil, FileIcon, Download, Trash2, Check, X, Rss } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
-import { useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useUpdateJournal, useDeleteJournal, useTrackers, useStatuses, useMembers, useProjectIssues } from '../api/hooks';
+import IssueCustomFieldInputs from '../components/IssueCustomFieldInputs';
+import { useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useUpdateJournal, useDeleteJournal, useTrackers, useStatuses, useMembers, useProjectIssues, useIssueCustomFields } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
-import type { Issue, Journal, JournalDetail, User, Attachment } from '../types';
+import type { CustomField, Issue, IssueCustomFieldValue, Journal, JournalDetail, User, Attachment } from '../types';
 
 type IssueWithExtras = Issue & {
   watchers?: { user: User }[];
@@ -31,6 +32,73 @@ interface EditForm {
   estimatedHours: string;
   doneRatio: string;
   repository: string;
+  customFields: Record<string, string | string[]>;
+}
+
+function customFieldFormValue(field: IssueCustomFieldValue): string | string[] {
+  if (field.value != null) return field.value;
+  if (field.multiple) return [];
+  return field.defaultValue ?? '';
+}
+
+type EditableCustomField = CustomField | IssueCustomFieldValue;
+
+function customFieldOptions(field: EditableCustomField): string[] {
+  const raw = field.possibleValues;
+  const values = Array.isArray(raw)
+    ? raw.map(String)
+    : typeof raw === 'string'
+      ? raw.split(/\r?\n|\|/).map((v) => v.trim()).filter(Boolean)
+      : [];
+  if (field.fieldFormat === 'key_value') {
+    return values.map((entry) => entry.match(/^([^=:\s]+)\s*[=:]\s*(.+)$/)?.[1] ?? entry);
+  }
+  return values;
+}
+
+function customFieldValues(value: string | string[] | undefined): string[] {
+  if (Array.isArray(value)) return value.map(String).map((v) => v.trim()).filter(Boolean);
+  if (value === undefined || value === '') return [];
+  return [String(value).trim()].filter(Boolean);
+}
+
+function validateCustomFieldValues(fields: EditableCustomField[], values: Record<string, string | string[]>): string | null {
+  for (const field of fields) {
+    const submitted = customFieldValues(values[field.id]);
+    if (field.isRequired && submitted.length === 0) return `${field.name} を入力してください`;
+
+    const options = customFieldOptions(field);
+    if ((field.fieldFormat === 'list' || field.fieldFormat === 'key_value') && options.length) {
+      const invalid = submitted.find((value) => !options.includes(value));
+      if (invalid) return `${field.name} の値が候補に含まれていません`;
+    }
+
+    for (const value of submitted) {
+      if (field.fieldFormat === 'int' && !/^-?\d+$/.test(value)) return `${field.name} は整数で入力してください`;
+      if (field.fieldFormat === 'float' && !Number.isFinite(Number(value))) return `${field.name} は数値で入力してください`;
+      if (field.fieldFormat === 'date' && (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(value)))) {
+        return `${field.name} は日付で入力してください`;
+      }
+      if (
+        field.fieldFormat === 'progress' &&
+        (!/^\d+$/.test(value) || Number(value) < 0 || Number(value) > 100 || Number(value) % 10 !== 0)
+      ) {
+        return `${field.name} は 0 から 100 の10%区切りで入力してください`;
+      }
+      if (field.fieldFormat === 'link') {
+        try {
+          new URL(value);
+        } catch {
+          return `${field.name} はURLで入力してください`;
+        }
+      }
+    }
+  }
+  return null;
+}
+function apiErrorMessage(error: unknown, fallback: string): string {
+  const message = (error as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+  return typeof message === 'string' && message.trim() ? message : fallback;
 }
 
 function parseAssigneeValue(value: string) {
@@ -56,7 +124,7 @@ function toDateStr(d: string | null): string {
 }
 
 function displayDate(d: string | null): string {
-  if (!d) return '—';
+  if (!d) return '-';
   try { return format(new Date(d), 'yyyy-MM-dd'); } catch { return d; }
 }
 
@@ -91,7 +159,7 @@ export default function IssueDetailPage() {
   const { identifier, issueId } = params;
   const id = issueId ?? '';
 
-  // URLパラメータデバッグ
+  // URL parameter debug
   useEffect(() => {
     console.log('IssueDetailPage params:', { identifier, issueId, id });
   }, [identifier, issueId, id]);
@@ -107,7 +175,7 @@ export default function IssueDetailPage() {
 
   const issue = data?.data as IssueWithExtras | undefined;
 
-  // デバッグログ
+  // Debug log
   useEffect(() => {
     console.log('IssueDetailPage:', { id, isLoading, isError, error, issueExists: !!issue });
   }, [id, isLoading, isError, error, issue]);
@@ -116,7 +184,7 @@ export default function IssueDetailPage() {
   const [form, setForm] = useState<EditForm>({
     subject: '', description: '', trackerId: '', statusId: '',
     priority: '2', assigneeValue: '', parentId: '', startDate: '', dueDate: '',
-    estimatedHours: '', doneRatio: '0', repository: '',
+    estimatedHours: '', doneRatio: '0', repository: '', customFields: {},
   });
   const [note, setNote] = useState('');
   const [attachFiles, setAttachFiles] = useState<File[]>([]);
@@ -125,6 +193,8 @@ export default function IssueDetailPage() {
   const [editingJournalId, setEditingJournalId] = useState<string | null>(null);
   const [editingJournalNote, setEditingJournalNote] = useState('');
   const [deleteJournalTarget, setDeleteJournalTarget] = useState<{ id: string; userName: string } | null>(null);
+  const [editError, setEditError] = useState('');
+  const [customFieldAttachments, setCustomFieldAttachments] = useState<Array<{ value: string; label: string }>>([]);
 
   const locale = ja;
   const projectSlug = identifier ?? issue?.project?.identifier ?? '';
@@ -133,6 +203,7 @@ export default function IssueDetailPage() {
   const statusesQuery = useStatuses();
   const membersQuery = useMembers(issue?.project?.id ?? '');
   const projectIssuesQuery = useProjectIssues(issue?.project?.id ?? '', { perPage: 1000 }, { enabled: !!issue?.project?.id });
+  const editCustomFieldsQuery = useIssueCustomFields(issue?.project?.id ?? '', form.trackerId);
   const trackers = trackersQuery.data?.data ?? [];
   const statuses = statusesQuery.data?.data ?? [];
   const members = membersQuery.data?.data ?? [];
@@ -195,11 +266,46 @@ export default function IssueDetailPage() {
     return map;
   }, [projectIssues, issue]);
 
+  const attachmentNameMap = useMemo(
+    () => new Map((issue?.attachments ?? []).map((attachment) => [attachment.id, attachment.filename])),
+    [issue?.attachments],
+  );
+  const customFieldReferenceOptions = useMemo(() => ({
+    users: members
+      .filter((member) => member.user)
+      .map((member) => ({
+        value: member.user!.id,
+        label: `${`${member.user!.lastname} ${member.user!.firstname}`.trim() || member.user!.login} (${member.user!.login})`,
+      })),
+    issues: projectIssues.map((iss) => ({ value: iss.id, label: `#${iss.number} ${iss.subject}` })),
+    attachments: [
+      ...(issue?.attachments ?? []).map((attachment) => ({ value: attachment.id, label: attachment.filename })),
+      ...customFieldAttachments,
+    ],
+  }), [members, projectIssues, issue?.attachments, customFieldAttachments]);
+
   const dateValidationError = useMemo(() => {
     if (!form.startDate || !form.dueDate) return '';
     if (form.dueDate < form.startDate) return t('issues.dateOrderError');
     return '';
   }, [form.startDate, form.dueDate, t]);
+
+  useEffect(() => {
+    if (!isEditing) return;
+    const fields = editCustomFieldsQuery.data?.data ?? [];
+    const issueValueMap = new Map(
+      (issue?.customFields ?? []).map((field) => [field.id, customFieldFormValue(field)]),
+    );
+    setForm((prev) => {
+      const next: Record<string, string | string[]> = {};
+      for (const field of fields) {
+        if (prev.customFields[field.id] !== undefined) next[field.id] = prev.customFields[field.id];
+        else if (issueValueMap.has(field.id)) next[field.id] = issueValueMap.get(field.id) ?? '';
+        else next[field.id] = field.multiple ? [] : field.defaultValue ?? '';
+      }
+      return { ...prev, customFields: next };
+    });
+  }, [editCustomFieldsQuery.data, isEditing, issue?.customFields]);
 
   const permissionSet = useMemo(() => {
     const set = new Set<string>();
@@ -248,6 +354,7 @@ export default function IssueDetailPage() {
   const enterEdit = () => {
     if (!issue) return;
     if (!canEditIssue) return;
+    setEditError('');
     setForm({
       subject: issue.subject,
       description: issue.description ?? '',
@@ -261,16 +368,32 @@ export default function IssueDetailPage() {
       estimatedHours: issue.estimatedHours != null ? String(issue.estimatedHours) : '',
       doneRatio: String(issue.doneRatio),
       repository: (issue as Issue & { repository?: string }).repository ?? '',
+      customFields: Object.fromEntries((issue.customFields ?? []).map((field) => [
+        field.id,
+        customFieldFormValue(field),
+      ])),
     });
     setIsEditing(true);
   };
 
-  const cancelEdit = () => setIsEditing(false);
+  const cancelEdit = () => {
+    setEditError('');
+    setIsEditing(false);
+  };
 
   const saveEdit = () => {
     if (!issue || !form.subject.trim()) return;
     if (!canEditIssue) return;
     if (dateValidationError) return;
+    setEditError('');
+    const customFieldValidationError = validateCustomFieldValues(
+      editCustomFieldsQuery.data?.data ?? issue.customFields ?? [],
+      form.customFields,
+    );
+    if (customFieldValidationError) {
+      setEditError(customFieldValidationError);
+      return;
+    }
     const assignee = parseAssigneeValue(form.assigneeValue);
     updateMutation.mutate(
       {
@@ -288,13 +411,22 @@ export default function IssueDetailPage() {
         estimatedHours: form.estimatedHours ? Number(form.estimatedHours) : null,
         doneRatio: Number(form.doneRatio),
         repository: form.repository.trim() || null,
+        customFields: form.customFields,
       },
-      { onSuccess: () => setIsEditing(false) },
+      {
+        onSuccess: () => {
+          setEditError('');
+          setIsEditing(false);
+        },
+        onError: (error) => setEditError(apiErrorMessage(error, 'チケットの保存に失敗しました')),
+      },
     );
   };
 
-  const setField = (key: keyof EditForm, value: string) =>
+  const setField = (key: keyof EditForm, value: string) => {
+    setEditError('');
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
 
   const submitComment = async (e: FormEvent) => {
     e.preventDefault();
@@ -328,7 +460,10 @@ export default function IssueDetailPage() {
     });
   };
 
-  const propKeyLabel = (key: string): string => {
+  const propKeyLabel = (detail: JournalDetail): string => {
+    if (detail.property === 'cf') {
+      return (detail as JournalDetail & { customFieldName?: string | null }).customFieldName || detail.propKey;
+    }
     const map: Record<string, string> = {
       subject: t('issues.subject'),
       description: t('issues.description'),
@@ -338,7 +473,6 @@ export default function IssueDetailPage() {
       assigneeId: t('issues.assignee'),
       assigneeGroupId: t('issues.assignee'),
       categoryId: t('issues.category'),
-      versionId: t('issues.version'),
       parentId: t('issues.parent'),
       startDate: t('issues.startDate'),
       dueDate: t('issues.dueDate'),
@@ -347,11 +481,50 @@ export default function IssueDetailPage() {
       projectId: t('projects.title'),
       repository: t('issues.repository'),
     };
-    return map[key] ?? key;
+    return map[detail.propKey] ?? detail.propKey;
+  };
+
+  const customFieldJournalValue = (detail: JournalDetail, rawValue: string | null): string => {
+    if (!rawValue) return '';
+    const field = issue?.customFields?.find((item) => item.id === detail.propKey);
+    if (!field) return rawValue;
+    const values = (() => {
+      if (!field.multiple) return [rawValue];
+      try {
+        const parsed = JSON.parse(rawValue);
+        return Array.isArray(parsed) ? parsed.map(String) : [String(parsed)];
+      } catch {
+        return rawValue.split(/\r?\n/).filter(Boolean);
+      }
+    })();
+    const labels = values.map((value) => {
+      if (field.fieldFormat === 'bool') return value === '1' ? 'はい' : 'いいえ';
+      if (field.fieldFormat === 'user') return assigneeNameMap.get(value) ?? value;
+      if (field.fieldFormat === 'issue') return issueNameMap.get(value) ?? value;
+      if (field.fieldFormat === 'attachment') return attachmentNameMap.get(value) ?? value;
+      if (field.fieldFormat === 'progress') return `${value}%`;
+      if (field.fieldFormat === 'key_value') {
+        const rawOptions = Array.isArray(field.possibleValues)
+          ? field.possibleValues.map(String)
+          : typeof field.possibleValues === 'string'
+            ? field.possibleValues.split(/\r?\n|\|/).map((entry) => entry.trim()).filter(Boolean)
+            : [];
+        const match = rawOptions
+          .map((entry) => {
+            const parsed = entry.match(/^([^=:\s]+)\s*[=:]\s*(.+)$/);
+            return parsed ? { value: parsed[1], label: parsed[2] } : { value: entry, label: entry };
+          })
+          .find((entry) => entry.value === value);
+        return match?.label ?? value;
+      }
+      return value;
+    });
+    return labels.join(', ');
   };
 
   const formatDetailValue = (detail: JournalDetail): string => {
     if (!detail.newValue) return '';
+    if (detail.property === 'cf') return customFieldJournalValue(detail, detail.newValue);
     if (detail.propKey === 'priority' && detail.newValue) {
       return t(`issues.priorities.${detail.newValue}` as 'issues.priorities.1') || detail.newValue;
     }
@@ -364,12 +537,13 @@ export default function IssueDetailPage() {
     if (detail.propKey === 'startDate' || detail.propKey === 'dueDate') {
       return formatJournalDate(detail.newValue);
     }
-    if (detail.propKey === 'description') return '（変更あり）';
+    if (detail.propKey === 'description') return '変更あり';
     return detail.newValue;
   };
 
   const formatDetailOldValue = (detail: JournalDetail): string => {
     if (!detail.oldValue) return '';
+    if (detail.property === 'cf') return customFieldJournalValue(detail, detail.oldValue);
     if (detail.propKey === 'priority' && detail.oldValue) {
       return t(`issues.priorities.${detail.oldValue}` as 'issues.priorities.1') || detail.oldValue;
     }
@@ -382,12 +556,12 @@ export default function IssueDetailPage() {
     if (detail.propKey === 'startDate' || detail.propKey === 'dueDate') {
       return formatJournalDate(detail.oldValue);
     }
-    if (detail.propKey === 'description') return '（変更あり）';
+    if (detail.propKey === 'description') return '変更あり';
     return detail.oldValue;
   };
 
   const renderDetail = (detail: JournalDetail) => {
-    const label = propKeyLabel(detail.propKey);
+    const label = propKeyLabel(detail);
     if (detail.oldValue && detail.newValue) {
       return <span><strong>{label}</strong> を <del className="text-red-500">{formatDetailOldValue(detail)}</del> から <ins className="text-green-600 no-underline">{formatDetailValue(detail)}</ins> に変更</span>;
     }
@@ -395,7 +569,7 @@ export default function IssueDetailPage() {
       return <span><strong>{label}</strong> を <ins className="text-green-600 no-underline">{formatDetailValue(detail)}</ins> に設定</span>;
     }
     if (detail.oldValue) {
-      return <span><strong>{label}</strong>（<del className="text-red-500">{formatDetailOldValue(detail)}</del>）を削除</span>;
+      return <span><strong>{label}</strong> <del className="text-red-500">{formatDetailOldValue(detail)}</del> を削除</span>;
     }
     return <span><strong>{label}</strong> を変更</span>;
   };
@@ -426,7 +600,7 @@ export default function IssueDetailPage() {
   const relations = issue.relations ?? [];
   const assigneeName = issue.assignee
     ? `${issue.assignee.lastname} ${issue.assignee.firstname}`.trim() || issue.assignee.login
-    : issue.assigneeGroup?.name ?? '—';
+    : issue.assigneeGroup?.name ?? '-';
 
   const selectCls = 'w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500';
   const inputCls = selectCls;
@@ -437,9 +611,56 @@ export default function IssueDetailPage() {
     ? `/api/v1/projects/${projectSlug || issue.project?.identifier}/issues/${issue.id}/atom`
     : `/api/v1/issues/${issue.id}/atom`;
   const repositoryValue = (issue as Issue & { repository?: string }).repository;
+  const customFieldDisplayText = (field: IssueCustomFieldValue): string => {
+    const raw = field.value;
+    const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    const labels = values.map((value) => {
+      if (field.fieldFormat === 'bool') return value === '1' ? 'はい' : 'いいえ';
+      if (field.fieldFormat === 'user') return assigneeNameMap.get(value) ?? value;
+      if (field.fieldFormat === 'issue') return issueNameMap.get(value) ?? value;
+      if (field.fieldFormat === 'attachment') return attachmentNameMap.get(value) ?? value;
+      if (field.fieldFormat === 'progress') return `${value}%`;
+      if (field.fieldFormat === 'key_value') {
+        const rawOptions = Array.isArray(field.possibleValues)
+          ? field.possibleValues.map(String)
+          : typeof field.possibleValues === 'string'
+            ? field.possibleValues.split(/\r?\n|\|/).map((entry) => entry.trim()).filter(Boolean)
+            : [];
+        const match = rawOptions
+          .map((entry) => {
+            const parsed = entry.match(/^([^=:\s]+)\s*[=:]\s*(.+)$/);
+            return parsed ? { value: parsed[1], label: parsed[2] } : { value: entry, label: entry };
+          })
+          .find((entry) => entry.value === value);
+        return match?.label ?? value;
+      }
+      return value;
+    });
+    return labels.join(', ');
+  };
+  const customFieldRows = (issue.customFields ?? []).map((field) => {
+    const text = customFieldDisplayText(field);
+    const value = text
+      ? field.fieldFormat === 'link'
+        ? <a href={text} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline break-all">{text}</a>
+        : field.fieldFormat === 'attachment' && !Array.isArray(field.value)
+          ? <a href={`/api/v1/attachments/${field.value}/download`} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline break-all">{text}</a>
+        : field.fieldFormat === 'progress'
+          ? (
+            <div className="flex items-center gap-3">
+              <div className="h-2 w-32 overflow-hidden rounded-full bg-slate-200">
+                <div className="h-full rounded-full bg-primary-500 transition-all" style={{ width: text }} />
+              </div>
+              <span className="text-sm font-medium text-slate-900">{text}</span>
+            </div>
+          )
+        : <span className="text-slate-900 whitespace-pre-wrap">{text}</span>
+      : <span className="text-slate-900">-</span>;
+    return { key: `cf-${field.id}`, label: field.name, value };
+  });
   const propertyRows: Array<{ key: string; label: string; value: ReactNode }> = [
-    { key: 'tracker', label: t('issues.tracker'), value: <span className="font-medium text-slate-900">{issue.tracker?.name ?? '—'}</span> },
-    { key: 'status', label: t('issues.status'), value: <span className="font-medium text-slate-900">{issue.status?.name ?? '—'}</span> },
+    { key: 'tracker', label: t('issues.tracker'), value: <span className="font-medium text-slate-900">{issue.tracker?.name ?? '-'}</span> },
+    { key: 'status', label: t('issues.status'), value: <span className="font-medium text-slate-900">{issue.status?.name ?? '-'}</span> },
     {
       key: 'priority',
       label: t('issues.priority'),
@@ -456,11 +677,11 @@ export default function IssueDetailPage() {
         ? <Link to={`/users/${issue.assignee.id}`} className="font-medium text-primary-600 hover:underline">{assigneeName}</Link>
         : issue.assigneeGroup
           ? <span className="font-medium text-slate-900">[グループ] {issue.assigneeGroup.name}</span>
-        : <span className="font-medium text-slate-900">—</span>,
+        : <span className="font-medium text-slate-900">-</span>,
     },
     { key: 'startDate', label: t('issues.startDate'), value: <span className="text-slate-900">{displayDate(issue.startDate)}</span> },
     { key: 'dueDate', label: t('issues.dueDate'), value: <span className="text-slate-900">{displayDate(issue.dueDate)}</span> },
-    { key: 'estimatedHours', label: t('issues.estimatedHours'), value: <span className="text-slate-900">{issue.estimatedHours != null ? `${issue.estimatedHours}h` : '—'}</span> },
+    { key: 'estimatedHours', label: t('issues.estimatedHours'), value: <span className="text-slate-900">{issue.estimatedHours != null ? `${issue.estimatedHours}h` : '-'}</span> },
     {
       key: 'doneRatio',
       label: t('issues.doneRatio'),
@@ -482,7 +703,7 @@ export default function IssueDetailPage() {
             {issue.parent.subject}
           </Link>
         )
-        : <span className="text-slate-900">—</span>,
+        : <span className="text-slate-900">-</span>,
     },
     ...(repositoryValue ? [{
       key: 'repository',
@@ -502,6 +723,7 @@ export default function IssueDetailPage() {
         );
       })(),
     }] : []),
+    ...customFieldRows,
     {
       key: 'children',
       label: t('issues.children'),
@@ -517,7 +739,7 @@ export default function IssueDetailPage() {
             ))}
           </ul>
         )
-        : <span className="text-slate-900">—</span>,
+        : <span className="text-slate-900">-</span>,
     },
   ];
 
@@ -525,7 +747,7 @@ export default function IssueDetailPage() {
     <div className="mx-auto max-w-5xl px-4 py-8">
       {/* Context header */}
       <div className="mb-4 text-sm text-slate-500">
-        <span>{issue.project?.name ?? projectSlug ?? '—'}</span>
+        <span>{issue.project?.name ?? projectSlug ?? '-'}</span>
         {issue.parent ? (
           <>
             <span className="mx-1.5">/</span>
@@ -582,7 +804,7 @@ export default function IssueDetailPage() {
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.assignee')}</label>
               <select value={form.assigneeValue} onChange={(e) => setField('assigneeValue', e.target.value)} className={selectCls}>
-                <option value="">—</option>
+                <option value="">-</option>
                 {assigneeOptions.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
@@ -612,7 +834,7 @@ export default function IssueDetailPage() {
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.parent')}</label>
               <select value={form.parentId} onChange={(e) => setField('parentId', e.target.value)} className={selectCls}>
-                <option value="">—</option>
+                <option value="">-</option>
                 {(projectIssues ?? []).map((iss) => (
                   <option key={iss.id} value={iss.id}>
                     #{(iss as Issue).number} {iss.subject}
@@ -625,6 +847,31 @@ export default function IssueDetailPage() {
               <input type="text" value={form.repository}
                 onChange={(e) => setField('repository', e.target.value)} placeholder="https://github.com/..." className={inputCls} />
             </div>
+            <IssueCustomFieldInputs
+              fields={editCustomFieldsQuery.data?.data ?? issue.customFields ?? []}
+              values={form.customFields}
+              onChange={(fieldId, value) => {
+                setEditError('');
+                setForm((prev) => ({
+                  ...prev,
+                  customFields: { ...prev.customFields, [fieldId]: value },
+                }));
+              }}
+              referenceOptions={customFieldReferenceOptions}
+              onUploadFiles={async (files, fieldId) => {
+                const res = await uploadMutation.mutateAsync({ files, issueId: issue.id, description: `custom-field:${fieldId}` });
+                const uploaded = ((res.data?.attachments ?? []) as Array<{ id?: string; filename?: string }>).flatMap((attachment) =>
+                  attachment.id ? [{ value: attachment.id, label: attachment.filename ?? attachment.id }] : [],
+                );
+                setCustomFieldAttachments((prev) => {
+                  const seen = new Set(prev.map((item) => item.value));
+                  return [...prev, ...uploaded.filter((item) => !seen.has(item.value))];
+                });
+                return uploaded;
+              }}
+              labelClassName="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500"
+              inputClassName={inputCls}
+            />
           </div>
         ) : (
           <>
@@ -638,7 +885,7 @@ export default function IssueDetailPage() {
               ))}
             </div>
             <div className="border-t border-slate-100 px-5 py-2 text-xs text-slate-400">
-              {t('issues.author')}: {issue.author ? <Link to={`/users/${issue.author.id}`} className="text-primary-600 hover:underline">{`${issue.author.lastname} ${issue.author.firstname}`.trim() || issue.author.login}</Link> : '—'}
+              {t('issues.author')}: {issue.author ? <Link to={`/users/${issue.author.id}`} className="text-primary-600 hover:underline">{`${issue.author.lastname} ${issue.author.firstname}`.trim() || issue.author.login}</Link> : '-'}
               <span className="mx-2">|</span>
               {t('app.create')}: {format(new Date(issue.createdAt), 'yyyy-MM-dd HH:mm', { locale })}
               <span className="mx-2">|</span>
@@ -668,16 +915,22 @@ export default function IssueDetailPage() {
 
       {/* Edit action bar */}
       {isEditing && (
-        <div className="mb-6 flex items-center gap-3">
-          <button type="button" onClick={saveEdit} disabled={updateMutation.isPending || !form.subject.trim() || !!dateValidationError}
-            className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50">
-            {updateMutation.isPending ? t('app.loading') : t('app.save')}
-          </button>
-          <button type="button" onClick={cancelEdit}
-            className="rounded-lg border border-slate-300 px-5 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
-            {t('app.cancel')}
-          </button>
-          {dateValidationError && <p className="text-sm text-red-600">{dateValidationError}</p>}
+        <div className="mb-6 space-y-3">
+          {(editError || dateValidationError) && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+              {editError || dateValidationError}
+            </div>
+          )}
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={saveEdit} disabled={updateMutation.isPending || !form.subject.trim() || !!dateValidationError}
+              className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50">
+              {updateMutation.isPending ? t('app.loading') : t('app.save')}
+            </button>
+            <button type="button" onClick={cancelEdit}
+              className="rounded-lg border border-slate-300 px-5 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+              {t('app.cancel')}
+            </button>
+          </div>
         </div>
       )}
 
@@ -731,12 +984,12 @@ export default function IssueDetailPage() {
             <ul className="mt-1.5 divide-y divide-slate-100">
               {latestFiveActivityJournals.map((j) => {
                 const details = (j.details ?? []).filter((d) => d.oldValue || d.newValue);
-                const userName = j.user ? `${j.user.lastname} ${j.user.firstname}`.trim() || j.user.login : '—';
+                const userName = j.user ? `${j.user.lastname} ${j.user.firstname}`.trim() || j.user.login : '-';
                 return (
                   <li key={j.id} className="py-1.5">
                     <div className="flex items-center gap-1.5 text-[11px] text-slate-400 leading-tight">
                       <span className="font-medium text-slate-600">{userName}</span>
-                      <span>·</span>
+                      <span>・</span>
                       <time dateTime={j.createdAt}>{format(new Date(j.createdAt), 'yyyy-MM-dd HH:mm', { locale })}</time>
                     </div>
                     <ul className="mt-0.5">
@@ -765,7 +1018,7 @@ export default function IssueDetailPage() {
         });
         return (
           <section className="mb-6 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <h2 className="text-sm font-semibold text-slate-900">{t('issues.addComment').replace('を追加', '')}</h2>
+            <h2 className="text-sm font-semibold text-slate-900">{t('issues.addComment')}</h2>
             {commentJournals.length === 0 ? (
               <p className="mt-1 text-xs text-slate-400">{t('app.noData')}</p>
             ) : (
@@ -774,7 +1027,7 @@ export default function IssueDetailPage() {
                   const hasNotes = j.notes && j.notes.trim();
                   const imgs = (j.attachments ?? []).filter((a) => a.contentType?.startsWith('image/'));
                   const nonImgs = (j.attachments ?? []).filter((a) => !a.contentType?.startsWith('image/'));
-                  const userName = j.user ? `${j.user.lastname} ${j.user.firstname}`.trim() || j.user.login : '—';
+                  const userName = j.user ? `${j.user.lastname} ${j.user.firstname}`.trim() || j.user.login : '-';
                   const canEdit = isAuthenticated && (j.userId === currentUser?.id || currentUser?.admin);
                   const isEdited = j.updatedAt && j.createdAt !== j.updatedAt;
 
@@ -784,7 +1037,7 @@ export default function IssueDetailPage() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5 text-[11px] text-slate-400 leading-tight">
                           <span className="font-medium text-slate-600">{userName}</span>
-                          <span>·</span>
+                          <span>ﾂｷ</span>
                           <time dateTime={j.createdAt}>{format(new Date(j.createdAt), 'yyyy-MM-dd HH:mm', { locale })}</time>
                           {isEdited && <span className="text-slate-400">{t('activity.edited')}</span>}
                         </div>
@@ -952,7 +1205,7 @@ export default function IssueDetailPage() {
             <h3 className="text-lg font-semibold text-slate-900">{t('app.confirm')}</h3>
             <p className="mt-2 text-sm text-slate-600">
               <span className="font-medium text-slate-800">{deleteTarget.filename}</span>
-              {' '}{t('app.delete')}しますか？
+              {' '}を削除しますか？
             </p>
             <div className="mt-5 flex justify-end gap-3">
               <button type="button" onClick={() => setDeleteTarget(null)}

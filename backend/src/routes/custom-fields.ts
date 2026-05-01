@@ -18,16 +18,26 @@ function zodMessage(err: z.ZodError): string {
   return err.issues.map((i) => i.message).join('; ');
 }
 
-const customFieldTypeSchema = z.enum([
-  'IssueCustomField',
-  'ProjectCustomField',
-  'UserCustomField',
-  'TimeEntryCustomField',
-  'VersionCustomField',
+const customFieldTypeSchema = z.enum(['IssueCustomField']);
+
+const issueCustomFieldFormats = new Set([
+  'string',
+  'text',
+  'int',
+  'float',
+  'list',
+  'key_value',
+  'date',
+  'bool',
+  'link',
+  'user',
+  'issue',
+  'attachment',
+  'progress',
 ]);
 
 const createBodySchema = z.object({
-  type: customFieldTypeSchema,
+  type: customFieldTypeSchema.default('IssueCustomField'),
   name: z.string().min(1).max(255),
   fieldFormat: z.string().min(1).max(64),
   possibleValues: z.unknown().optional().nullable(),
@@ -38,8 +48,11 @@ const createBodySchema = z.object({
   isFilter: z.boolean().optional(),
   searchable: z.boolean().optional(),
   multiple: z.boolean().optional(),
+  isForAll: z.boolean().optional(),
   defaultValue: z.string().nullable().optional(),
+  position: z.number().int().min(1).optional(),
   trackerIds: z.array(z.string().uuid()).optional(),
+  projectIds: z.array(z.string().uuid()).optional(),
 });
 
 const updateBodySchema = createBodySchema.partial();
@@ -55,7 +68,38 @@ const enumerationUpdateSchema = enumerationBodySchema.partial();
 router.use(authenticate, requireAdmin);
 
 function isListFormat(fieldFormat: string): boolean {
-  return fieldFormat === 'list';
+  return fieldFormat === 'list' || fieldFormat === 'key_value';
+}
+
+function validateCustomFieldFormat(type: string, fieldFormat: string) {
+  if (type === 'IssueCustomField' && !issueCustomFieldFormats.has(fieldFormat)) {
+    throw AppError.badRequest('未対応の書式です');
+  }
+}
+
+function validateDefaultValue(fieldFormat: string, defaultValue: string | null | undefined) {
+  if (fieldFormat !== 'progress' || defaultValue === undefined || defaultValue === null || defaultValue === '') {
+    return;
+  }
+  if (!/^\d+$/.test(defaultValue) || Number(defaultValue) < 0 || Number(defaultValue) > 100 || Number(defaultValue) % 10 !== 0) {
+    throw AppError.badRequest('進捗バーのデフォルト値は 0 から 100 の10%区切りで入力してください');
+  }
+}
+
+type CustomFieldWithRelations = Prisma.CustomFieldGetPayload<{
+  include: {
+    enumerations: true;
+    customFieldTrackers: { include: { tracker: { select: { id: true; name: true } } } };
+    projectCustomFields: { include: { project: { select: { id: true; name: true; identifier: true } } } };
+  };
+}>;
+
+function serializeCustomField(field: CustomFieldWithRelations) {
+  return {
+    ...field,
+    trackerIds: field.customFieldTrackers.map((row) => row.trackerId),
+    projectIds: field.projectCustomFields.map((row) => row.projectId),
+  };
 }
 
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
@@ -65,15 +109,16 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       return next(AppError.badRequest('無効な type です'));
     }
 
-    const where = typeParam ? { type: typeParam } : {};
     const fields = await prisma.customField.findMany({
-      where,
+      where: { type: 'IssueCustomField' },
       orderBy: [{ type: 'asc' }, { position: 'asc' }, { name: 'asc' }],
       include: {
+        enumerations: { orderBy: { position: 'asc' } },
         customFieldTrackers: { include: { tracker: { select: { id: true, name: true } } } },
+        projectCustomFields: { include: { project: { select: { id: true, name: true, identifier: true } } } },
       },
     });
-    sendSuccess(res, fields);
+    sendSuccess(res, fields.map(serializeCustomField));
   } catch (err) {
     next(err);
   }
@@ -88,12 +133,16 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
       include: {
         enumerations: { orderBy: { position: 'asc' } },
         customFieldTrackers: { include: { tracker: { select: { id: true, name: true } } } },
+        projectCustomFields: { include: { project: { select: { id: true, name: true, identifier: true } } } },
       },
     });
     if (!field) {
       return next(AppError.notFound('カスタムフィールドが見つかりません'));
     }
-    sendSuccess(res, field);
+    if (field.type !== 'IssueCustomField') {
+      return next(AppError.notFound('カスタムフィールドが見つかりません'));
+    }
+    sendSuccess(res, serializeCustomField(field));
   } catch (err) {
     next(err);
   }
@@ -108,6 +157,10 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     const data = parsed.data;
     const trackerIds = data.trackerIds ?? [];
+    const projectIds = data.projectIds ?? [];
+    const isForAll = data.isForAll ?? true;
+    validateCustomFieldFormat(data.type, data.fieldFormat);
+    validateDefaultValue(data.fieldFormat, data.defaultValue);
 
     if (data.type === 'IssueCustomField' && trackerIds.length > 0) {
       const count = await prisma.tracker.count({ where: { id: { in: trackerIds } } });
@@ -115,11 +168,21 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         return next(AppError.badRequest('存在しないトラッカー ID が含まれています'));
       }
     } else if (data.type !== 'IssueCustomField' && trackerIds.length > 0) {
-      return next(AppError.badRequest('trackerIds は Issue 用カスタムフィールドでのみ指定できます'));
+      return next(AppError.badRequest('trackerIds はチケット用カスタムフィールドでのみ指定できます'));
+    }
+
+    if (data.type !== 'IssueCustomField' && projectIds.length > 0) {
+      return next(AppError.badRequest('projectIds はチケット用カスタムフィールドでのみ指定できます'));
+    }
+    if (!isForAll && projectIds.length > 0) {
+      const count = await prisma.project.count({ where: { id: { in: projectIds } } });
+      if (count !== projectIds.length) {
+        return next(AppError.badRequest('存在しないプロジェクト ID が含まれています'));
+      }
     }
 
     const maxPos = await prisma.customField.aggregate({ _max: { position: true } });
-    const position = (maxPos._max.position ?? -1) + 1;
+    const position = data.position ?? ((maxPos._max.position ?? 0) + 1);
 
     const possibleValues =
       data.possibleValues === undefined || data.possibleValues === null
@@ -140,6 +203,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
           isFilter: data.isFilter ?? false,
           searchable: data.searchable ?? false,
           multiple: data.multiple ?? false,
+          isForAll,
           defaultValue: data.defaultValue ?? null,
           position,
         },
@@ -155,16 +219,27 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         });
       }
 
+      if (created.type === 'IssueCustomField' && !created.isForAll && projectIds.length > 0) {
+        await tx.projectCustomField.createMany({
+          data: projectIds.map((projectId) => ({
+            customFieldId: created.id,
+            projectId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
       return tx.customField.findUniqueOrThrow({
         where: { id: created.id },
         include: {
           enumerations: { orderBy: { position: 'asc' } },
           customFieldTrackers: { include: { tracker: { select: { id: true, name: true } } } },
+          projectCustomFields: { include: { project: { select: { id: true, name: true, identifier: true } } } },
         },
       });
     });
 
-    sendSuccess(res, field, 201);
+    sendSuccess(res, serializeCustomField(field), 201);
   } catch (err) {
     next(err);
   }
@@ -183,17 +258,37 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     if (!existing) {
       return next(AppError.notFound('カスタムフィールドが見つかりません'));
     }
+    if (existing.type !== 'IssueCustomField') {
+      return next(AppError.notFound('カスタムフィールドが見つかりません'));
+    }
 
     const data = parsed.data;
+    const effectiveFieldFormat = data.fieldFormat ?? existing.fieldFormat;
+    validateCustomFieldFormat(data.type ?? existing.type, effectiveFieldFormat);
+    validateDefaultValue(
+      effectiveFieldFormat,
+      data.defaultValue !== undefined ? data.defaultValue : existing.defaultValue,
+    );
 
     if (data.trackerIds !== undefined) {
       const effectiveType = data.type ?? existing.type;
       if (effectiveType !== 'IssueCustomField') {
-        return next(AppError.badRequest('trackerIds は Issue 用カスタムフィールドでのみ指定できます'));
+        return next(AppError.badRequest('trackerIds はチケット用カスタムフィールドでのみ指定できます'));
       }
       const count = await prisma.tracker.count({ where: { id: { in: data.trackerIds } } });
       if (count !== data.trackerIds.length) {
         return next(AppError.badRequest('存在しないトラッカー ID が含まれています'));
+      }
+    }
+
+    if (data.projectIds !== undefined) {
+      const effectiveType = data.type ?? existing.type;
+      if (effectiveType !== 'IssueCustomField') {
+        return next(AppError.badRequest('projectIds はチケット用カスタムフィールドでのみ指定できます'));
+      }
+      const count = await prisma.project.count({ where: { id: { in: data.projectIds } } });
+      if (count !== data.projectIds.length) {
+        return next(AppError.badRequest('存在しないプロジェクト ID が含まれています'));
       }
     }
 
@@ -218,7 +313,9 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
           ...(data.isFilter !== undefined ? { isFilter: data.isFilter } : {}),
           ...(data.searchable !== undefined ? { searchable: data.searchable } : {}),
           ...(data.multiple !== undefined ? { multiple: data.multiple } : {}),
+          ...(data.isForAll !== undefined ? { isForAll: data.isForAll } : {}),
           ...(data.defaultValue !== undefined ? { defaultValue: data.defaultValue } : {}),
+          ...(data.position !== undefined ? { position: data.position } : {}),
         },
       });
 
@@ -234,16 +331,32 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
         }
       }
 
+      if (data.projectIds !== undefined || data.isForAll !== undefined) {
+        await tx.projectCustomField.deleteMany({ where: { customFieldId: id } });
+        const nextIsForAll = data.isForAll ?? existing.isForAll;
+        const nextProjectIds = data.projectIds ?? [];
+        if (!nextIsForAll && nextProjectIds.length > 0) {
+          await tx.projectCustomField.createMany({
+            data: nextProjectIds.map((projectId) => ({
+              customFieldId: id,
+              projectId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+
       return tx.customField.findUniqueOrThrow({
         where: { id },
         include: {
           enumerations: { orderBy: { position: 'asc' } },
           customFieldTrackers: { include: { tracker: { select: { id: true, name: true } } } },
+          projectCustomFields: { include: { project: { select: { id: true, name: true, identifier: true } } } },
         },
       });
     });
 
-    sendSuccess(res, field);
+    sendSuccess(res, serializeCustomField(field));
   } catch (err) {
     next(err);
   }
@@ -255,6 +368,9 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     if (!id) return next(AppError.badRequest('ID が無効です'));
     const existing = await prisma.customField.findUnique({ where: { id } });
     if (!existing) {
+      return next(AppError.notFound('カスタムフィールドが見つかりません'));
+    }
+    if (existing.type !== 'IssueCustomField') {
       return next(AppError.notFound('カスタムフィールドが見つかりません'));
     }
 
@@ -284,9 +400,12 @@ router.post('/:id/enumerations', async (req: Request, res: Response, next: NextF
     if (!field) {
       return next(AppError.notFound('カスタムフィールドが見つかりません'));
     }
+    if (field.type !== 'IssueCustomField') {
+      return next(AppError.notFound('カスタムフィールドが見つかりません'));
+    }
     if (!isListFormat(field.fieldFormat)) {
       return next(
-        AppError.badRequest('列挙の追加は fieldFormat が list のカスタムフィールドのみ可能です'),
+        AppError.badRequest('候補値の追加はリスト形式のカスタムフィールドでのみ可能です'),
       );
     }
 
@@ -327,9 +446,12 @@ router.put('/:id/enumerations/:enumId', async (req: Request, res: Response, next
     if (!field) {
       return next(AppError.notFound('カスタムフィールドが見つかりません'));
     }
+    if (field.type !== 'IssueCustomField') {
+      return next(AppError.notFound('カスタムフィールドが見つかりません'));
+    }
     if (!isListFormat(field.fieldFormat)) {
       return next(
-        AppError.badRequest('列挙の更新は fieldFormat が list のカスタムフィールドのみ可能です'),
+        AppError.badRequest('候補値の更新はリスト形式のカスタムフィールドでのみ可能です'),
       );
     }
 
@@ -337,7 +459,7 @@ router.put('/:id/enumerations/:enumId', async (req: Request, res: Response, next
       where: { id: enumId, customFieldId: id },
     });
     if (!existing) {
-      return next(AppError.notFound('列挙が見つかりません'));
+      return next(AppError.notFound('候補値が見つかりません'));
     }
 
     const enumeration = await prisma.customFieldEnumeration.update({
@@ -364,9 +486,12 @@ router.delete('/:id/enumerations/:enumId', async (req: Request, res: Response, n
     if (!field) {
       return next(AppError.notFound('カスタムフィールドが見つかりません'));
     }
+    if (field.type !== 'IssueCustomField') {
+      return next(AppError.notFound('カスタムフィールドが見つかりません'));
+    }
     if (!isListFormat(field.fieldFormat)) {
       return next(
-        AppError.badRequest('列挙の削除は fieldFormat が list のカスタムフィールドのみ可能です'),
+        AppError.badRequest('候補値の削除はリスト形式のカスタムフィールドでのみ可能です'),
       );
     }
 
@@ -374,7 +499,7 @@ router.delete('/:id/enumerations/:enumId', async (req: Request, res: Response, n
       where: { id: enumId, customFieldId: id },
     });
     if (!existing) {
-      return next(AppError.notFound('列挙が見つかりません'));
+      return next(AppError.notFound('候補値が見つかりません'));
     }
 
     await prisma.customFieldEnumeration.delete({ where: { id: enumId } });

@@ -78,6 +78,7 @@ const createProjectSchema = z.object({
   parentId: z.string().uuid().nullable().optional(),
   enabledModules: z.array(z.string()).optional(),
   trackerIds: z.array(z.string().uuid()).optional(),
+  customFieldIds: z.array(z.string().uuid()).optional(),
 });
 
 const updateProjectSchema = z.object({
@@ -93,7 +94,24 @@ const updateProjectSchema = z.object({
   status: z.number().int().optional(),
   enabledModules: z.array(z.string()).optional(),
   trackerIds: z.array(z.string().uuid()).optional(),
+  customFieldIds: z.array(z.string().uuid()).optional(),
 });
+
+async function validateIssueProjectCustomFieldIds(customFieldIds: string[]) {
+  if (!customFieldIds.length) return [];
+  const fields = await prisma.customField.findMany({
+    where: {
+      id: { in: customFieldIds },
+      type: 'IssueCustomField',
+      isForAll: false,
+    },
+    select: { id: true },
+  });
+  if (fields.length !== new Set(customFieldIds).size) {
+    throw AppError.badRequest('存在しないカスタムフィールド ID が含まれています');
+  }
+  return fields.map((field) => field.id);
+}
 
 router.get(
   '/',
@@ -305,6 +323,34 @@ router.get(
 );
 
 router.get(
+  '/:id/custom_fields',
+  authenticate,
+  catchAsync(async (req, res) => {
+    const project = await resolveProjectRef(req.params.id);
+    if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+
+    const canManage = await userCanManageProject(req.user?.userId, req.user?.admin, project);
+    if (!canManage) throw AppError.forbidden('プロジェクトを管理する権限がありません');
+
+    const fields = await prisma.customField.findMany({
+      where: { type: 'IssueCustomField', isForAll: false },
+      orderBy: [{ position: 'asc' }, { name: 'asc' }],
+      include: {
+        enumerations: { orderBy: { position: 'asc' } },
+        customFieldTrackers: { include: { tracker: { select: { id: true, name: true } } } },
+        projectCustomFields: { include: { project: { select: { id: true, name: true, identifier: true } } } },
+      },
+    });
+
+    return sendSuccess(res, fields.map((field) => ({
+      ...field,
+      trackerIds: field.customFieldTrackers.map((row) => row.trackerId),
+      projectIds: field.projectCustomFields.map((row) => row.projectId),
+    })));
+  }),
+);
+
+router.get(
   '/:id',
   optionalAuth,
   catchAsync(async (req, res) => {
@@ -326,6 +372,13 @@ router.get(
         updatedAt: true,
         enabledModules: { select: { name: true } },
         projectTrackers: { include: { tracker: true } },
+        projectCustomFields: {
+          include: {
+            customField: {
+              select: { id: true, name: true, fieldFormat: true, isForAll: true, position: true },
+            },
+          },
+        },
         _count: {
           select: { projectTrackers: true, members: true },
         },
@@ -377,6 +430,10 @@ router.post(
     });
     if (existing) throw AppError.conflict('identifier が既に使用されています');
 
+    const validCustomFieldIds = body.customFieldIds
+      ? await validateIssueProjectCustomFieldIds(body.customFieldIds)
+      : [];
+
     const project = await prisma.$transaction(async (tx) => {
       const p = await tx.project.create({
         data: {
@@ -401,11 +458,19 @@ router.post(
         });
       }
 
+      if (validCustomFieldIds.length) {
+        await tx.projectCustomField.createMany({
+          data: validCustomFieldIds.map((customFieldId) => ({ projectId: p.id, customFieldId })),
+          skipDuplicates: true,
+        });
+      }
+
       return tx.project.findUniqueOrThrow({
         where: { id: p.id },
         include: {
           enabledModules: true,
           projectTrackers: { include: { tracker: true } },
+          projectCustomFields: { include: { customField: true } },
         },
       });
     });
@@ -444,6 +509,10 @@ router.put(
       if (!parent) throw AppError.badRequest('親プロジェクトが存在しません');
     }
 
+    const validCustomFieldIds = body.customFieldIds
+      ? await validateIssueProjectCustomFieldIds(body.customFieldIds)
+      : [];
+
     const updated = await prisma.$transaction(async (tx) => {
       await tx.project.update({
         where: { id: current.id },
@@ -478,11 +547,22 @@ router.put(
         }
       }
 
+      if (body.customFieldIds) {
+        await tx.projectCustomField.deleteMany({ where: { projectId: current.id } });
+        if (validCustomFieldIds.length) {
+          await tx.projectCustomField.createMany({
+            data: validCustomFieldIds.map((customFieldId) => ({ projectId: current.id, customFieldId })),
+            skipDuplicates: true,
+          });
+        }
+      }
+
       return tx.project.findUniqueOrThrow({
         where: { id: current.id },
         include: {
           enabledModules: true,
           projectTrackers: { include: { tracker: true } },
+          projectCustomFields: { include: { customField: true } },
         },
       });
     });

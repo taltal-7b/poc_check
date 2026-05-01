@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useCreateIssue, useUploadAttachments, useEnumerations, useProject, useStatuses, useMembers, useProjectIssues } from '../api/hooks';
+import { useCreateIssue, useUploadAttachments, useEnumerations, useProject, useStatuses, useMembers, useProjectIssues, useIssueCustomFields } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 import RichTextEditor from '../components/RichTextEditor';
+import IssueCustomFieldInputs from '../components/IssueCustomFieldInputs';
 import type { Issue } from '../types';
 
 function RequiredMark() {
@@ -62,8 +63,11 @@ export default function IssueNewPage() {
   const [doneRatio, setDoneRatio] = useState(0);
   const [repository, setRepository] = useState('');
   const [parentId, setParentId] = useState('');
+  const [customFields, setCustomFields] = useState<Record<string, string | string[]>>({});
   const [attachFiles, setAttachFiles] = useState<File[]>([]);
+  const [customFieldAttachments, setCustomFieldAttachments] = useState<Array<{ value: string; label: string }>>([]);
   const canCreateIssue = Boolean(project?.permissions?.canCreateIssue);
+  const customFieldsQuery = useIssueCustomFields(project?.id ?? '', trackerId);
 
   const assigneeOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -85,6 +89,29 @@ export default function IssueNewPage() {
     });
   }, [members]);
 
+  const customFieldReferenceOptions = useMemo(() => ({
+    users: members
+      .filter((member) => member.user)
+      .map((member) => ({
+        value: member.user!.id,
+        label: `${`${member.user!.lastname} ${member.user!.firstname}`.trim() || member.user!.login} (${member.user!.login})`,
+      })),
+    issues: projectIssues.map((iss) => ({ value: iss.id, label: `#${iss.number} ${iss.subject}` })),
+    attachments: customFieldAttachments,
+  }), [members, projectIssues, customFieldAttachments]);
+
+  const uploadCustomFieldFiles = async (files: File[], fieldId: string) => {
+    const res = await uploadMutation.mutateAsync({ files, description: `custom-field:${fieldId}` });
+    const uploaded = ((res.data?.attachments ?? []) as Array<{ id?: string; filename?: string }>).flatMap((attachment) =>
+      attachment.id ? [{ value: attachment.id, label: attachment.filename ?? attachment.id }] : [],
+    );
+    setCustomFieldAttachments((prev) => {
+      const seen = new Set(prev.map((item) => item.value));
+      return [...prev, ...uploaded.filter((item) => !seen.has(item.value))];
+    });
+    return uploaded;
+  };
+
   const dateValidationError = useMemo(() => {
     if (!startDate || !dueDate) return '';
     if (dueDate < startDate) return t('issues.dateOrderError');
@@ -105,6 +132,19 @@ export default function IssueNewPage() {
     if (statuses.length && !statusId) setStatusId(statuses[0].id);
   }, [statuses, statusId]);
 
+  useEffect(() => {
+    const fields = customFieldsQuery.data?.data ?? [];
+    setCustomFields((prev) => {
+      const next: Record<string, string | string[]> = {};
+      for (const field of fields) {
+        if (prev[field.id] !== undefined) next[field.id] = prev[field.id];
+        else if (field.multiple) next[field.id] = [];
+        else next[field.id] = field.defaultValue ?? '';
+      }
+      return next;
+    });
+  }, [customFieldsQuery.data]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!project) return;
@@ -124,13 +164,13 @@ export default function IssueNewPage() {
         assigneeId: assignee.assigneeId,
         assigneeGroupId: assignee.assigneeGroupId,
         categoryId: categoryId || null,
-        versionId: null,
         parentId: parentId || null,
         startDate: startDate || null,
         dueDate: dueDate || null,
         estimatedHours: estimatedHours === '' ? null : Number(estimatedHours),
         doneRatio,
         repository: repository.trim() || null,
+        customFields,
       },
       {
         onSuccess: async (res) => {
@@ -335,6 +375,13 @@ export default function IssueNewPage() {
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
+        <IssueCustomFieldInputs
+          fields={customFieldsQuery.data?.data ?? []}
+          values={customFields}
+          onChange={(fieldId, value) => setCustomFields((prev) => ({ ...prev, [fieldId]: value }))}
+          referenceOptions={customFieldReferenceOptions}
+          onUploadFiles={uploadCustomFieldFiles}
+        />
         {createMutation.isError && <p className="text-sm text-red-600">{t('app.error')}</p>}
         <button
           type="submit"

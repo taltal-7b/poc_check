@@ -41,7 +41,6 @@ const ISSUE_JOURNAL_KEYS = [
   'assigneeId',
   'assigneeGroupId',
   'categoryId',
-  'versionId',
   'parentId',
   'startDate',
   'dueDate',
@@ -60,7 +59,6 @@ const ISSUE_ACTIVITY_FIELD_LABELS: Record<string, string> = {
   assigneeId: '担当者',
   assigneeGroupId: '担当者',
   categoryId: 'カテゴリ',
-  versionId: '対象バージョン',
   parentId: '親チケット',
   startDate: '開始日',
   dueDate: '期日',
@@ -98,6 +96,27 @@ function buildJournalDetailsFromDiff(
         propKey: key,
         oldValue: ov,
         newValue: nv,
+      });
+    }
+  }
+  return details;
+}
+
+function buildCustomFieldJournalDetailsFromDiff(
+  fields: { id: string; name: string }[],
+  before: Map<string, string | null>,
+  after: Map<string, string | null>,
+) {
+  const details: Prisma.JournalDetailCreateWithoutJournalInput[] = [];
+  for (const field of fields) {
+    const oldValue = before.get(field.id) ?? null;
+    const newValue = after.get(field.id) ?? null;
+    if (oldValue !== newValue) {
+      details.push({
+        property: 'cf',
+        propKey: field.id,
+        oldValue,
+        newValue,
       });
     }
   }
@@ -252,6 +271,12 @@ function collectJournalDetailIds(
   })));
 }
 
+function collectCustomFieldDetailIds(details: Prisma.JournalDetailCreateWithoutJournalInput[]) {
+  return Array.from(new Set(details.flatMap((detail) => (
+    detail.property === 'cf' && isUuidLike(detail.propKey) ? [detail.propKey] : []
+  ))));
+}
+
 function setLabel(labels: Map<string, string>, id: string, value: string | null | undefined) {
   if (value && value.trim()) labels.set(id, value.trim());
 }
@@ -286,8 +311,8 @@ async function buildIssueJournalActivityDescription(
     assigneeIds,
     assigneeGroupIds,
     categoryIds,
-    versionIds,
     parentIds,
+    customFieldIds,
   ] = [
     collectJournalDetailIds(details, 'projectId'),
     collectJournalDetailIds(details, 'trackerId'),
@@ -295,8 +320,8 @@ async function buildIssueJournalActivityDescription(
     collectJournalDetailIds(details, 'assigneeId'),
     collectJournalDetailIds(details, 'assigneeGroupId'),
     collectJournalDetailIds(details, 'categoryId'),
-    collectJournalDetailIds(details, 'versionId'),
     collectJournalDetailIds(details, 'parentId'),
+    collectCustomFieldDetailIds(details),
   ];
 
   await Promise.all([
@@ -324,18 +349,20 @@ async function buildIssueJournalActivityDescription(
       ? db.issueCategory.findMany({ where: { id: { in: categoryIds } }, select: { id: true, name: true } })
         .then((rows) => rows.forEach((row) => setLabel(labels, row.id, row.name)))
       : Promise.resolve(),
-    versionIds.length
-      ? db.version.findMany({ where: { id: { in: versionIds } }, select: { id: true, name: true } })
-        .then((rows) => rows.forEach((row) => setLabel(labels, row.id, row.name)))
-      : Promise.resolve(),
     parentIds.length
       ? db.issue.findMany({ where: { id: { in: parentIds } }, select: { id: true, number: true, subject: true } })
         .then((rows) => rows.forEach((row) => setLabel(labels, row.id, `#${row.number} ${row.subject}`)))
       : Promise.resolve(),
+    customFieldIds.length
+      ? db.customField.findMany({ where: { id: { in: customFieldIds } }, select: { id: true, name: true } })
+        .then((rows) => rows.forEach((row) => setLabel(labels, row.id, row.name)))
+      : Promise.resolve(),
   ]);
 
   const changes = details.map((detail) => {
-    const label = ISSUE_ACTIVITY_FIELD_LABELS[detail.propKey] ?? detail.propKey;
+    const label = detail.property === 'cf'
+      ? (labels.get(detail.propKey) ?? detail.propKey)
+      : (ISSUE_ACTIVITY_FIELD_LABELS[detail.propKey] ?? detail.propKey);
     const oldValue = formatIssueActivityValue(detail.propKey, detail.oldValue, labels);
     const newValue = formatIssueActivityValue(detail.propKey, detail.newValue, labels);
     return `${label}: ${oldValue} -> ${newValue}`;
@@ -514,13 +541,13 @@ const createIssueSchema = z.object({
   assigneeId: z.string().uuid().nullable().optional(),
   assigneeGroupId: z.string().uuid().nullable().optional(),
   categoryId: z.string().uuid().nullable().optional(),
-  versionId: z.string().uuid().nullable().optional(),
   parentId: z.string().uuid().nullable().optional(),
   startDate: z.coerce.date().nullable().optional(),
   dueDate: z.coerce.date().nullable().optional(),
   estimatedHours: z.number().nullable().optional(),
   doneRatio: z.number().int().min(0).max(100).optional(),
   repository: z.string().nullable().optional(),
+  customFields: z.record(z.unknown()).optional(),
 });
 
 const updateIssueSchema = z.object({
@@ -533,13 +560,13 @@ const updateIssueSchema = z.object({
   assigneeId: z.string().uuid().nullable().optional(),
   assigneeGroupId: z.string().uuid().nullable().optional(),
   categoryId: z.string().uuid().nullable().optional(),
-  versionId: z.string().uuid().nullable().optional(),
   parentId: z.string().uuid().nullable().optional(),
   startDate: z.coerce.date().nullable().optional(),
   dueDate: z.coerce.date().nullable().optional(),
   estimatedHours: z.number().nullable().optional(),
   doneRatio: z.number().int().min(0).max(100).optional(),
   repository: z.string().nullable().optional(),
+  customFields: z.record(z.unknown()).optional(),
   notes: z.string().optional(),
 });
 
@@ -562,6 +589,290 @@ const copyIssueSchema = z.object({
   projectId: z.string().uuid().optional(),
   subject: z.string().min(1).optional(),
 });
+
+type IssueCustomFieldDefinition = Prisma.CustomFieldGetPayload<{
+  include: {
+    customFieldTrackers: true;
+    projectCustomFields: true;
+    enumerations: true;
+  };
+}>;
+
+function possibleValuesOf(field: { possibleValues: Prisma.JsonValue | null; enumerations?: { name: string; active: boolean }[] }): string[] {
+  const values = field.possibleValues;
+  const fromJson = Array.isArray(values)
+    ? values.map(String)
+    : typeof values === 'string'
+      ? values.split(/\r?\n|\|/).map((v) => v.trim()).filter(Boolean)
+      : [];
+  const fromEnumerations = (field.enumerations ?? [])
+    .filter((e) => e.active)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((e) => e.name);
+  return fromJson.length ? fromJson : fromEnumerations;
+}
+
+function allowedCustomFieldValues(field: IssueCustomFieldDefinition): string[] {
+  const values = possibleValuesOf(field);
+  if (field.fieldFormat !== 'key_value') return values;
+  return values.map((entry) => entry.match(/^([^=:\s]+)\s*[=:]\s*(.+)$/)?.[1] ?? entry);
+}
+
+function normalizeCustomFieldValue(field: IssueCustomFieldDefinition, raw: unknown): string | null {
+  if (raw === undefined || raw === null || raw === '') {
+    return field.defaultValue && field.defaultValue.trim() ? field.defaultValue.trim() : null;
+  }
+
+  const values = field.multiple
+    ? (Array.isArray(raw) ? raw : [raw]).map((v) => String(v).trim()).filter(Boolean)
+    : [String(raw).trim()];
+
+  if (!values.length) return null;
+
+  const allowed = allowedCustomFieldValues(field);
+  if ((field.fieldFormat === 'list' || field.fieldFormat === 'key_value') && allowed.length) {
+    for (const value of values) {
+      if (!allowed.includes(value)) {
+        throw AppError.badRequest(`${field.name} の値が候補に含まれていません`);
+      }
+    }
+  }
+
+  for (const value of values) {
+    if (field.minLength !== null && field.minLength !== undefined && value.length < field.minLength) {
+      throw AppError.badRequest(`${field.name} は ${field.minLength} 文字以上で入力してください`);
+    }
+    if (field.maxLength !== null && field.maxLength !== undefined && field.maxLength > 0 && value.length > field.maxLength) {
+      throw AppError.badRequest(`${field.name} は ${field.maxLength} 文字以内で入力してください`);
+    }
+    if (field.regexp) {
+      const re = new RegExp(field.regexp);
+      if (!re.test(value)) throw AppError.badRequest(`${field.name} の形式が正しくありません`);
+    }
+    if (field.fieldFormat === 'int' && !/^-?\d+$/.test(value)) {
+      throw AppError.badRequest(`${field.name} は整数で入力してください`);
+    }
+    if (field.fieldFormat === 'float' && !Number.isFinite(Number(value))) {
+      throw AppError.badRequest(`${field.name} は数値で入力してください`);
+    }
+    if (field.fieldFormat === 'date' && Number.isNaN(Date.parse(value))) {
+      throw AppError.badRequest(`${field.name} は日付で入力してください`);
+    }
+    if (field.fieldFormat === 'bool' && !['1', '0', 'true', 'false', 'yes', 'no', 'on', 'off'].includes(value.toLowerCase())) {
+      throw AppError.badRequest(`${field.name} は真偽値で入力してください`);
+    }
+    if (['user', 'issue', 'attachment'].includes(field.fieldFormat) && !isUuidLike(value)) {
+      throw AppError.badRequest(`${field.name} の参照先が正しくありません`);
+    }
+    if (
+      field.fieldFormat === 'progress' &&
+      (!/^\d+$/.test(value) || Number(value) < 0 || Number(value) > 100 || Number(value) % 10 !== 0)
+    ) {
+      throw AppError.badRequest(`${field.name} は 0 から 100 の10%区切りで入力してください`);
+    }
+    if (field.fieldFormat === 'link') {
+      try {
+        new URL(value);
+      } catch {
+        throw AppError.badRequest(`${field.name} はURLで入力してください`);
+      }
+    }
+  }
+
+  if (field.fieldFormat === 'bool') {
+    const value = values[0].toLowerCase();
+    return ['1', 'true', 'yes', 'on'].includes(value) ? '1' : '0';
+  }
+
+  return field.multiple ? JSON.stringify(values) : values[0];
+}
+
+function parseStoredCustomFieldValue(field: { multiple: boolean }, value: string | null): string | string[] | null {
+  if (!value) return field.multiple ? [] : null;
+  if (!field.multiple) return value;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String) : [String(parsed)];
+  } catch {
+    return value.split(/\r?\n/).filter(Boolean);
+  }
+}
+
+async function getApplicableIssueCustomFields(projectId: string, trackerId: string): Promise<IssueCustomFieldDefinition[]> {
+  const fields = await prisma.customField.findMany({
+    where: {
+      type: 'IssueCustomField',
+      OR: [
+        { isForAll: true },
+        { projectCustomFields: { some: { projectId } } },
+      ],
+    },
+    orderBy: [{ position: 'asc' }, { name: 'asc' }],
+    include: {
+      customFieldTrackers: true,
+      projectCustomFields: true,
+      enumerations: { orderBy: { position: 'asc' } },
+    },
+  });
+
+  return fields.filter((field) => (
+    field.customFieldTrackers.length === 0 ||
+    field.customFieldTrackers.some((row) => row.trackerId === trackerId)
+  ));
+}
+
+interface ValidateIssueCustomFieldOptions {
+  actorId: string;
+  issueId?: string;
+}
+
+async function validateIssueCustomFields(
+  projectId: string,
+  trackerId: string,
+  raw: Record<string, unknown> | undefined,
+  options: ValidateIssueCustomFieldOptions,
+) {
+  const fields = await getApplicableIssueCustomFields(projectId, trackerId);
+  const submitted = raw ?? {};
+  const normalized = new Map<string, string | null>();
+
+  for (const field of fields) {
+    const value = normalizeCustomFieldValue(field, submitted[field.id]);
+    if (field.isRequired && (value === null || value === '')) {
+      throw AppError.badRequest(`${field.name} を入力してください`);
+    }
+    if (value !== null) normalized.set(field.id, value);
+  }
+
+  const idsFor = (fieldFormat: string) =>
+    fields
+      .filter((field) => field.fieldFormat === fieldFormat)
+      .flatMap((field) => {
+        const value = normalized.get(field.id);
+        if (!value) return [];
+        return field.multiple ? parseStoredCustomFieldValue(field, value) ?? [] : [value];
+      })
+      .map(String);
+
+  const userIds = Array.from(new Set(idsFor('user')));
+  if (userIds.length) {
+    const count = await prisma.member.count({ where: { projectId, userId: { in: userIds } } });
+    if (count !== userIds.length) throw AppError.badRequest('ユーザーの参照先が正しくありません');
+  }
+
+  const issueIds = Array.from(new Set(idsFor('issue')));
+  if (issueIds.length) {
+    const count = await prisma.issue.count({ where: { projectId, id: { in: issueIds } } });
+    if (count !== issueIds.length) throw AppError.badRequest('チケットの参照先が正しくありません');
+  }
+
+  const attachmentIds = Array.from(new Set(idsFor('attachment')));
+  if (attachmentIds.length) {
+    const count = await prisma.attachment.count({
+      where: {
+        id: { in: attachmentIds },
+        OR: [
+          { authorId: options.actorId, issueId: null, containerId: null },
+          ...(options.issueId ? [{ issueId: options.issueId }, { containerType: 'Issue', containerId: options.issueId }] : []),
+        ],
+      },
+    });
+    if (count !== attachmentIds.length) throw AppError.badRequest('ファイルの参照先が正しくありません');
+  }
+
+  return { fields, normalized };
+}
+async function replaceIssueCustomValues(
+  db: Tx,
+  issueId: string,
+  normalized: Map<string, string | null>,
+  fields: IssueCustomFieldDefinition[],
+) {
+  const fieldIds = fields.map((field) => field.id);
+  const oldValues = await db.customValue.findMany({
+    where: {
+      customizedType: 'Issue',
+      customizedId: issueId,
+      customFieldId: { in: fieldIds },
+    },
+  });
+  const oldValueMap = new Map(oldValues.map((value) => [value.customFieldId, value.value]));
+
+  await db.customValue.deleteMany({
+    where: {
+      customizedType: 'Issue',
+      customizedId: issueId,
+      customFieldId: { in: fieldIds },
+    },
+  });
+
+  const rows = Array.from(normalized.entries())
+    .filter(([, value]) => value !== null && value !== '')
+    .map(([customFieldId, value]) => ({
+      customFieldId,
+      customizedType: 'Issue',
+      customizedId: issueId,
+      value,
+    }));
+  if (rows.length) await db.customValue.createMany({ data: rows });
+
+  const attachmentFieldValues = (source: Map<string, string | null | undefined>) => fields
+    .filter((field) => field.fieldFormat === 'attachment')
+    .flatMap((field) => {
+      const value = source.get(field.id);
+      if (!value) return [];
+      return field.multiple ? parseStoredCustomFieldValue(field, value) ?? [] : [value];
+    })
+    .map(String);
+  const attachmentIds = attachmentFieldValues(normalized);
+  const removedAttachmentIds = attachmentFieldValues(oldValueMap).filter((id) => !attachmentIds.includes(id));
+
+  if (attachmentIds.length) {
+    await db.attachment.updateMany({
+      where: { id: { in: attachmentIds } },
+      data: { issueId, containerType: 'Issue', containerId: issueId },
+    });
+  }
+  if (removedAttachmentIds.length) {
+    await db.attachment.updateMany({
+      where: {
+        id: { in: removedAttachmentIds },
+        issueId,
+        description: { startsWith: 'custom-field:' },
+      },
+      data: { issueId: null, containerType: null, containerId: null },
+    });
+  }
+}
+
+async function attachIssueCustomFields<T extends { id: string; projectId: string; trackerId: string }>(issue: T) {
+  const fields = await getApplicableIssueCustomFields(issue.projectId, issue.trackerId);
+  const values = await prisma.customValue.findMany({
+    where: {
+      customizedType: 'Issue',
+      customizedId: issue.id,
+      customFieldId: { in: fields.map((field) => field.id) },
+    },
+  });
+  const valueMap = new Map(values.map((value) => [value.customFieldId, value.value]));
+  return {
+    ...issue,
+    customFields: fields.map((field) => ({
+      id: field.id,
+      name: field.name,
+      fieldFormat: field.fieldFormat,
+      isRequired: field.isRequired,
+      isFilter: field.isFilter,
+      searchable: field.searchable,
+      multiple: field.multiple,
+      defaultValue: field.defaultValue,
+      possibleValues: possibleValuesOf(field),
+      trackerIds: field.customFieldTrackers.map((row) => row.trackerId),
+      projectIds: field.projectCustomFields.map((row) => row.projectId),
+      value: parseStoredCustomFieldValue(field, valueMap.get(field.id) ?? null),
+    })),
+  };
+}
 
 router.get(
   '/',
@@ -703,6 +1014,39 @@ router.get(
 
     res.setHeader('Content-Type', 'application/atom+xml; charset=utf-8');
     return res.status(200).send(xml);
+  }),
+);
+
+router.get(
+  '/custom_fields',
+  optionalAuth,
+  catchAsync(async (req, res) => {
+    const projectRef = req.params.projectId as string | undefined;
+    const trackerId = typeof req.query.trackerId === 'string' ? req.query.trackerId : undefined;
+    if (!projectRef || !trackerId) throw AppError.badRequest('projectId and trackerId are required');
+
+    const projectId = await resolveProjectId(projectRef);
+    if (!projectId) throw AppError.notFound();
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw AppError.notFound();
+    const can = await userCanAccessProject(req.user?.userId, req.user?.admin, project);
+    if (!can) throw AppError.forbidden();
+
+    const fields = await getApplicableIssueCustomFields(projectId, trackerId);
+    return sendSuccess(res, fields.map((field) => ({
+      id: field.id,
+      name: field.name,
+      fieldFormat: field.fieldFormat,
+      isRequired: field.isRequired,
+      isFilter: field.isFilter,
+      searchable: field.searchable,
+      multiple: field.multiple,
+      defaultValue: field.defaultValue,
+      possibleValues: possibleValuesOf(field),
+      trackerIds: field.customFieldTrackers.map((row) => row.trackerId),
+      projectIds: field.projectCustomFields.map((row) => row.projectId),
+      value: parseStoredCustomFieldValue(field, null),
+    })));
   }),
 );
 
@@ -887,9 +1231,6 @@ router.post(
       if (changes.categoryId !== undefined) {
         data.category = changes.categoryId ? { connect: { id: changes.categoryId } } : { disconnect: true };
       }
-      if (changes.versionId !== undefined) {
-        data.version = changes.versionId ? { connect: { id: changes.versionId } } : { disconnect: true };
-      }
       if (changes.parentId !== undefined) {
         data.parent = changes.parentId ? { connect: { id: changes.parentId } } : { disconnect: true };
       }
@@ -917,7 +1258,6 @@ router.post(
           assigneeId: oldIssue.assigneeId,
           assigneeGroupId: oldIssue.assigneeGroupId,
           categoryId: oldIssue.categoryId,
-          versionId: oldIssue.versionId,
           parentId: oldIssue.parentId,
           startDate: oldIssue.startDate,
           dueDate: oldIssue.dueDate,
@@ -935,7 +1275,6 @@ router.post(
           assigneeId: next.assigneeId,
           assigneeGroupId: next.assigneeGroupId,
           categoryId: next.categoryId,
-          versionId: next.versionId,
           parentId: next.parentId,
           startDate: next.startDate,
           dueDate: next.dueDate,
@@ -1037,7 +1376,7 @@ router.post(
       return sendSuccess(res, rel, 201);
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        throw AppError.conflict('同じ関連が既に存在します');
+        throw AppError.conflict('既に存在します');
       }
       throw e;
     }
@@ -1094,6 +1433,16 @@ router.post(
 
     const st = await prisma.issueStatus.findUnique({ where: { id: src.statusId } });
 
+    const sourceCustomValues = await prisma.customValue.findMany({
+      where: { customizedType: 'Issue', customizedId: src.id },
+    });
+    const customFieldInput = await validateIssueCustomFields(
+      targetProjectId,
+      src.trackerId,
+      Object.fromEntries(sourceCustomValues.map((value) => [value.customFieldId, value.value])),
+      { actorId: req.user!.userId },
+    );
+
     const created = await prisma.$transaction(async (tx) => {
       const last = await tx.issue.findFirst({ orderBy: { number: 'desc' }, select: { number: true } });
       const nextNumber = (last?.number ?? 0) + 1;
@@ -1111,7 +1460,6 @@ router.post(
           assigneeId: src.assigneeId,
           assigneeGroupId: src.assigneeGroupId,
           categoryId: src.categoryId,
-          versionId: src.versionId,
           parentId: null,
           startDate: src.startDate,
           dueDate: src.dueDate,
@@ -1121,6 +1469,12 @@ router.post(
         },
       });
 
+      await replaceIssueCustomValues(
+        tx,
+        issue.id,
+        customFieldInput.normalized,
+        customFieldInput.fields,
+      );
       await createIssueCreationJournal(tx, issue, req.user!.userId);
       await createIssueActivity(tx, issue, req.user!.userId);
 
@@ -1138,7 +1492,7 @@ router.post(
     });
 
     dispatchIssueNotification(created.id, req.user!.userId, 'created');
-    return sendSuccess(res, created, 201);
+    return sendSuccess(res, await attachIssueCustomFields(created), 201);
   }),
 );
 
@@ -1176,7 +1530,7 @@ router.post(
       return sendSuccess(res, w, 201);
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        throw AppError.conflict('既にウォッチャーに登録されています');
+        throw AppError.conflict('既に存在します');
       }
       throw e;
     }
@@ -1239,7 +1593,7 @@ router.post(
       return sendSuccess(res, r, 201);
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        throw AppError.conflict('同じリアクションが既にあります');
+        throw AppError.conflict('既に存在します');
       }
       throw e;
     }
@@ -1293,7 +1647,6 @@ router.get(
         assignee: { select: { id: true, login: true, firstname: true, lastname: true, mail: true } },
         assigneeGroup: { select: { id: true, name: true } },
         category: true,
-        version: true,
         parent: { select: { id: true, subject: true } },
         children: { select: { id: true, number: true, subject: true } },
         journals: {
@@ -1324,6 +1677,7 @@ router.get(
 
     const assigneeHistoryIds = new Set<string>();
     const assigneeGroupHistoryIds = new Set<string>();
+    const customFieldHistoryIds = new Set<string>();
     for (const journal of issue.journals ?? []) {
       for (const detail of journal.details ?? []) {
         if (detail.propKey === 'assigneeId') {
@@ -1333,6 +1687,9 @@ router.get(
         if (detail.propKey === 'assigneeGroupId') {
           if (isUuidLike(detail.oldValue)) assigneeGroupHistoryIds.add(detail.oldValue);
           if (isUuidLike(detail.newValue)) assigneeGroupHistoryIds.add(detail.newValue);
+        }
+        if (detail.property === 'cf' && isUuidLike(detail.propKey)) {
+          customFieldHistoryIds.add(detail.propKey);
         }
       }
     }
@@ -1357,12 +1714,28 @@ router.get(
         assigneeLabelMap.set(group.id, group.name);
       }
     }
+    const customFieldLabelMap = new Map<string, string>();
+    if (customFieldHistoryIds.size > 0) {
+      const customFields = await prisma.customField.findMany({
+        where: { id: { in: Array.from(customFieldHistoryIds) } },
+        select: { id: true, name: true },
+      });
+      for (const field of customFields) {
+        customFieldLabelMap.set(field.id, field.name);
+      }
+    }
 
     const enrichedIssue = {
       ...issue,
       journals: (issue.journals ?? []).map((journal) => ({
         ...journal,
         details: (journal.details ?? []).map((detail) => {
+          if (detail.property === 'cf') {
+            return {
+              ...detail,
+              customFieldName: customFieldLabelMap.get(detail.propKey) ?? null,
+            };
+          }
           if (detail.propKey !== 'assigneeId' && detail.propKey !== 'assigneeGroupId') return detail;
           return {
             ...detail,
@@ -1373,7 +1746,7 @@ router.get(
       })),
     };
 
-    return sendSuccess(res, enrichedIssue);
+    return sendSuccess(res, await attachIssueCustomFields(enrichedIssue));
   }),
 );
 
@@ -1411,6 +1784,7 @@ router.put(
     const nextStatusId = body.statusId ?? oldIssue.statusId;
     const st = await prisma.issueStatus.findUnique({ where: { id: nextStatusId } });
     const effectiveProjectId = body.projectId ?? oldIssue.projectId;
+    const effectiveTrackerId = body.trackerId ?? oldIssue.trackerId;
     if (body.assigneeId !== undefined || body.assigneeGroupId !== undefined || body.projectId !== undefined) {
       let nextAssigneeId = oldIssue.assigneeId;
       let nextAssigneeGroupId = oldIssue.assigneeGroupId;
@@ -1424,6 +1798,33 @@ router.put(
       }
       await assertAssignableToProject(nextAssigneeId, nextAssigneeGroupId, effectiveProjectId);
     }
+
+    let customFieldInput: Awaited<ReturnType<typeof validateIssueCustomFields>> | null = null;
+    if (!onlyNotesUpdate) {
+      let customFieldValues = body.customFields;
+      if (customFieldValues === undefined) {
+        const currentValues = await prisma.customValue.findMany({
+          where: { customizedType: 'Issue', customizedId: oldIssue.id },
+        });
+        customFieldValues = Object.fromEntries(currentValues.map((value) => [value.customFieldId, value.value]));
+      }
+      customFieldInput = await validateIssueCustomFields(
+        effectiveProjectId,
+        effectiveTrackerId,
+        customFieldValues,
+        { actorId: req.user!.userId, issueId: oldIssue.id },
+      );
+    }
+    const oldCustomValues = customFieldInput
+      ? await prisma.customValue.findMany({
+          where: {
+            customizedType: 'Issue',
+            customizedId: oldIssue.id,
+            customFieldId: { in: customFieldInput.fields.map((field) => field.id) },
+          },
+        })
+      : [];
+    const oldCustomValueMap = new Map(oldCustomValues.map((value) => [value.customFieldId, value.value]));
 
     const data: Prisma.IssueUpdateInput = {};
     if (body.projectId !== undefined) data.project = { connect: { id: body.projectId } };
@@ -1444,9 +1845,6 @@ router.put(
     if (body.assigneeGroupId !== undefined && body.assigneeGroupId) data.assignee = { disconnect: true };
     if (body.categoryId !== undefined) {
       data.category = body.categoryId ? { connect: { id: body.categoryId } } : { disconnect: true };
-    }
-    if (body.versionId !== undefined) {
-      data.version = body.versionId ? { connect: { id: body.versionId } } : { disconnect: true };
     }
     if (body.parentId !== undefined) {
       data.parent = body.parentId ? { connect: { id: body.parentId } } : { disconnect: true };
@@ -1469,6 +1867,15 @@ router.put(
         data,
       });
 
+      if (customFieldInput) {
+        await replaceIssueCustomValues(
+          tx,
+          next.id,
+          customFieldInput.normalized,
+          customFieldInput.fields,
+        );
+      }
+
       const beforePlain: Record<string, unknown> = {
         projectId: oldIssue.projectId,
         trackerId: oldIssue.trackerId,
@@ -1479,7 +1886,6 @@ router.put(
         assigneeId: oldIssue.assigneeId,
         assigneeGroupId: oldIssue.assigneeGroupId,
         categoryId: oldIssue.categoryId,
-        versionId: oldIssue.versionId,
         parentId: oldIssue.parentId,
         startDate: oldIssue.startDate,
         dueDate: oldIssue.dueDate,
@@ -1497,7 +1903,6 @@ router.put(
         assigneeId: next.assigneeId,
         assigneeGroupId: next.assigneeGroupId,
         categoryId: next.categoryId,
-        versionId: next.versionId,
         parentId: next.parentId,
         startDate: next.startDate,
         dueDate: next.dueDate,
@@ -1506,7 +1911,16 @@ router.put(
         repository: next.repository,
       };
 
-      const details = buildJournalDetailsFromDiff(beforePlain, afterPlain, ISSUE_JOURNAL_KEYS);
+      const details = [
+        ...buildJournalDetailsFromDiff(beforePlain, afterPlain, ISSUE_JOURNAL_KEYS),
+        ...(customFieldInput
+          ? buildCustomFieldJournalDetailsFromDiff(
+              customFieldInput.fields,
+              oldCustomValueMap,
+              customFieldInput.normalized,
+            )
+          : []),
+      ];
       let newJournalId: string | null = null;
       if (details.length || (notes !== undefined && notes.length > 0)) {
         const journal = await tx.journal.create({
@@ -1539,7 +1953,7 @@ router.put(
     if (updated.journalId) {
       dispatchIssueNotification(updated.id, req.user!.userId, onlyNotesUpdate ? 'commented' : 'updated');
     }
-    return sendSuccess(res, updated);
+    return sendSuccess(res, await attachIssueCustomFields(updated));
   }),
 );
 
@@ -1588,6 +2002,13 @@ router.post(
     const st = await prisma.issueStatus.findUnique({ where: { id: body.statusId } });
     if (!st) throw AppError.badRequest('ステータスが存在しません');
 
+    const customFieldInput = await validateIssueCustomFields(
+      projectId,
+      body.trackerId,
+      body.customFields,
+      { actorId: req.user!.userId },
+    );
+
     const created = await prisma.$transaction(async (tx) => {
       const last = await tx.issue.findFirst({ orderBy: { number: 'desc' }, select: { number: true } });
       const nextNumber = (last?.number ?? 0) + 1;
@@ -1605,7 +2026,6 @@ router.post(
           assigneeId: body.assigneeId ?? null,
           assigneeGroupId: body.assigneeGroupId ?? null,
           categoryId: body.categoryId ?? null,
-          versionId: body.versionId ?? null,
           parentId: body.parentId ?? null,
           startDate: body.startDate ?? null,
           dueDate: body.dueDate ?? null,
@@ -1616,6 +2036,12 @@ router.post(
         },
       });
 
+      await replaceIssueCustomValues(
+        tx,
+        issue.id,
+        customFieldInput.normalized,
+        customFieldInput.fields,
+      );
       await createIssueCreationJournal(tx, issue, req.user!.userId);
       await createIssueActivity(tx, issue, req.user!.userId);
 
@@ -1633,7 +2059,7 @@ router.post(
     });
 
     dispatchIssueNotification(created.id, req.user!.userId, 'created');
-    return sendSuccess(res, created, 201);
+    return sendSuccess(res, await attachIssueCustomFields(created), 201);
   }),
 );
 

@@ -182,6 +182,59 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
           updatedAt: journal.createdAt,
         })),
       );
+
+      const customValues = await prisma.customValue.findMany({
+        where: {
+          customizedType: 'Issue',
+          value: contains,
+          customField: {
+            type: 'IssueCustomField',
+            searchable: true,
+          },
+        },
+        take: 50,
+        include: {
+          customField: { select: { id: true, name: true } },
+        },
+      });
+      const customIssueIds = Array.from(new Set(customValues.map((value) => value.customizedId)));
+      if (customIssueIds.length) {
+        const customIssues = await prisma.issue.findMany({
+          where: {
+            AND: [
+              { id: { in: customIssueIds } },
+              projectScope(scopeRaw),
+              readable ? { project: readable } : {},
+            ],
+          },
+          select: {
+            id: true,
+            number: true,
+            subject: true,
+            createdAt: true,
+            updatedAt: true,
+            project: { select: { id: true, name: true, identifier: true } },
+          },
+        });
+        const issueMap = new Map(customIssues.map((issue) => [issue.id, issue]));
+        grouped.issues.push(
+          ...customValues.flatMap((value) => {
+            const issue = issueMap.get(value.customizedId);
+            if (!issue) return [];
+            return [{
+              id: `${issue.id}:${value.customFieldId}`,
+              type: 'issues' as const,
+              subtype: 'issue_custom_field',
+              title: `#${issue.number} ${issue.subject} - ${value.customField.name}`,
+              excerpt: excerpt(value.value, q),
+              href: `/projects/${issue.project.identifier}/issues/${issue.id}`,
+              project: issue.project,
+              createdAt: issue.createdAt,
+              updatedAt: issue.updatedAt,
+            }];
+          }),
+        );
+      }
       grouped.issues.sort(sortByDateDesc);
     }
 
