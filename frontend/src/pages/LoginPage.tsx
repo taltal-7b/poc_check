@@ -1,9 +1,10 @@
-﻿import { useState } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLogin, useLoginTotp } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
+import { safeReturnPath } from '../utils/return-path';
 
 export default function LoginPage() {
   const { t } = useTranslation();
@@ -13,6 +14,13 @@ export default function LoginPage() {
   const loginMutation = useLogin();
   const loginTotpMutation = useLoginTotp();
   const authLogin = useAuthStore((s) => s.login);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate(safeReturnPath(searchParams.get('from')), { replace: true });
+    }
+  }, [isAuthenticated, navigate, searchParams]);
 
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
@@ -39,7 +47,7 @@ export default function LoginPage() {
             if (payload?.accessToken && payload?.refreshToken && payload?.user) {
               queryClient.clear();
               authLogin(payload.user, payload.accessToken, payload.refreshToken);
-              navigate('/');
+              navigate(safeReturnPath(searchParams.get('from')));
               return;
             }
             setFormError(t('auth.loginFailed'));
@@ -62,7 +70,7 @@ export default function LoginPage() {
           if (payload?.accessToken && payload?.refreshToken && payload?.user) {
             queryClient.clear();
             authLogin(payload.user, payload.accessToken, payload.refreshToken);
-            navigate('/');
+            navigate(safeReturnPath(searchParams.get('from')));
             return;
           }
           if (payload?.totpRequired) {

@@ -3,7 +3,7 @@ import fs from 'fs';
 import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
-import { authenticate, optionalAuth } from '../middleware/auth';
+import { authenticate } from '../middleware/auth';
 import { hasAnyProjectPermission, userHasProjectRoleName } from '../utils/project-permissions';
 import { notifyWikiPageEvent } from '../services/notification-service';
 import { logger } from '../utils/logger';
@@ -832,7 +832,7 @@ router.post('/:title/protect', authenticate, async (req: Request, res: Response,
   }
 });
 
-router.get('/:title', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:title', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const projectId = param(req, 'projectId');
     const rawTitle = param(req, 'title');

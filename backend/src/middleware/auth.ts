@@ -50,20 +50,29 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
   }
 }
 
-export function optionalAuth(req: Request, _res: Response, next: NextFunction) {
+/** Atom 等: Bearer / x-api-key、またはクエリ `key`（ユーザーの API キー）で認証 */
+export function authenticateOrQueryApiKey(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
-    req.language = req.headers['accept-language']?.startsWith('en') ? 'en' : 'ja';
-    return next();
+  const apiKeyHeader = req.headers['x-api-key'] as string | undefined;
+
+  if (authHeader?.startsWith('Bearer ') || apiKeyHeader) {
+    return authenticate(req, res, next);
   }
-  const token = authHeader.slice(7);
-  try {
-    req.user = jwt.verify(token, config.JWT_SECRET) as AuthPayload;
-  } catch {
-    // ignore
+
+  const key = typeof req.query.key === 'string' ? req.query.key.trim() : '';
+  if (!key) {
+    return next(AppError.unauthorized());
   }
-  req.language = req.headers['accept-language']?.startsWith('en') ? 'en' : 'ja';
-  next();
+
+  prisma.user
+    .findFirst({ where: { apiKey: key, status: 1 } })
+    .then((user) => {
+      if (!user) return next(AppError.unauthorized());
+      req.user = { userId: user.id, login: user.login, admin: user.admin };
+      req.language = user.language;
+      next();
+    })
+    .catch(next);
 }
 
 export function requireAdmin(req: Request, _res: Response, next: NextFunction) {

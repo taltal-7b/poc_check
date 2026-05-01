@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
-import { authenticate, optionalAuth, type AuthPayload } from '../middleware/auth';
+import { authenticate, authenticateOrQueryApiKey, type AuthPayload } from '../middleware/auth';
 import { notifyIssueEvent } from '../services/notification-service';
 import { logger } from '../utils/logger';
 import {
@@ -135,16 +135,6 @@ function escapeXml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
-}
-
-async function resolveFeedUserByApiKey(key: string | undefined): Promise<AuthPayload | undefined> {
-  if (!key) return undefined;
-  const user = await prisma.user.findFirst({
-    where: { apiKey: key, status: 1 },
-    select: { id: true, login: true, admin: true },
-  });
-  if (!user) return undefined;
-  return { userId: user.id, login: user.login, admin: user.admin };
 }
 
 async function buildIssueWhere(
@@ -876,7 +866,7 @@ async function attachIssueCustomFields<T extends { id: string; projectId: string
 
 router.get(
   '/',
-  optionalAuth,
+  authenticate,
   catchAsync(async (req, res) => {
     const { page, perPage, skip } = parsePagination(req.query as Record<string, unknown>);
     const { where, earlyEmpty } = await buildIssueWhere(req, req.user);
@@ -913,11 +903,9 @@ router.get(
 
 router.get(
   '/atom',
-  optionalAuth,
+  authenticateOrQueryApiKey,
   catchAsync(async (req, res) => {
-    const key = typeof req.query.key === 'string' ? req.query.key : undefined;
-    const feedUser = req.user ?? (await resolveFeedUserByApiKey(key));
-    const { where, earlyEmpty } = await buildIssueWhere(req, feedUser);
+    const { where, earlyEmpty } = await buildIssueWhere(req, req.user);
     const limitRaw = Number(req.query.limit ?? 100);
     const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.trunc(limitRaw))) : 100;
 
@@ -1019,7 +1007,7 @@ router.get(
 
 router.get(
   '/custom_fields',
-  optionalAuth,
+  authenticate,
   catchAsync(async (req, res) => {
     const projectRef = req.params.projectId as string | undefined;
     const trackerId = typeof req.query.trackerId === 'string' ? req.query.trackerId : undefined;
@@ -1052,7 +1040,7 @@ router.get(
 
 router.get(
   '/:id/atom',
-  optionalAuth,
+  authenticateOrQueryApiKey,
   catchAsync(async (req, res) => {
     const issue = await resolveIssueByParam(req.params.id);
     if (!issue) throw AppError.notFound('チケットが見つかりません');
@@ -1309,7 +1297,7 @@ router.post(
 
 router.get(
   '/:id/relations',
-  optionalAuth,
+  authenticate,
   catchAsync(async (req, res) => {
     const issue = await resolveIssueByParam(req.params.id);
     if (!issue) throw AppError.notFound('チケットが見つかりません');
@@ -1635,7 +1623,7 @@ router.delete(
 
 router.get(
   '/:id',
-  optionalAuth,
+  authenticate,
   catchAsync(async (req, res) => {
     const issue = await prisma.issue.findUnique({
       where: { id: req.params.id },

@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout';
 import { useAuthStore } from './stores/auth';
 import { useProject } from './api/hooks';
@@ -55,10 +55,15 @@ import AdminWorkflowsPage from './pages/admin/WorkflowsPage';
 import AdminCustomFieldsPage from './pages/admin/CustomFieldsPage';
 import AdminEnumerationsPage from './pages/admin/EnumerationsPage';
 import AdminSettingsPage from './pages/admin/SettingsPage';
+import { buildLoginNavigateTo } from './utils/return-path';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
+  const location = useLocation();
+  if (!isAuthenticated) {
+    return <Navigate to={buildLoginNavigateTo(`${location.pathname}${location.search}`)} replace />;
+  }
+  return <>{children}</>;
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
@@ -94,6 +99,7 @@ function ProjectModuleRoute({
 
 function IssueCreateRoute({ children }: { children: React.ReactNode }) {
   const { identifier } = useParams<{ identifier?: string }>();
+  const location = useLocation();
   const { user, isAuthenticated } = useAuthStore();
   const projectId = identifier ?? '';
   const projectQuery = useProject(projectId, {
@@ -103,7 +109,9 @@ function IssueCreateRoute({ children }: { children: React.ReactNode }) {
   });
 
   if (!projectId) return <Navigate to="/projects" replace />;
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!isAuthenticated) {
+    return <Navigate to={buildLoginNavigateTo(`${location.pathname}${location.search}`)} replace />;
+  }
   const project = projectQuery.data?.data;
   if (!user?.id || (projectQuery.isLoading && !project)) {
     return <div className="flex items-center justify-center min-h-screen">読み込み中...</div>;
@@ -128,32 +136,32 @@ export default function App() {
       <Route path="/password/forgot" element={<ForgotPasswordPage />} />
       <Route path="/password/reset" element={<ResetPasswordPage />} />
 
-      <Route element={<MainLayout />}>
+      <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
         <Route index element={<HomePage />} />
         <Route path="projects" element={<ProjectsPage />} />
-        <Route path="projects/new" element={<ProtectedRoute><ProjectNewPage /></ProtectedRoute>} />
-        <Route path="projects/:identifier/edit" element={<ProtectedRoute><ProjectNewPage isEdit /></ProtectedRoute>} />
+        <Route path="projects/new" element={<ProjectNewPage />} />
+        <Route path="projects/:identifier/edit" element={<ProjectNewPage isEdit />} />
         <Route path="projects/:identifier" element={<ProjectDetailPage />} />
-        <Route path="projects/:identifier/settings" element={<ProtectedRoute><ProjectSettingsPage /></ProtectedRoute>} />
+        <Route path="projects/:identifier/settings" element={<ProjectSettingsPage />} />
         <Route path="projects/:identifier/issues" element={<ProjectModuleRoute moduleKey="issue_tracking"><IssuesPage /></ProjectModuleRoute>} />
-        <Route path="projects/:identifier/issues/new" element={<ProjectModuleRoute moduleKey="issue_tracking"><ProtectedRoute><IssueCreateRoute><IssueNewPage /></IssueCreateRoute></ProtectedRoute></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/issues/new" element={<ProjectModuleRoute moduleKey="issue_tracking"><IssueCreateRoute><IssueNewPage /></IssueCreateRoute></ProjectModuleRoute>} />
         <Route path="projects/:identifier/issues/:issueId" element={<IssueDetailPage />} />
         <Route path="projects/:identifier/time_entries" element={<ProjectModuleRoute moduleKey="time_tracking"><TimeEntriesPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/wiki" element={<ProjectModuleRoute moduleKey="wiki"><WikiPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/wiki/:title" element={<ProjectModuleRoute moduleKey="wiki"><WikiPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/wiki/:title/history" element={<ProjectModuleRoute moduleKey="wiki"><WikiHistoryPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/wiki/:title/diff" element={<ProjectModuleRoute moduleKey="wiki"><WikiDiffPage /></ProjectModuleRoute>} />
-        <Route path="projects/:identifier/wiki/:title/edit" element={<ProjectModuleRoute moduleKey="wiki"><ProtectedRoute><WikiEditPage /></ProtectedRoute></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/wiki/:title/edit" element={<ProjectModuleRoute moduleKey="wiki"><WikiEditPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/news" element={<ProjectModuleRoute moduleKey="news"><NewsPage /></ProjectModuleRoute>} />
-        <Route path="projects/:identifier/news/new" element={<ProjectModuleRoute moduleKey="news"><ProtectedRoute><NewsNewPage /></ProtectedRoute></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/news/new" element={<ProjectModuleRoute moduleKey="news"><NewsNewPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/news/:newsId" element={<ProjectModuleRoute moduleKey="news"><NewsPage /></ProjectModuleRoute>} />
-        <Route path="projects/:identifier/news/:newsId/edit" element={<ProjectModuleRoute moduleKey="news"><ProtectedRoute><NewsEditPage /></ProtectedRoute></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/news/:newsId/edit" element={<ProjectModuleRoute moduleKey="news"><NewsEditPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/forums" element={<ProjectModuleRoute moduleKey="boards"><ForumsLayout /></ProjectModuleRoute>}>
           <Route index element={<ForumBoardIndex />} />
-          <Route path="new" element={<ProtectedRoute><ForumNewBoard /></ProtectedRoute>} />
-          <Route path=":boardId/edit" element={<ProtectedRoute><ForumEditBoard /></ProtectedRoute>} />
-          <Route path=":boardId/topics/new" element={<ProtectedRoute><ForumNewTopic /></ProtectedRoute>} />
-          <Route path=":boardId/topics/:topicId/edit" element={<ProtectedRoute><ForumEditTopic /></ProtectedRoute>} />
+          <Route path="new" element={<ForumNewBoard />} />
+          <Route path=":boardId/edit" element={<ForumEditBoard />} />
+          <Route path=":boardId/topics/new" element={<ForumNewTopic />} />
+          <Route path=":boardId/topics/:topicId/edit" element={<ForumEditTopic />} />
           <Route path=":boardId/topics/:topicId" element={<ForumTopicShow />} />
           <Route path=":boardId" element={<ForumTopicList />} />
         </Route>
@@ -171,8 +179,8 @@ export default function App() {
 
         <Route path="users/:userId" element={<UserProfilePage />} />
 
-        <Route path="my/page" element={<ProtectedRoute><MyPagePage /></ProtectedRoute>} />
-        <Route path="my/account" element={<ProtectedRoute><MyAccountPage /></ProtectedRoute>} />
+        <Route path="my/page" element={<MyPagePage />} />
+        <Route path="my/account" element={<MyAccountPage />} />
 
         <Route path="admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
         <Route path="admin/users/:userId" element={<AdminRoute><AdminUserDetailPage /></AdminRoute>} />

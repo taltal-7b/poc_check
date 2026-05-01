@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { useAuthStore } from '../stores/auth';
+import { buildLoginNavigateTo } from '../utils/return-path';
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -14,11 +15,29 @@ api.interceptors.request.use((cfg) => {
   return cfg;
 });
 
+function isPublicAuthRequestUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  return (
+    url.startsWith('/auth/login') ||
+    url.startsWith('/auth/register') ||
+    url.startsWith('/auth/password')
+  );
+}
+
+function redirectToLoginPreservingReturn(): void {
+  const path = window.location.pathname;
+  if (path === '/login' || path === '/register' || path.startsWith('/password/')) return;
+  window.location.assign(buildLoginNavigateTo(`${path}${window.location.search}`));
+}
+
 api.interceptors.response.use(
   (res) => res,
   async (error) => {
     const original = error.config;
-    if (error.response?.status === 401 && !original._retry) {
+    if (error.response?.status === 401 && original && !original._retry) {
+      if (isPublicAuthRequestUrl(String(original.url ?? ''))) {
+        return Promise.reject(error);
+      }
       original._retry = true;
       const refreshToken = useAuthStore.getState().refreshToken;
       if (refreshToken) {
@@ -31,7 +50,11 @@ api.interceptors.response.use(
         } catch {
           useAuthStore.getState().logout();
         }
+      } else {
+        useAuthStore.getState().logout();
       }
+      redirectToLoginPreservingReturn();
+      return Promise.reject(error);
     }
     return Promise.reject(error);
   },

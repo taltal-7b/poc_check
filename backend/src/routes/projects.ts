@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
-import { authenticate, requireAdmin, optionalAuth } from '../middleware/auth';
+import { authenticate, authenticateOrQueryApiKey, requireAdmin } from '../middleware/auth';
 import {
   getUserGroupIds,
   getUserProjectPermissionSet,
@@ -115,7 +115,7 @@ async function validateIssueProjectCustomFieldIds(customFieldIds: string[]) {
 
 router.get(
   '/',
-  optionalAuth,
+  authenticate,
   catchAsync(async (req, res) => {
     const { page, perPage, skip } = parsePagination(req.query as Record<string, unknown>);
     const statusRaw = req.query.status;
@@ -129,24 +129,20 @@ router.get(
       and.push({ status: statusFilter });
     }
 
-    if (!req.user?.admin) {
-      if (!req.user) {
-        and.push({ isPublic: true });
-      } else {
-        const groupIds = await getUserGroupIds(req.user.userId);
-        and.push({
-          OR: [
-            { isPublic: true },
-            {
-              members: {
-                some: {
-                  OR: [{ userId: req.user.userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
-                },
+    if (!req.user!.admin) {
+      const groupIds = await getUserGroupIds(req.user!.userId);
+      and.push({
+        OR: [
+          { isPublic: true },
+          {
+            members: {
+              some: {
+                OR: [{ userId: req.user!.userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
               },
             },
-          ],
-        });
-      }
+          },
+        ],
+      });
     }
 
     const where = and.length ? { AND: and } : {};
@@ -189,19 +185,9 @@ router.get(
 
 router.get(
   '/atom',
-  optionalAuth,
+  authenticateOrQueryApiKey,
   catchAsync(async (req, res) => {
-    let feedUser = req.user;
-    const key = typeof req.query.key === 'string' ? req.query.key : '';
-    if (!feedUser && key) {
-      const user = await prisma.user.findFirst({
-        where: { apiKey: key, status: 1 },
-        select: { id: true, login: true, admin: true, language: true },
-      });
-      if (user) {
-        feedUser = { userId: user.id, login: user.login, admin: user.admin };
-      }
-    }
+    const feedUser = req.user!;
 
     const limitRaw = Number(req.query.limit ?? 20);
     const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100, Math.trunc(limitRaw))) : 20;
@@ -216,24 +202,20 @@ router.get(
       and.push({ status: statusFilter });
     }
 
-    if (!feedUser?.admin) {
-      if (!feedUser) {
-        and.push({ isPublic: true });
-      } else {
-        const groupIds = await getUserGroupIds(feedUser.userId);
-        and.push({
-          OR: [
-            { isPublic: true },
-            {
-              members: {
-                some: {
-                  OR: [{ userId: feedUser.userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
-                },
+    if (!feedUser.admin) {
+      const groupIds = await getUserGroupIds(feedUser.userId);
+      and.push({
+        OR: [
+          { isPublic: true },
+          {
+            members: {
+              some: {
+                OR: [{ userId: feedUser.userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
               },
             },
-          ],
-        });
-      }
+          },
+        ],
+      });
     }
     const where = and.length ? { AND: and } : {};
 
@@ -352,7 +334,7 @@ router.get(
 
 router.get(
   '/:id',
-  optionalAuth,
+  authenticate,
   catchAsync(async (req, res) => {
     const project = await prisma.project.findFirst({
       where: {

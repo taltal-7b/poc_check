@@ -37,10 +37,8 @@ export default function MainLayout() {
 
   const navLinks = [
     { to: '/projects', label: t('nav.projects') },
-    ...(isAuthenticated ? [
-      { to: '/my/page', label: t('nav.myPage') },
-      { to: '/activity', label: t('nav.activity') },
-    ] : []),
+    { to: '/my/page', label: t('nav.myPage') },
+    { to: '/activity', label: t('nav.activity') },
   ];
 
   const adminLinks = user?.admin ? [
