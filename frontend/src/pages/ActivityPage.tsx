@@ -6,7 +6,6 @@ import { format, parseISO } from 'date-fns';
 import {
   Activity as ActivityIcon,
   FileEdit,
-  GitBranch,
   MessageCircle,
   Newspaper,
   Ticket,
@@ -29,7 +28,6 @@ function typeIcon(actType: string) {
   if (t.includes('wiki')) return FileEdit;
   if (t.includes('news')) return Newspaper;
   if (t.includes('message') || t.includes('forum')) return MessageCircle;
-  if (t.includes('version')) return GitBranch;
   return ActivityIcon;
 }
 
@@ -157,13 +155,25 @@ export default function ActivityPage() {
         <ul className="relative border-l-2 border-gray-200 ml-3 space-y-6 pl-8 py-2">
           {rows.map((r) => {
             const Icon = typeIcon(r.actType);
+            const issueUrl =
+              r.actType.toLowerCase().startsWith('issue') && r.project?.identifier
+                ? `/projects/${r.project.identifier}/issues/${r.actId}`
+                : null;
             return (
               <li key={r.id} className="relative">
                 <span className="absolute -left-[2.125rem] top-0 flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 text-primary-700 border-2 border-white shadow-sm">
                   <Icon size={16} />
                 </span>
                 <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                  <p className="font-medium text-gray-900">{r.title}</p>
+                  <p className="font-medium text-gray-900">
+                    {issueUrl ? (
+                      <Link to={issueUrl} className="text-primary-700 hover:underline">
+                        {r.title}
+                      </Link>
+                    ) : (
+                      r.title
+                    )}
+                  </p>
                   {r.description && <p className="text-sm text-gray-600 mt-1">{r.description}</p>}
                   <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
                     {r.project && r.project.identifier && (
