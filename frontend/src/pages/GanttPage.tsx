@@ -19,8 +19,8 @@ import {
   subMonths,
 } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { useProject, useProjectIssues, useVersions } from '../api/hooks';
-import type { Issue, Version } from '../types';
+import { useProject, useProjectIssues } from '../api/hooks';
+import type { Issue } from '../types';
 
 function unwrapList<T>(raw: unknown): T[] {
   if (raw == null) return [];
@@ -105,7 +105,7 @@ function buildHeaderSegments(chartStart: Date, chartEnd: Date, zoom: Zoom): Head
       const days = differenceInCalendarDays(wEnd, segStart) + 1;
       segs.push({
         key: c.toISOString(),
-        label: `${format(segStart, 'M/d', { locale: ja })}〜`,
+        label: `${format(segStart, 'M/d', { locale: ja })}-${format(wEnd, 'M/d', { locale: ja })}`,
         days,
       });
       c = addDays(wEnd, 1);
@@ -150,10 +150,7 @@ export default function GanttPage() {
   const projectName = (projectRaw as { data?: { name?: string } })?.data?.name ?? slug;
 
   const issuesQuery = useProjectIssues(slug, { per_page: 100, page: 1 });
-  const versionsQuery = useVersions(slug);
-
   const issues = useMemo(() => unwrapList<Issue>(issuesQuery.data), [issuesQuery.data]);
-  const versions = useMemo(() => unwrapList<Version>(versionsQuery.data), [versionsQuery.data]);
 
   const [zoom, setZoom] = useState<Zoom>('day');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -165,20 +162,8 @@ export default function GanttPage() {
     return sorted.map((issue) => ({ issue, depth: 0 }));
   }, [issues]);
 
-  const versionRows = useMemo(() => {
-    return versions
-      .filter((v) => v.dueDate)
-      .map((v) => {
-        const d = parseDateOnly(v.dueDate);
-        if (!d) return null;
-        return { version: v, range: { start: d, end: d } };
-      })
-      .filter((x): x is { version: Version; range: { start: Date; end: Date } } => x != null)
-      .sort((a, b) => a.range.start.getTime() - b.range.start.getTime());
-  }, [versions]);
-
   const chartBounds = useMemo(() => {
-    const ranges: { start: Date; end: Date }[] = [...versionRows.map((v) => v.range)];
+    const ranges: { start: Date; end: Date }[] = [];
     for (const { issue } of issueRows) {
       ranges.push(issueEffectiveRange(issue));
     }
@@ -209,7 +194,7 @@ export default function GanttPage() {
       chartStart: addDays(minD, -3),
       chartEnd: addDays(maxD, 3),
     };
-  }, [issueRows, versionRows, zoom]);
+  }, [issueRows, zoom]);
 
   const { chartStart, chartEnd } = chartBounds;
   const totalDays = Math.max(1, differenceInCalendarDays(startOfDay(chartEnd), startOfDay(chartStart)) + 1);
@@ -242,7 +227,7 @@ export default function GanttPage() {
 
   const loading = issuesQuery.isLoading;
   const projectRowIdx = 0;
-  const totalRows = 1 + issueRows.length + (versionRows.length > 0 ? 1 + versionRows.length : 0);
+  const totalRows = 1 + issueRows.length;
   const chartH = totalRows * ROW_H + 4;
 
   return (
@@ -268,7 +253,7 @@ export default function GanttPage() {
 
       {loading ? (
         <p className="text-gray-500">{t('app.loading')}</p>
-      ) : issues.length === 0 && versionRows.length === 0 ? (
+      ) : issues.length === 0 ? (
         <p className="text-gray-500">{t('app.noData')}</p>
       ) : (
         <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
@@ -318,20 +303,6 @@ export default function GanttPage() {
                   </div>
                 );
               })}
-
-              {/* Version rows */}
-              {versionRows.length > 0 && (
-                <>
-                  <div className="flex items-center border-b border-violet-200 bg-violet-50/60 px-3 text-xs font-semibold text-violet-800" style={{ height: ROW_H }}>
-                    {t('gantt.versionMilestones')}
-                  </div>
-                  {versionRows.map(({ version }) => (
-                    <div key={version.id} className="flex items-center border-b border-violet-100 px-3 text-xs text-violet-900 font-medium truncate bg-violet-50/30" style={{ height: ROW_H }}>
-                      ◆ {version.name}
-                    </div>
-                  ))}
-                </>
-              )}
             </div>
 
             {/* Right timeline */}
@@ -451,7 +422,7 @@ export default function GanttPage() {
                         <a href={issueUrl} className="cursor-pointer">
                           {/* Gray: full scheduled span */}
                           <rect x={left} y={barY} width={barW} height={barH} rx={3} fill={BAR_GRAY} />
-                          {/* Red: late portion (progress → expected) */}
+                          {/* Red: late portion (progress -> expected) */}
                           {lateW > 0 && (
                             <rect
                               x={left + progressW}
@@ -466,7 +437,7 @@ export default function GanttPage() {
                           {progressW > 0 && (
                             <rect x={left} y={barY} width={progressW} height={barH} rx={3} fill={BAR_GREEN} />
                           )}
-                          <title>{`${issue.tracker?.name} #${issue.number}: ${issue.subject}\n${format(range.start, 'yyyy-MM-dd')} → ${format(range.end, 'yyyy-MM-dd')}\n進捗: ${issue.doneRatio}%`}</title>
+                          <title>{`${issue.tracker?.name} #${issue.number}: ${issue.subject}\n${format(range.start, 'yyyy-MM-dd')} -> ${format(range.end, 'yyyy-MM-dd')}\n進捗: ${issue.doneRatio}%`}</title>
                         </a>
                         <a href={issueUrl}>
                           <text
@@ -480,28 +451,6 @@ export default function GanttPage() {
                             {issue.doneRatio > 0 ? ` ${issue.doneRatio}%` : ''}
                           </text>
                         </a>
-                      </g>
-                    );
-                  })}
-
-                  {/* Version milestones */}
-                  {versionRows.map(({ version, range }, idx) => {
-                    const baseY = (1 + issueRows.length + 1) * ROW_H;
-                    const rowY = baseY + idx * ROW_H;
-                    const { left } = barLayout(range);
-                    const cx = left + dayWidth / 2;
-                    const cy = rowY + ROW_H / 2;
-                    return (
-                      <g key={version.id}>
-                        <polygon
-                          points={`${cx},${cy - 7} ${cx + 7},${cy} ${cx},${cy + 7} ${cx - 7},${cy}`}
-                          fill="#7c3aed"
-                          stroke="#6d28d9"
-                          strokeWidth={1}
-                        />
-                        <text x={cx + 10} y={cy + 4} fontSize={10} fill="#6d28d9" fontWeight={600}>
-                          {version.name}
-                        </text>
                       </g>
                     );
                   })}

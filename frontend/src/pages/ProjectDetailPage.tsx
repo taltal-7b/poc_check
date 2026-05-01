@@ -32,7 +32,7 @@ export default function ProjectDetailPage() {
             {project.description && <p className="mt-3 text-slate-700">{project.description}</p>}
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2">
             <Link to={`${base}/members`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm block hover:border-primary-300 hover:shadow transition-all">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{t('nav.members')}</p>
               <p className="mt-2 text-2xl font-semibold text-primary-600">{membersCount}</p>
@@ -48,14 +48,6 @@ export default function ProjectDetailPage() {
                 <p className="mt-2 text-sm text-slate-500">この機能は無効です</p>
               </div>
             )}
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{t('versions.title')}</p>
-              <p className="mt-2 text-sm text-slate-600">
-                <Link to={`${base}/versions`} className="font-medium text-primary-600 hover:text-primary-700">
-                  {t('nav.roadmap')}
-                </Link>
-              </p>
-            </div>
           </div>
         </>
       )}
