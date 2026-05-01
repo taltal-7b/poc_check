@@ -76,9 +76,9 @@ export default function MyAccountPage() {
       await i18n.changeLanguage('ja');
       localStorage.setItem('language', 'ja');
       qc.invalidateQueries({ queryKey: ['me'] });
-      setProfileMessage({ type: 'success', text: '繝励Ο繝輔ぅ繝ｼ繝ｫ繧剃ｿ晏ｭ倥＠縺ｾ縺励◆' });
+      setProfileMessage({ type: 'success', text: 'プロフィールを保存しました' });
     } catch (error: any) {
-      const message = error?.response?.data?.error?.message || '繝励Ο繝輔ぅ繝ｼ繝ｫ縺ｮ菫晏ｭ倥↓螟ｱ謨励＠縺ｾ縺励◆';
+      const message = error?.response?.data?.error?.message || 'プロフィールの保存に失敗しました';
       setProfileMessage({ type: 'error', text: message });
     }
     setTimeout(() => setProfileMessage(null), 5000);
@@ -88,9 +88,9 @@ export default function MyAccountPage() {
     e.preventDefault();
     try {
       await updateMailPreference.mutateAsync({ mailNotificationsEnabled });
-      setMailPreferenceMessage({ type: 'success', text: '繝｡繝ｼ繝ｫ騾夂衍險ｭ螳壹ｒ菫晏ｭ倥＠縺ｾ縺励◆' });
+      setMailPreferenceMessage({ type: 'success', text: 'メール通知設定を保存しました' });
     } catch (error: any) {
-      const message = error?.response?.data?.error?.message || '繝｡繝ｼ繝ｫ騾夂衍險ｭ螳壹・菫晏ｭ倥↓螟ｱ謨励＠縺ｾ縺励◆';
+      const message = error?.response?.data?.error?.message || 'メール通知設定の保存に失敗しました';
       setMailPreferenceMessage({ type: 'error', text: message });
     }
     setTimeout(() => setMailPreferenceMessage(null), 5000);
@@ -151,11 +151,11 @@ export default function MyAccountPage() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      setPasswordMessage({ type: 'success', text: '繝代せ繝ｯ繝ｼ繝峨ｒ螟画峩縺励∪縺励◆' });
+      setPasswordMessage({ type: 'success', text: 'パスワードを変更しました' });
       setTimeout(() => setPasswordMessage(null), 5000);
     },
     onError: (error: any) => {
-      const message = error?.response?.data?.error?.message || '繝代せ繝ｯ繝ｼ繝峨・螟画峩縺ｫ螟ｱ謨励＠縺ｾ縺励◆';
+      const message = error?.response?.data?.error?.message || 'パスワードの変更に失敗しました';
       setPasswordMessage({ type: 'error', text: message });
       setTimeout(() => setPasswordMessage(null), 5000);
     },
@@ -300,7 +300,7 @@ export default function MyAccountPage() {
           onSubmit={(e) => {
             e.preventDefault();
             if (newPassword !== confirmPassword) {
-              setPasswordMessage({ type: 'error', text: '譁ｰ縺励＞繝代せ繝ｯ繝ｼ繝峨→遒ｺ隱咲畑繝代せ繝ｯ繝ｼ繝峨′荳閾ｴ縺励∪縺帙ｓ' });
+              setPasswordMessage({ type: 'error', text: '新しいパスワードと確認用パスワードが一致しません' });
               setTimeout(() => setPasswordMessage(null), 5000);
               return;
             }

@@ -88,11 +88,11 @@ function randomToken(): string {
 async function verifyPassword(userId: string, currentPassword: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) {
-    throw AppError.notFound('繝ｦ繝ｼ繧ｶ繝ｼ縺瑚ｦ九▽縺九ｊ縺ｾ縺帙ｓ');
+    throw AppError.notFound('ユーザーが見つかりません');
   }
   const ok = await bcrypt.compare(currentPassword, user.hashedPassword);
   if (!ok) {
-    throw AppError.unauthorized('迴ｾ蝨ｨ縺ｮ繝代せ繝ｯ繝ｼ繝峨′豁｣縺励￥縺ゅｊ縺ｾ縺帙ｓ');
+    throw AppError.unauthorized('現在のパスワードが正しくありません');
   }
   return user;
 }
@@ -185,7 +185,7 @@ async function issuePasswordResetMail(user: { id: string; login: string; mail: s
 async function issueTokensForUser(userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user || user.status !== 1) {
-    throw AppError.unauthorized('繧｢繧ｫ繧ｦ繝ｳ繝医′蛻ｩ逕ｨ縺ｧ縺阪∪縺帙ｓ');
+    throw AppError.unauthorized('アカウントが利用できません');
   }
   const payload: AuthPayload = {
     userId: user.id,
@@ -218,19 +218,19 @@ router.post(
         where: { login: body.login },
       });
       if (!user) {
-        throw AppError.unauthorized('繝ｭ繧ｰ繧､繝ｳ縺ｾ縺溘・繝代せ繝ｯ繝ｼ繝峨′豁｣縺励￥縺ゅｊ縺ｾ縺帙ｓ');
+        throw AppError.unauthorized('ログインまたはパスワードが正しくありません');
       }
 
       const ok = await bcrypt.compare(body.password, user.hashedPassword);
       if (!ok) {
-        throw AppError.unauthorized('繝ｭ繧ｰ繧､繝ｳ縺ｾ縺溘・繝代せ繝ｯ繝ｼ繝峨′豁｣縺励￥縺ゅｊ縺ｾ縺帙ｓ');
+        throw AppError.unauthorized('ログインまたはパスワードが正しくありません');
       }
 
       if (user.status === 3) {
         throw AppError.forbidden('Account is locked');
       }
       if (user.status === 2) {
-        throw AppError.forbidden('繧｢繧ｫ繧ｦ繝ｳ繝医・縺ｾ縺譛牙柑蛹悶＆繧後※縺・∪縺帙ｓ');
+        throw AppError.forbidden('アカウントはまだ有効化されていません');
       }
       if (user.status !== 1) {
         throw AppError.forbidden('Account is inactive');
@@ -288,13 +288,13 @@ router.post(
         where: { id: decoded.userId },
       });
       if (!user || !user.totpEnabled) {
-        throw AppError.unauthorized('莠瑚ｦ∫ｴ隱崎ｨｼ縺悟茜逕ｨ縺ｧ縺阪∪縺帙ｓ');
+        throw AppError.unauthorized('二要素認証が利用できません');
       }
       if (user.status === 3) {
         throw AppError.forbidden('Account is locked');
       }
       if (user.status === 2) {
-        throw AppError.forbidden('繧｢繧ｫ繧ｦ繝ｳ繝医・縺ｾ縺譛牙柑蛹悶＆繧後※縺・∪縺帙ｓ');
+        throw AppError.forbidden('アカウントはまだ有効化されていません');
       }
       if (user.status !== 1) {
         throw AppError.forbidden('Account is inactive');
@@ -302,7 +302,7 @@ router.post(
 
       const valid = await consumeEmailOtp(user.id, EMAIL_OTP_LOGIN_ACTION, body.code);
       if (!valid) {
-        throw AppError.unauthorized('隱崎ｨｼ繧ｳ繝ｼ繝峨′豁｣縺励￥縺ゅｊ縺ｾ縺帙ｓ');
+        throw AppError.unauthorized('認証コードが正しくありません');
       }
 
       const tokens = await issueTokensForUser(user.id);
@@ -479,7 +479,7 @@ router.get(
         where: { id: req.user!.userId },
       });
       if (!user) {
-        throw AppError.notFound('繝ｦ繝ｼ繧ｶ繝ｼ縺瑚ｦ九▽縺九ｊ縺ｾ縺帙ｓ');
+        throw AppError.notFound('ユーザーが見つかりません');
       }
       return sendSuccess(res, serializeUser(user));
     } catch (err) {
@@ -598,34 +598,24 @@ router.put(
         .parse(req.body);
 
       if (body.newPassword !== body.newPasswordConfirmation) {
-        throw AppError.badRequest('譁ｰ縺励＞繝代せ繝ｯ繝ｼ繝峨→遒ｺ隱咲畑繝代せ繝ｯ繝ｼ繝峨′荳閾ｴ縺励∪縺帙ｓ');
+        throw AppError.badRequest('新しいパスワードと確認用パスワードが一致しません');
       }
 
       if (body.currentPassword === body.newPassword) {
-        throw AppError.badRequest('譁ｰ縺励＞繝代せ繝ｯ繝ｼ繝峨・迴ｾ蝨ｨ縺ｮ繝代せ繝ｯ繝ｼ繝峨→逡ｰ縺ｪ繧九ｂ縺ｮ繧定ｨｭ螳壹＠縺ｦ縺上□縺輔＞');
+        throw AppError.badRequest('新しいパスワードは現在のパスワードと異なるものを設定してください');
       }
 
       const user = await prisma.user.findUnique({
         where: { id: req.user!.userId },
       });
       if (!user) {
-        throw AppError.notFound('繝ｦ繝ｼ繧ｶ繝ｼ縺瑚ｦ九▽縺九ｊ縺ｾ縺帙ｓ');
+        throw AppError.notFound('ユーザーが見つかりません');
       }
 
-      console.log('[DEBUG] Password change attempt:', {
-        userId: user.id,
-        login: user.login,
-        hasCurrentPassword: !!body.currentPassword,
-        currentPasswordLength: body.currentPassword?.length,
-        hasHashedPassword: !!user.hashedPassword,
-        hashedPasswordPrefix: user.hashedPassword?.substring(0, 10),
-      });
-
       const ok = await bcrypt.compare(body.currentPassword, user.hashedPassword);
-      console.log('[DEBUG] Password comparison result:', ok);
-      
+
       if (!ok) {
-        throw AppError.unauthorized('迴ｾ蝨ｨ縺ｮ繝代せ繝ｯ繝ｼ繝峨′豁｣縺励￥縺ゅｊ縺ｾ縺帙ｓ');
+        throw AppError.unauthorized('現在のパスワードが正しくありません');
       }
 
       const hashedPassword = await bcrypt.hash(body.newPassword, BCRYPT_ROUNDS);
@@ -634,7 +624,7 @@ router.put(
         data: { hashedPassword },
       });
 
-      return sendSuccess(res, { ok: true, message: '繝代せ繝ｯ繝ｼ繝峨ｒ螟画峩縺励∪縺励◆' });
+      return sendSuccess(res, { ok: true, message: 'パスワードを変更しました' });
     } catch (err) {
       next(err);
     }
