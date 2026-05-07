@@ -8,6 +8,7 @@ import { format, parseISO } from 'date-fns';
 import { useAuthStore } from '../stores/auth';
 import { useProject, useProjectNews, useProjectNewsItem, useMembers } from '../api/hooks';
 import api from '../api/client';
+import { AttachmentLink } from '../components/AttachmentLink';
 import { renderMarkdown } from '../components/RichTextEditor';
 import type { News, Comment } from '../types';
 
@@ -456,14 +457,13 @@ function NewsDetail({
             <ul className="mt-2 space-y-1 text-sm">
               {item.attachments!.map((att) => (
                 <li key={att.id}>
-                  <a
-                    href={`/api/v1/attachments/${att.id}/download`}
-                    target="_blank"
-                    rel="noreferrer"
+                  <AttachmentLink
+                    id={att.id}
+                    filename={att.filename}
                     className="text-primary-700 hover:underline"
                   >
                     {att.filename}
-                  </a>
+                  </AttachmentLink>
                 </li>
               ))}
             </ul>

@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import ProjectSubNav from '../components/ProjectSubNav';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { renderMarkdown } from '../components/RichTextEditor';
+import { AttachmentLink } from '../components/AttachmentLink';
 import { Book, History, Lock, LockOpen, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { useProject, useWikiPage, useWikiPages, useMembers } from '../api/hooks';
 import api from '../api/client';
@@ -72,11 +73,57 @@ export default function WikiPage() {
   const pageQuery = useWikiPage(projectId, decodedTitle);
   const wikiPage = unwrap<WikiPageType>(pageQuery.data);
 
-  const html = useMemo(() => {
+  const rawHtml = useMemo(() => {
     const md = wikiPage?.content?.text ?? '';
     if (!md) return '';
     return renderMarkdown(md);
   }, [wikiPage?.content?.text]);
+  const [html, setHtml] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    const objectUrls: string[] = [];
+
+    async function replaceAttachmentUrls() {
+      if (!rawHtml) {
+        setHtml('');
+        return;
+      }
+
+      const ids = Array.from(
+        new Set(
+          [...rawHtml.matchAll(/(?:https?:\/\/[^"')\s]+)?\/api\/v1\/attachments\/([0-9a-f-]{36})\/download/gi)]
+            .map((match) => match[1]),
+        ),
+      );
+      if (!ids.length) {
+        setHtml(rawHtml);
+        return;
+      }
+
+      let nextHtml = rawHtml;
+      await Promise.all(ids.map(async (id) => {
+        try {
+          const res = await api.get(`/attachments/${id}/download`, { responseType: 'blob' });
+          if (!active) return;
+          const url = URL.createObjectURL(res.data);
+          objectUrls.push(url);
+          const pattern = new RegExp(`(?:https?:\\/\\/[^"')\\s]+)?\\/api\\/v1\\/attachments\\/${id}\\/download`, 'g');
+          nextHtml = nextHtml.replace(pattern, url);
+        } catch {
+          // Leave the original URL in place so the broken reference remains visible.
+        }
+      }));
+      if (active) setHtml(nextHtml);
+    }
+
+    replaceAttachmentUrls();
+
+    return () => {
+      active = false;
+      for (const url of objectUrls) URL.revokeObjectURL(url);
+    };
+  }, [rawHtml]);
 
   const [wikiActionsOpen, setWikiActionsOpen] = useState(false);
   const [deleteWikiOpen, setDeleteWikiOpen] = useState(false);
@@ -318,14 +365,13 @@ export default function WikiPage() {
                     <ul className="space-y-1 text-sm">
                       {wikiPage.attachments!.map((att) => (
                         <li key={att.id}>
-                          <a
-                            href={`/api/v1/attachments/${att.id}/download`}
-                            target="_blank"
-                            rel="noreferrer"
+                          <AttachmentLink
+                            id={att.id}
+                            filename={att.filename}
                             className="text-primary-700 hover:underline"
                           >
                             {att.filename}
-                          </a>
+                          </AttachmentLink>
                         </li>
                       ))}
                     </ul>

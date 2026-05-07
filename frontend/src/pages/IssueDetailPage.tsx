@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { renderMarkdown } from '../components/RichTextEditor';
@@ -8,6 +8,7 @@ import { Pencil, FileIcon, Download, Trash2, Check, X, Rss } from 'lucide-react'
 import RichTextEditor from '../components/RichTextEditor';
 import IssueCustomFieldInputs from '../components/IssueCustomFieldInputs';
 import { useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useUpdateJournal, useDeleteJournal, useTrackers, useStatuses, useMembers, useProjectIssues, useIssueCustomFields } from '../api/hooks';
+import { AttachmentLink, AttachmentPreview } from '../components/AttachmentLink';
 import { useAuthStore } from '../stores/auth';
 import type { CustomField, Issue, IssueCustomFieldValue, Journal, JournalDetail, User, Attachment } from '../types';
 
@@ -644,7 +645,11 @@ export default function IssueDetailPage() {
       ? field.fieldFormat === 'link'
         ? <a href={text} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline break-all">{text}</a>
         : field.fieldFormat === 'attachment' && !Array.isArray(field.value)
-          ? <a href={`/api/v1/attachments/${field.value}/download`} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline break-all">{text}</a>
+          ? (
+            <AttachmentLink id={String(field.value)} filename={text} className="text-primary-600 hover:underline break-all">
+              {text}
+            </AttachmentLink>
+          )
         : field.fieldFormat === 'progress'
           ? (
             <div className="flex items-center gap-3">
@@ -1093,14 +1098,12 @@ export default function IssueDetailPage() {
                         <div className="mt-1.5 flex flex-wrap gap-2">
                           {imgs.map((att) => (
                             <div key={att.id} className="group/img relative">
-                              <a href={`/uploads/${att.diskFilename}`} target="_blank" rel="noreferrer"
-                                className="block overflow-hidden rounded border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-                                <img src={`/uploads/${att.diskFilename}`} alt={att.filename}
-                                  className="h-20 w-auto max-w-[140px] object-cover" loading="lazy" />
-                                <span className="absolute inset-x-0 bottom-0 bg-black/50 px-1.5 py-0.5 text-[10px] text-white truncate">
-                                  {att.filename}
-                                </span>
-                              </a>
+                              <AttachmentPreview
+                                id={att.id}
+                                filename={att.filename}
+                                linkClassName="block overflow-hidden rounded border border-slate-200 shadow-sm hover:shadow-md transition-shadow"
+                                imageClassName="h-20 w-auto max-w-[140px] object-cover"
+                              />
                               {isAuthenticated && (
                                 <button type="button"
                                   onClick={() => setDeleteTarget({ id: att.id, filename: att.filename })}
@@ -1117,8 +1120,8 @@ export default function IssueDetailPage() {
                           {nonImgs.map((att) => (
                             <li key={att.id} className="flex items-center gap-1.5 text-xs">
                               <FileIcon className="h-3 w-3 shrink-0 text-slate-400" />
-                              <a href={`/api/v1/attachments/${att.id}/download`} target="_blank" rel="noreferrer"
-                                className="text-primary-600 hover:underline truncate text-[11px]">{att.filename}</a>
+                              <AttachmentLink id={att.id} filename={att.filename}
+                                className="text-primary-600 hover:underline truncate text-[11px]">{att.filename}</AttachmentLink>
                               <span className="shrink-0 text-[10px] text-slate-400">{(att.filesize / 1024).toFixed(0)} KB</span>
                               {isAuthenticated && (
                                 <button type="button" onClick={() => setDeleteTarget({ id: att.id, filename: att.filename })}
@@ -1149,10 +1152,10 @@ export default function IssueDetailPage() {
                 <FileIcon className="h-4 w-4 shrink-0 text-slate-400" />
                 <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{att.filename}</span>
                 <span className="shrink-0 text-xs text-slate-400">{(att.filesize / 1024).toFixed(0)} KB</span>
-                <a href={`/api/v1/attachments/${att.id}/download`} target="_blank" rel="noreferrer"
+                <AttachmentLink id={att.id} filename={att.filename}
                   className="shrink-0 rounded p-1 text-primary-600 hover:bg-primary-50">
                   <Download className="h-4 w-4" />
-                </a>
+                </AttachmentLink>
                 {isAuthenticated && (
                   <button type="button" onClick={() => setDeleteTarget({ id: att.id, filename: att.filename })}
                     className="shrink-0 rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600">

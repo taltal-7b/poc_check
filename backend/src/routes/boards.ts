@@ -5,6 +5,7 @@ import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
 import { authenticate } from '../middleware/auth';
 import { hasAnyProjectPermission } from '../utils/project-permissions';
+import { requireProjectView } from '../utils/project-access';
 import { notifyBoardEvent, notifyMessageEvent } from '../services/notification-service';
 import { logger } from '../utils/logger';
 import { z } from 'zod';
@@ -185,13 +186,14 @@ const updateMessageSchema = z.object({
   content: z.string().nullable().optional(),
 });
 
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const projectId = param(req, 'projectId');
     if (!projectId) return next(AppError.badRequest('projectId が必要です'));
 
+    const project = await requireProjectView(req.user, projectId, ['view_messages']);
     const boards = await prisma.board.findMany({
-      where: { projectId },
+      where: { projectId: project.id },
       orderBy: [{ position: 'asc' }, { name: 'asc' }],
     });
     if (!boards.length) return sendSuccess(res, []);
@@ -244,14 +246,15 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
 });
 
 /** List topics (parentId null), pagination + reply count */
-router.get('/:id/messages', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id/messages', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const projectId = param(req, 'projectId');
     const boardId = param(req, 'id');
     if (!projectId) return next(AppError.badRequest('projectId が必要です'));
     if (!boardId) return next(AppError.badRequest('id が必要です'));
 
-    const board = await prisma.board.findFirst({ where: { id: boardId, projectId } });
+    const project = await requireProjectView(req.user, projectId, ['view_messages']);
+    const board = await prisma.board.findFirst({ where: { id: boardId, projectId: project.id } });
     if (!board) return next(AppError.notFound('掲示板が見つかりません'));
 
     const { page, perPage, skip } = parsePagination(req.query as Record<string, unknown>);
@@ -303,7 +306,8 @@ router.post('/:id/messages', authenticate, async (req: Request, res: Response, n
     ]);
     if (!can) return next(AppError.forbidden('メッセージを追加する権限がありません'));
 
-    const board = await prisma.board.findFirst({ where: { id: boardId, projectId } });
+    const project = await requireProjectView(req.user, projectId, ['view_messages']);
+    const board = await prisma.board.findFirst({ where: { id: boardId, projectId: project.id } });
     if (!board) return next(AppError.notFound('掲示板が見つかりません'));
 
     const parsed = topicSchema.safeParse(req.body);
@@ -328,7 +332,7 @@ router.post('/:id/messages', authenticate, async (req: Request, res: Response, n
   }
 });
 
-router.get('/:boardId/messages/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:boardId/messages/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const projectId = param(req, 'projectId');
     const boardId = param(req, 'boardId');
@@ -337,7 +341,8 @@ router.get('/:boardId/messages/:id', async (req: Request, res: Response, next: N
     if (!boardId) return next(AppError.badRequest('boardId が必要です'));
     if (!messageId) return next(AppError.badRequest('id が必要です'));
 
-    const board = await prisma.board.findFirst({ where: { id: boardId, projectId } });
+    const project = await requireProjectView(req.user, projectId, ['view_messages']);
+    const board = await prisma.board.findFirst({ where: { id: boardId, projectId: project.id } });
     if (!board) return next(AppError.notFound('掲示板が見つかりません'));
 
     const message = await loadMessageReplyTree(boardId, messageId);
@@ -500,14 +505,15 @@ router.delete('/:boardId/messages/:messageId', authenticate, async (req: Request
   }
 });
 
-router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const projectId = param(req, 'projectId');
     const id = param(req, 'id');
     if (!projectId) return next(AppError.badRequest('projectId が必要です'));
     if (!id) return next(AppError.badRequest('id が必要です'));
 
-    const board = await prisma.board.findFirst({ where: { id, projectId } });
+    const project = await requireProjectView(req.user, projectId, ['view_messages']);
+    const board = await prisma.board.findFirst({ where: { id, projectId: project.id } });
     if (!board) return next(AppError.notFound('掲示板が見つかりません'));
 
     const { page, perPage, skip } = parsePagination(req.query as Record<string, unknown>);

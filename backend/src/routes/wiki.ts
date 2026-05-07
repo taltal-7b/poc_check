@@ -5,6 +5,7 @@ import { AppError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
 import { authenticate } from '../middleware/auth';
 import { hasAnyProjectPermission, userHasProjectRoleName } from '../utils/project-permissions';
+import { requireProjectView } from '../utils/project-access';
 import { notifyWikiPageEvent } from '../services/notification-service';
 import { logger } from '../utils/logger';
 import { z } from 'zod';
@@ -51,6 +52,10 @@ async function userCanEditWiki(
   projectId: string,
 ): Promise<boolean> {
   return hasAnyProjectPermission(userId, isAdmin, projectId, ['edit_wiki_pages']);
+}
+
+async function requireWikiView(req: Request, projectId: string) {
+  return requireProjectView(req.user, projectId, ['view_wiki_pages']);
 }
 
 /** プロジェクトの「管理者」ロール、またはシステム管理者 */
@@ -393,13 +398,14 @@ function renderWikiMarkdownToPdf(doc: any, markdown: string, baseFont: string) {
 }
 
 /** GET /export/html — must be before /:title */
-router.get('/export/html', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/export/html', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const projectId = param(req, 'projectId');
     if (!projectId) return next(AppError.badRequest('projectId が必要です'));
 
+    const readableProject = await requireWikiView(req, projectId);
     const wiki = await prisma.wiki.findUnique({
-      where: { projectId },
+      where: { projectId: readableProject.id },
       include: {
         pages: {
           orderBy: { title: 'asc' },
@@ -427,12 +433,13 @@ router.get('/export/html', async (req: Request, res: Response, next: NextFunctio
 });
 
 /** GET /date_index */
-router.get('/date_index', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/date_index', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const projectId = param(req, 'projectId');
     if (!projectId) return next(AppError.badRequest('projectId が必要です'));
 
-    const wiki = await prisma.wiki.findUnique({ where: { projectId } });
+    const readableProject = await requireWikiView(req, projectId);
+    const wiki = await prisma.wiki.findUnique({ where: { projectId: readableProject.id } });
     if (!wiki) {
       return sendSuccess(res, []);
     }
@@ -455,13 +462,14 @@ router.get('/date_index', async (req: Request, res: Response, next: NextFunction
 });
 
 /** GET / — wiki index */
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const projectId = param(req, 'projectId');
     if (!projectId) return next(AppError.badRequest('projectId が必要です'));
 
+    const readableProject = await requireWikiView(req, projectId);
     const wiki = await prisma.wiki.findUnique({
-      where: { projectId },
+      where: { projectId: readableProject.id },
       include: {
         pages: {
           orderBy: { title: 'asc' },
@@ -552,7 +560,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
   }
 });
 
-router.get('/:title/history', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:title/history', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const projectId = param(req, 'projectId');
     const rawTitle = param(req, 'title');
@@ -560,9 +568,10 @@ router.get('/:title/history', async (req: Request, res: Response, next: NextFunc
     if (!rawTitle) return next(AppError.badRequest('title が必要です'));
     const title = decodeTitle(rawTitle);
 
+    const readableProject = await requireWikiView(req, projectId);
     const [project, wiki] = await Promise.all([
       prisma.project.findUnique({ where: { id: projectId }, select: { name: true, identifier: true } }),
-      prisma.wiki.findUnique({ where: { projectId } }),
+      prisma.wiki.findUnique({ where: { projectId: readableProject.id } }),
     ]);
     if (!wiki) return next(AppError.notFound('Wiki が見つかりません'));
 
@@ -591,7 +600,7 @@ router.get('/:title/history', async (req: Request, res: Response, next: NextFunc
   }
 });
 
-router.get('/:title/version/:version', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:title/version/:version', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const projectId = param(req, 'projectId');
     const rawTitle = param(req, 'title');
@@ -604,7 +613,8 @@ router.get('/:title/version/:version', async (req: Request, res: Response, next:
       return next(AppError.badRequest('無効なバージョンです'));
     }
 
-    const wiki = await prisma.wiki.findUnique({ where: { projectId } });
+    const readableProject = await requireWikiView(req, projectId);
+    const wiki = await prisma.wiki.findUnique({ where: { projectId: readableProject.id } });
     if (!wiki) return next(AppError.notFound('Wiki が見つかりません'));
 
     const page = await findPageByTitle(wiki.id, title);
@@ -636,7 +646,8 @@ router.delete('/:title/version/:version', authenticate, async (req: Request, res
     const canEdit = await userCanEditWiki(req.user?.userId, req.user?.admin, projectId);
     if (!canEdit) return next(AppError.forbidden('Wikiを編集する権限がありません'));
 
-    const wiki = await prisma.wiki.findUnique({ where: { projectId } });
+    const readableProject = await requireWikiView(req, projectId);
+    const wiki = await prisma.wiki.findUnique({ where: { projectId: readableProject.id } });
     if (!wiki) return next(AppError.notFound('Wiki が見つかりません'));
 
     const page = await findPageByTitle(wiki.id, title);
@@ -691,7 +702,7 @@ router.delete('/:title/version/:version', authenticate, async (req: Request, res
   }
 });
 
-router.get('/:title/diff', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:title/diff', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const projectId = param(req, 'projectId');
     const rawTitle = param(req, 'title');
@@ -704,7 +715,8 @@ router.get('/:title/diff', async (req: Request, res: Response, next: NextFunctio
       return next(AppError.badRequest('query from, to は整数で指定してください'));
     }
 
-    const wiki = await prisma.wiki.findUnique({ where: { projectId } });
+    const readableProject = await requireWikiView(req, projectId);
+    const wiki = await prisma.wiki.findUnique({ where: { projectId: readableProject.id } });
     if (!wiki) return next(AppError.notFound('Wiki が見つかりません'));
 
     const page = await findPageByTitle(wiki.id, title);
@@ -731,7 +743,7 @@ router.get('/:title/diff', async (req: Request, res: Response, next: NextFunctio
   }
 });
 
-router.get('/:title/export/pdf', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:title/export/pdf', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const projectId = param(req, 'projectId');
     const rawTitle = param(req, 'title');
@@ -739,11 +751,12 @@ router.get('/:title/export/pdf', async (req: Request, res: Response, next: NextF
     if (!rawTitle) return next(AppError.badRequest('title が必要です'));
     const title = decodeTitle(rawTitle);
 
+    const readableProject = await requireWikiView(req, projectId);
     const project = await prisma.project.findUnique({
       where: { id: projectId },
       select: { name: true, identifier: true },
     });
-    const wiki = await prisma.wiki.findUnique({ where: { projectId } });
+    const wiki = await prisma.wiki.findUnique({ where: { projectId: readableProject.id } });
     if (!wiki) return next(AppError.notFound('Wiki が見つかりません'));
 
     const page = await findPageByTitle(wiki.id, title);
@@ -810,7 +823,8 @@ router.post('/:title/protect', authenticate, async (req: Request, res: Response,
       return next(AppError.forbidden('Wikiページの保護を設定・解除できるのはプロジェクトの管理者ロールを持つユーザーのみです'));
     }
 
-    const wiki = await prisma.wiki.findUnique({ where: { projectId } });
+    const readableProject = await requireWikiView(req, projectId);
+    const wiki = await prisma.wiki.findUnique({ where: { projectId: readableProject.id } });
     if (!wiki) return next(AppError.notFound('Wiki が見つかりません'));
 
     const page = await findPageByTitle(wiki.id, title);
@@ -840,7 +854,8 @@ router.get('/:title', authenticate, async (req: Request, res: Response, next: Ne
     if (!rawTitle) return next(AppError.badRequest('title が必要です'));
     const title = decodeTitle(rawTitle);
 
-    const wiki = await prisma.wiki.findUnique({ where: { projectId } });
+    const readableProject = await requireWikiView(req, projectId);
+    const wiki = await prisma.wiki.findUnique({ where: { projectId: readableProject.id } });
     if (!wiki) return next(AppError.notFound('Wiki が見つかりません'));
 
     const page = await findPageByTitle(wiki.id, title);

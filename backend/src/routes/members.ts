@@ -4,6 +4,7 @@ import { AppError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
 import { authenticate } from '../middleware/auth';
 import { userCanManageProject } from '../utils/project-permissions';
+import { requireProjectView } from '../utils/project-access';
 import { notifyProjectMemberAdded } from '../services/notification-service';
 import { logger } from '../utils/logger';
 import { z } from 'zod';
@@ -63,6 +64,15 @@ router.get(
     const project = await resolveProjectIdParam(req.params.projectId);
     if (!project) throw AppError.notFound('プロジェクトが見つかりません');
     const projectId = project.id;
+
+    await requireProjectView(req.user, projectId, [
+      'view_issues',
+      'view_messages',
+      'view_wiki_pages',
+      'view_documents',
+      'view_news',
+      'view_time_entries',
+    ]);
 
     const members = await prisma.member.findMany({
       where: { projectId },

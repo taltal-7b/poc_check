@@ -18,6 +18,7 @@ import { authenticate } from '../middleware/auth';
 import { upload } from '../middleware/upload';
 import { config } from '../config';
 import { z } from 'zod';
+import { userCanAccessAttachment } from '../utils/project-access';
 
 const router = Router({ mergeParams: true });
 
@@ -47,6 +48,14 @@ function resolveUploadPath(diskFilename: string): string {
   return path.resolve(config.UPLOAD_DIR, diskFilename);
 }
 
+function cleanupUploadedFiles(req: Request) {
+  const files = (req as Request & { files?: MulterDiskFile[] }).files;
+  for (const file of files ?? []) {
+    const filePath = resolveUploadPath(file.filename);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  }
+}
+
 router.post(
   '/upload',
   authenticate,
@@ -67,7 +76,19 @@ router.post(
         meta = undefined;
       }
 
-      const created = await Promise.all(
+      if (meta && (meta.issueId || meta.documentId || meta.journalId || (meta.containerType && meta.containerId))) {
+        const canAttach = await userCanAccessAttachment(req.user, {
+          authorId: req.user!.userId,
+          containerType: meta.containerType ?? null,
+          containerId: meta.containerId ?? null,
+          issueId: meta.issueId ?? null,
+          documentId: meta.documentId ?? null,
+          journalId: meta.journalId ?? null,
+        });
+        if (!canAttach) throw AppError.forbidden();
+      }
+
+      const created = await prisma.$transaction(
         files.map((file) =>
           prisma.attachment.create({
             data: {
@@ -103,6 +124,7 @@ router.post(
 
       return sendSuccess(res, { attachments: created }, 201);
     } catch (err) {
+      cleanupUploadedFiles(req);
       next(err);
     }
   },
@@ -132,6 +154,8 @@ router.get(
         },
       });
       if (!attachment) throw AppError.notFound('添付が見つかりません');
+      const canRead = await userCanAccessAttachment(req.user, attachment);
+      if (!canRead) throw AppError.forbidden();
       return sendSuccess(res, { ...attachment, filename: normalizeFilename(attachment.filename) });
     } catch (err) {
       next(err);
@@ -148,6 +172,9 @@ router.get(
         where: { id: String(req.params.id) },
       });
       if (!attachment) throw AppError.notFound('添付が見つかりません');
+
+      const canRead = await userCanAccessAttachment(req.user, attachment);
+      if (!canRead) throw AppError.forbidden();
 
       const filePath = resolveUploadPath(attachment.diskFilename);
       if (!fs.existsSync(filePath)) {

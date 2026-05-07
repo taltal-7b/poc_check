@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Image, Link as LinkIcon, Trash2 } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
+import { AttachmentLink } from '../components/AttachmentLink';
 import {
   useProject,
   useWikiPage,
@@ -218,14 +219,13 @@ export default function WikiEditPage() {
             <ul className="space-y-2 text-sm">
               {attachedFiles.map((att) => (
                 <li key={att.id} className="flex flex-wrap items-center gap-2">
-                  <a
-                    href={`/api/v1/attachments/${att.id}/download`}
-                    target="_blank"
-                    rel="noreferrer"
+                  <AttachmentLink
+                    id={att.id}
+                    filename={att.filename}
                     className="text-primary-700 hover:underline"
                   >
                     {att.filename}
-                  </a>
+                  </AttachmentLink>
                   <button
                     type="button"
                     onClick={() => insertAttachmentMarkup(att, false)}

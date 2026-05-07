@@ -4,6 +4,7 @@ import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
 import { authenticate } from '../middleware/auth';
 import { hasAnyProjectPermission } from '../utils/project-permissions';
+import { readableProjectIds, requireProjectView } from '../utils/project-access';
 import { notifyNewsEvent } from '../services/notification-service';
 import { logger } from '../utils/logger';
 import { z } from 'zod';
@@ -153,13 +154,20 @@ async function attachNewsFiles(newsId: string, userId: string, attachmentIds?: s
   });
 }
 
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const projectId = param(req, 'projectId');
+    const projectRef = param(req, 'projectId');
     const query = req.query as Record<string, unknown>;
     const { page, perPage, skip } = parsePagination(query);
 
-    const where = projectId ? { projectId } : {};
+    let where: { projectId?: string | { in: string[] } } = {};
+    if (projectRef) {
+      const project = await requireProjectView(req.user, projectRef, ['view_news']);
+      where = { projectId: project.id };
+    } else {
+      const readableIds = await readableProjectIds(req.user, ['view_news']);
+      if (readableIds !== null) where = { projectId: { in: readableIds } };
+    }
 
     const [total, items] = await Promise.all([
       prisma.news.count({ where }),
@@ -188,14 +196,16 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const projectId = param(req, 'projectId');
+    const projectRef = param(req, 'projectId');
     const id = param(req, 'id');
     if (!id) return next(AppError.badRequest('id が必要です'));
 
+    const project = projectRef ? await requireProjectView(req.user, projectRef, ['view_news']) : null;
+
     const news = await prisma.news.findFirst({
-      where: projectId ? { id, projectId } : { id },
+      where: project ? { id, projectId: project.id } : { id },
       include: {
         project: { select: { id: true, name: true, identifier: true } },
         author: { select: { id: true, login: true, firstname: true, lastname: true } },
@@ -208,6 +218,9 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
       },
     });
     if (!news) return next(AppError.notFound('ニュースが見つかりません'));
+    if (!project) {
+      await requireProjectView(req.user, news.project.id, ['view_news']);
+    }
     const { comments, ...newsRest } = news;
     const withTree = { ...newsRest, comments: buildCommentTree(comments as CommentWithAuthor[]) };
     return sendSuccess(res, await withNewsAttachments(withTree));
@@ -273,6 +286,9 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
     });
     if (!existing) return next(AppError.notFound('ニュースが見つかりません'));
 
+    const canManage = await userCanManageNews(req.user?.userId, req.user?.admin, existing.projectId);
+    if (!canManage) return next(AppError.forbidden());
+
     const news = await prisma.news.update({
       where: { id },
       data: {
@@ -311,6 +327,9 @@ router.delete('/:id', authenticate, async (req: Request, res: Response, next: Ne
     });
     if (!existing) return next(AppError.notFound('ニュースが見つかりません'));
 
+    const canManage = await userCanManageNews(req.user?.userId, req.user?.admin, existing.projectId);
+    if (!canManage) return next(AppError.forbidden());
+
     await prisma.news.delete({ where: { id } });
     return sendSuccess(res, { deleted: true, id });
   } catch (e) {
@@ -331,6 +350,12 @@ router.post('/:id/comments', authenticate, async (req: Request, res: Response, n
       where: projectId ? { id, projectId } : { id },
     });
     if (!news) return next(AppError.notFound('ニュースが見つかりません'));
+
+    const canComment = await hasAnyProjectPermission(req.user?.userId, req.user?.admin, news.projectId, [
+      'comment_news',
+      'manage_news',
+    ]);
+    if (!canComment) return next(AppError.forbidden());
 
     let parentId: string | null = parsed.data.parentId ?? null;
     if (parentId) {

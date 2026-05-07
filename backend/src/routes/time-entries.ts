@@ -5,6 +5,8 @@ import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
 import { authenticate } from '../middleware/auth';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
+import { readableProjectIds, requireProjectView } from '../utils/project-access';
+import { hasAnyProjectPermission } from '../utils/project-permissions';
 
 const router = Router({ mergeParams: true });
 
@@ -99,6 +101,14 @@ router.get(
     try {
       const { page, perPage, skip } = parsePagination(req.query as Record<string, unknown>);
       const where = buildListWhere(req);
+      const projectRef = effectiveProjectId(req);
+      if (projectRef) {
+        const project = await requireProjectView(req.user, projectRef, ['view_time_entries'], { allowPublic: false });
+        where.projectId = project.id;
+      } else {
+        const ids = await readableProjectIds(req.user, ['view_time_entries'], { allowPublic: false });
+        if (ids !== null) where.projectId = { in: ids };
+      }
 
       const [total, rows] = await Promise.all([
         prisma.timeEntry.count({ where }),
@@ -136,6 +146,14 @@ router.get(
       const raw = (req.query.groupBy ?? req.query.group_by) as string | undefined;
       const groupBy = groupBySchema.parse(raw ?? 'project');
       const where = buildListWhere(req);
+      const projectRef = effectiveProjectId(req);
+      if (projectRef) {
+        const project = await requireProjectView(req.user, projectRef, ['view_time_entries'], { allowPublic: false });
+        where.projectId = project.id;
+      } else {
+        const ids = await readableProjectIds(req.user, ['view_time_entries'], { allowPublic: false });
+        if (ids !== null) where.projectId = { in: ids };
+      }
 
       if (groupBy === 'user') {
         const grouped = await prisma.timeEntry.groupBy({
@@ -309,6 +327,9 @@ router.get(
         },
       });
       if (!entry) throw AppError.notFound('工数エントリが見つかりません');
+      if (entry.userId !== req.user!.userId) {
+        await requireProjectView(req.user, entry.projectId, ['view_time_entries'], { allowPublic: false });
+      }
       return sendSuccess(res, entry);
     } catch (err) {
       next(err);
@@ -334,6 +355,9 @@ router.post(
 
       const project = await prisma.project.findUnique({ where: { id: projectId } });
       if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+
+      const canLogTime = await hasAnyProjectPermission(req.user?.userId, req.user?.admin, project.id, ['log_time']);
+      if (!canLogTime) throw AppError.forbidden();
 
       const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
       if (!targetUser) throw AppError.badRequest('ユーザーが存在しません');

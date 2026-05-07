@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import path from 'path';
 import { config } from './config';
 import { errorHandler } from './middleware/error-handler';
 import { requireProjectModule } from './middleware/project-module';
@@ -40,7 +39,6 @@ app.use(cors({ origin: config.FRONTEND_URL, credentials: true }));
 app.use(morgan('short'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use('/uploads', express.static(path.resolve(config.UPLOAD_DIR)));
 
 const api = express.Router();
 api.use('/auth', authRoutes);

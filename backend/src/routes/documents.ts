@@ -8,6 +8,7 @@ import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
 import { authenticate } from '../middleware/auth';
 import { hasAnyProjectPermission } from '../utils/project-permissions';
 import { config } from '../config';
+import { requireProjectView } from '../utils/project-access';
 
 const router = Router({ mergeParams: true });
 
@@ -108,10 +109,12 @@ async function mapDocumentAttachments(documentIds: string[]): Promise<Map<string
   return map;
 }
 
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const projectId = param(req, 'projectId');
-    if (!projectId) return next(AppError.badRequest('projectId is required'));
+    const projectRef = param(req, 'projectId');
+    if (!projectRef) return next(AppError.badRequest('projectId is required'));
+    const project = await requireProjectView(req.user, projectRef, ['view_documents']);
+    const projectId = project.id;
 
     const { page, perPage, skip } = parsePagination(req.query as Record<string, unknown>);
     const where = { projectId };
@@ -147,12 +150,14 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const projectId = param(req, 'projectId');
+    const projectRef = param(req, 'projectId');
     const id = param(req, 'id');
-    if (!projectId) return next(AppError.badRequest('projectId is required'));
+    if (!projectRef) return next(AppError.badRequest('projectId is required'));
     if (!id) return next(AppError.badRequest('id is required'));
+    const project = await requireProjectView(req.user, projectRef, ['view_documents']);
+    const projectId = project.id;
 
     const doc = await prisma.document.findFirst({
       where: { id, projectId },

@@ -576,6 +576,9 @@ router.post(
     const project = await resolveProjectRef(req.params.id);
     if (!project) throw AppError.notFound('プロジェクトが見つかりません');
 
+    const canManage = await userCanManageProject(req.user?.userId, req.user?.admin, project);
+    if (!canManage) throw AppError.forbidden();
+
     const updated = await prisma.project.update({
       where: { id: project.id },
       data: { status: 5 },
@@ -590,6 +593,9 @@ router.post(
   catchAsync(async (req, res) => {
     const project = await resolveProjectRef(req.params.id);
     if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+
+    const canManage = await userCanManageProject(req.user?.userId, req.user?.admin, project);
+    if (!canManage) throw AppError.forbidden();
 
     const updated = await prisma.project.update({
       where: { id: project.id },
@@ -606,6 +612,9 @@ router.post(
     const project = await resolveProjectRef(req.params.id);
     if (!project) throw AppError.notFound('プロジェクトが見つかりません');
 
+    const canManage = await userCanManageProject(req.user?.userId, req.user?.admin, project);
+    if (!canManage) throw AppError.forbidden();
+
     const updated = await prisma.project.update({
       where: { id: project.id },
       data: { status: 9 },
@@ -621,6 +630,9 @@ router.post(
     const project = await resolveProjectRef(req.params.id);
     if (!project) throw AppError.notFound('プロジェクトが見つかりません');
 
+    const canManage = await userCanManageProject(req.user?.userId, req.user?.admin, project);
+    if (!canManage) throw AppError.forbidden();
+
     const updated = await prisma.project.update({
       where: { id: project.id },
       data: { status: 1 },
@@ -635,6 +647,9 @@ router.post(
   catchAsync(async (req, res) => {
     const project = await resolveProjectRef(req.params.id);
     if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+
+    const canManage = await userCanManageProject(req.user?.userId, req.user?.admin, project);
+    if (!canManage) throw AppError.forbidden();
 
     const updated = await prisma.project.update({
       where: { id: project.id },
@@ -658,6 +673,9 @@ router.post(
       },
     });
     if (!src) throw AppError.notFound('プロジェクトが見つかりません');
+
+    const canManage = await userCanManageProject(req.user?.userId, req.user?.admin, src);
+    if (!canManage) throw AppError.forbidden();
 
     const newIdentifier = `${src.identifier}-copy-${Date.now()}`.replace(/-+/g, '-');
     const copy = await prisma.$transaction(async (tx) => {
