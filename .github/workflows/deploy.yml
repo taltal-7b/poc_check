@@ -121,49 +121,35 @@ jobs:
         run: |
           set -euo pipefail
           SSH_PORT="${DEPLOY_PORT:-22}"
-          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
-            IMAGE_PREFIX="${IMAGE_PREFIX}" \
-            IMAGE_TAG="${IMAGE_TAG}" \
-            POSTGRES_USER="${POSTGRES_USER:-tasknova}" \
-            POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" \
-            POSTGRES_DB="${POSTGRES_DB:-tasknova}" \
-            JWT_SECRET="${JWT_SECRET}" \
-            JWT_REFRESH_SECRET="${JWT_REFRESH_SECRET}" \
-            FRONTEND_URL="${FRONTEND_URL}" \
-            SMTP_HOST="${SMTP_HOST:-}" \
-            SMTP_PORT="${SMTP_PORT:-587}" \
-            SMTP_USER="${SMTP_USER:-}" \
-            SMTP_PASS="${SMTP_PASS:-}" \
-            SMTP_FROM="${SMTP_FROM:-}" \
-            OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
-            FRONTEND_PORT="${FRONTEND_PORT:-80}" \
-            BACKEND_BIND="${BACKEND_BIND:-127.0.0.1}" \
-            BACKEND_PORT="${BACKEND_PORT:-3000}" \
-            GHCR_USERNAME="${GHCR_USERNAME:-}" \
-            GHCR_TOKEN="${GHCR_TOKEN:-}" \
-            DEPLOY_PATH="${DEPLOY_PATH}" \
-            'bash -s' <<'REMOTE'
-          set -euo pipefail
-          cd "$DEPLOY_PATH"
-          cat > .env <<EOF
+          deploy_env="$(mktemp)"
+          cat > "$deploy_env" <<EOF
           IMAGE_PREFIX=$IMAGE_PREFIX
           IMAGE_TAG=$IMAGE_TAG
-          POSTGRES_USER=$POSTGRES_USER
+          POSTGRES_USER=${POSTGRES_USER:-tasknova}
           POSTGRES_PASSWORD=$POSTGRES_PASSWORD
-          POSTGRES_DB=$POSTGRES_DB
+          POSTGRES_DB=${POSTGRES_DB:-tasknova}
           JWT_SECRET=$JWT_SECRET
           JWT_REFRESH_SECRET=$JWT_REFRESH_SECRET
           FRONTEND_URL=$FRONTEND_URL
-          SMTP_HOST=$SMTP_HOST
-          SMTP_PORT=$SMTP_PORT
-          SMTP_USER=$SMTP_USER
-          SMTP_PASS=$SMTP_PASS
-          SMTP_FROM=$SMTP_FROM
-          OPENAI_API_KEY=$OPENAI_API_KEY
-          FRONTEND_PORT=$FRONTEND_PORT
-          BACKEND_BIND=$BACKEND_BIND
-          BACKEND_PORT=$BACKEND_PORT
+          SMTP_HOST=${SMTP_HOST:-}
+          SMTP_PORT=${SMTP_PORT:-587}
+          SMTP_USER=${SMTP_USER:-}
+          SMTP_PASS=${SMTP_PASS:-}
+          SMTP_FROM=${SMTP_FROM:-}
+          OPENAI_API_KEY=${OPENAI_API_KEY:-}
+          FRONTEND_PORT=${FRONTEND_PORT:-80}
+          BACKEND_BIND=${BACKEND_BIND:-127.0.0.1}
+          BACKEND_PORT=${BACKEND_PORT:-3000}
           EOF
+          scp -i ~/.ssh/deploy_key -P "$SSH_PORT" "$deploy_env" "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/.env"
+          rm -f "$deploy_env"
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            'bash -s' -- "$DEPLOY_PATH" "${GHCR_USERNAME:-}" "${GHCR_TOKEN:-}" <<'REMOTE'
+          set -euo pipefail
+          DEPLOY_PATH="$1"
+          GHCR_USERNAME="$2"
+          GHCR_TOKEN="$3"
+          cd "$DEPLOY_PATH"
           if [ -n "$GHCR_USERNAME" ] && [ -n "$GHCR_TOKEN" ]; then
             printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
           fi
