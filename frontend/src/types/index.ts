@@ -58,6 +58,12 @@ export interface ProjectAiBottleneckDetection {
   lateClosedIssueLimit: number;
 }
 
+export interface ProjectAiTaskInstruction {
+  instructions: string;
+  issueCount: number;
+  issueLimit: number;
+}
+
 export interface Tracker {
   id: string;
   name: string;

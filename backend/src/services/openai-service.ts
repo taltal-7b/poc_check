@@ -52,6 +52,11 @@ async function bottleneckDetectionPrompt(): Promise<string> {
   return setting?.value.trim() || config.AI_BOTTLENECK_DETECTION_PROMPT;
 }
 
+async function taskInstructionPrompt(): Promise<string> {
+  const setting = await prisma.setting.findUnique({ where: { name: 'ai_task_instruction_prompt' } });
+  return setting?.value.trim() || config.AI_TASK_INSTRUCTION_PROMPT;
+}
+
 function sectionValue(input: string, label: string): string {
   const match = input.match(new RegExp(`${label}:?\\n([\\s\\S]*?)(?:\\n\\n[^\\n]+:?\\n|$)`));
   return match?.[1]?.trim() ?? '';
@@ -214,4 +219,43 @@ export async function createOpenAiProjectBottleneckDetection(input: string): Pro
   const report = extractOutputText(body);
   if (!report) throw new Error('OpenAI API returned an empty bottleneck detection report');
   return report;
+}
+
+export async function createOpenAiProjectTaskInstruction(input: string): Promise<string> {
+  if (config.AI_TASK_INSTRUCTION_MOCK_OPENAI) {
+    return [
+      'AIタスク指示',
+      '未完了チケットの状況をもとに、次に着手すべきタスクと担当者ごとのアクションを整理しました。',
+      '',
+      input.slice(0, 1000),
+    ].join('\n');
+  }
+
+  if (!config.OPENAI_API_KEY.trim()) {
+    throw new Error('OPENAI_API_KEY is not configured');
+  }
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: config.AI_TASK_INSTRUCTION_MODEL,
+      instructions: await taskInstructionPrompt(),
+      input,
+      max_output_tokens: config.AI_TASK_INSTRUCTION_MAX_OUTPUT_TOKENS,
+      store: false,
+    }),
+  });
+
+  const body = (await response.json().catch(() => ({}))) as ResponsesApiBody;
+  if (!response.ok) {
+    throw new Error(body.error?.message ?? `OpenAI API request failed with status ${response.status}`);
+  }
+
+  const instructions = extractOutputText(body);
+  if (!instructions) throw new Error('OpenAI API returned empty task instructions');
+  return instructions;
 }

@@ -61,6 +61,15 @@ const envSchema = z.object({
   AI_BOTTLENECK_DETECTION_MAX_INPUT_CHARS: z.coerce.number().int().min(1000).max(300000).default(80000),
   AI_BOTTLENECK_DETECTION_MOCK_OPENAI: envBoolean.default(false),
   AI_BOTTLENECK_DETECTION_PROMPT: envString('あなたはチケット管理システムのボトルネック検知アシスタントです。未完了で期日超過しているチケットと、過去に期日超過後に完了したチケットの情報から、担当者・内容・トラッカー・カテゴリ・見積・進捗・履歴に見られる法則性、遅延要因、改善策を日本語で簡潔に示してください。個人攻撃ではなく、プロセス改善につながる表現にしてください。'),
+  AI_TASK_INSTRUCTION_MODEL: envString('gpt-5-mini'),
+  AI_TASK_INSTRUCTION_ISSUE_LIMIT: z.coerce.number().int().min(1).max(1000).default(80),
+  AI_TASK_INSTRUCTION_MAX_COMMENTS: z.coerce.number().int().min(0).max(20).default(3),
+  AI_TASK_INSTRUCTION_MAX_DESCRIPTION_CHARS: z.coerce.number().int().min(100).max(20000).default(1000),
+  AI_TASK_INSTRUCTION_MAX_COMMENT_CHARS: z.coerce.number().int().min(100).max(10000).default(500),
+  AI_TASK_INSTRUCTION_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(100).max(6000).default(2200),
+  AI_TASK_INSTRUCTION_MAX_INPUT_CHARS: z.coerce.number().int().min(1000).max(300000).default(70000),
+  AI_TASK_INSTRUCTION_MOCK_OPENAI: envBoolean.default(false),
+  AI_TASK_INSTRUCTION_PROMPT: envString('あなたはチケット管理システムのタスク指示アシスタントです。プロジェクト情報、メンバー、未完了チケットの状況から、優先順位、担当者ごとの次アクション、確認すべき不明点、今日または次に着手すべきタスクを日本語で具体的に示してください。'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 });
 

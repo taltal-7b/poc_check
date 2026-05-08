@@ -4,7 +4,7 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
 import { authenticate, authenticateOrQueryApiKey } from '../middleware/auth';
-import { createOpenAiProjectBottleneckDetection, createOpenAiProjectProgressSummary, createOpenAiProjectWeeklyReport } from '../services/openai-service';
+import { createOpenAiProjectBottleneckDetection, createOpenAiProjectProgressSummary, createOpenAiProjectTaskInstruction, createOpenAiProjectWeeklyReport } from '../services/openai-service';
 import {
   getUserGroupIds,
   getUserProjectPermissionSet,
@@ -155,6 +155,11 @@ function limitWeeklyReportInputChars(input: string): string {
 function limitBottleneckDetectionInputChars(input: string): string {
   if (input.length <= config.AI_BOTTLENECK_DETECTION_MAX_INPUT_CHARS) return input;
   return `${input.slice(0, config.AI_BOTTLENECK_DETECTION_MAX_INPUT_CHARS)}\n\n[入力が上限文字数を超えたため、以降は省略しました]`;
+}
+
+function limitTaskInstructionInputChars(input: string): string {
+  if (input.length <= config.AI_TASK_INSTRUCTION_MAX_INPUT_CHARS) return input;
+  return `${input.slice(0, config.AI_TASK_INSTRUCTION_MAX_INPUT_CHARS)}\n\n[入力が上限文字数を超えたため、以降は省略しました]`;
 }
 
 function formatDateTime(value: Date | null | undefined): string {
@@ -977,6 +982,218 @@ async function buildProjectBottleneckDetectionInput(projectId: string): Promise<
   };
 }
 
+async function buildProjectTaskInstructionInput(projectId: string): Promise<{
+  input: string;
+  issueCount: number;
+  issueLimit: number;
+}> {
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const dueSoonEnd = new Date(todayStart);
+  dueSoonEnd.setDate(dueSoonEnd.getDate() + 14);
+  const staleBefore = new Date(now);
+  staleBefore.setDate(staleBefore.getDate() - 14);
+  const issueLimit = config.AI_TASK_INSTRUCTION_ISSUE_LIMIT;
+
+  const issueWhere = { projectId, status: { isClosed: false } };
+  const issueSelect = {
+    number: true,
+    subject: true,
+    description: true,
+    priority: true,
+    startDate: true,
+    dueDate: true,
+    estimatedHours: true,
+    doneRatio: true,
+    createdAt: true,
+    updatedAt: true,
+    tracker: { select: { name: true } },
+    status: { select: { name: true } },
+    author: { select: { login: true, firstname: true, lastname: true } },
+    assignee: { select: { login: true, firstname: true, lastname: true } },
+    assigneeGroup: { select: { name: true } },
+    category: { select: { name: true } },
+    version: { select: { name: true } },
+    parent: { select: { number: true, subject: true } },
+    children: { select: { number: true, subject: true, status: { select: { name: true, isClosed: true } } } },
+    journals: {
+      where: { private: false, notes: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      take: config.AI_TASK_INSTRUCTION_MAX_COMMENTS,
+      select: {
+        notes: true,
+        createdAt: true,
+        user: { select: { login: true, firstname: true, lastname: true } },
+      },
+    },
+    timeEntries: {
+      select: { hours: true },
+    },
+  } as const;
+
+  const [project, members, issueCount, issues] = await Promise.all([
+    prisma.project.findUniqueOrThrow({
+      where: { id: projectId },
+      select: {
+        name: true,
+        identifier: true,
+        description: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: { select: { members: true, issues: true } },
+      },
+    }),
+    prisma.member.findMany({
+      where: { projectId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        user: { select: { login: true, firstname: true, lastname: true } },
+        group: { select: { name: true } },
+        memberRoles: {
+          select: { role: { select: { name: true } } },
+          orderBy: { role: { position: 'asc' } },
+        },
+      },
+    }),
+    prisma.issue.count({ where: issueWhere }),
+    prisma.issue.findMany({
+      where: issueWhere,
+      orderBy: [{ dueDate: 'asc' }, { priority: 'desc' }, { updatedAt: 'asc' }],
+      take: issueLimit,
+      select: issueSelect,
+    }),
+  ]);
+
+  const assigneeName = (issue: {
+    assignee: { login: string; firstname: string; lastname: string } | null;
+    assigneeGroup: { name: string } | null;
+  }) => issue.assignee
+    ? formatUserName(issue.assignee)
+    : issue.assigneeGroup
+      ? `グループ: ${issue.assigneeGroup.name}`
+      : '未担当';
+  const totalHours = (issue: { timeEntries: Array<{ hours: number }> }) => (
+    issue.timeEntries.reduce((sum, entry) => sum + entry.hours, 0)
+  );
+  const daysFromNow = (value: Date | null | undefined): string => {
+    if (!value) return '不明';
+    const diff = Math.ceil((value.getTime() - todayStart.getTime()) / (24 * 60 * 60 * 1000));
+    if (diff < 0) return `${Math.abs(diff)}日超過`;
+    if (diff === 0) return '今日';
+    return `あと${diff}日`;
+  };
+  const staleDays = (value: Date): number => Math.max(0, Math.floor((now.getTime() - value.getTime()) / (24 * 60 * 60 * 1000)));
+  const addCount = (map: Map<string, number>, key: string) => map.set(key, (map.get(key) ?? 0) + 1);
+  const summaryMaps = {
+    assignee: new Map<string, number>(),
+    status: new Map<string, number>(),
+    tracker: new Map<string, number>(),
+  };
+  let overdueCount = 0;
+  let dueSoonCount = 0;
+  let staleCount = 0;
+  for (const issue of issues) {
+    addCount(summaryMaps.assignee, assigneeName(issue));
+    addCount(summaryMaps.status, issue.status.name);
+    addCount(summaryMaps.tracker, issue.tracker.name);
+    if (issue.dueDate && issue.dueDate < todayStart) overdueCount += 1;
+    if (issue.dueDate && issue.dueDate >= todayStart && issue.dueDate <= dueSoonEnd) dueSoonCount += 1;
+    if (issue.updatedAt < staleBefore) staleCount += 1;
+  }
+  const topLines = (title: string, map: Map<string, number>) => [
+    `- ${title}:`,
+    ...(map.size
+      ? Array.from(map.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([name, count]) => `  - ${name}: ${count}件`)
+      : ['  - なし']),
+  ];
+  const memberLines = members.length
+    ? members.map((member) => {
+      const name = member.user ? formatUserName(member.user) : `グループ: ${member.group?.name ?? '不明'}`;
+      const roles = member.memberRoles.map((row) => row.role.name).join(', ') || 'ロールなし';
+      return `- ${name} / ${roles}`;
+    })
+    : ['- メンバーなし'];
+  const issueLines = issues.length
+    ? issues.map((issue) => {
+      const markers = [
+        issue.dueDate && issue.dueDate < todayStart ? '期日超過' : '',
+        issue.dueDate && issue.dueDate >= todayStart && issue.dueDate <= dueSoonEnd ? '期日間近' : '',
+        issue.updatedAt < staleBefore ? '更新停滞' : '',
+        issue.doneRatio === 0 ? '未着手' : '',
+      ].filter(Boolean);
+      const comments = issue.journals
+        .slice()
+        .reverse()
+        .map((journal) => (
+          `    - ${formatDate(journal.createdAt)} ${formatUserName(journal.user)}: ${truncateText(journal.notes, config.AI_TASK_INSTRUCTION_MAX_COMMENT_CHARS)}`
+        ));
+      return [
+        `## #${issue.number} ${issue.subject}`,
+        `- 注目フラグ: ${markers.length ? markers.join(', ') : 'なし'}`,
+        `- トラッカー: ${issue.tracker.name}`,
+        `- ステータス: ${issue.status.name}`,
+        `- 優先度: ${priorityLabel(issue.priority)}`,
+        `- 担当者: ${assigneeName(issue)}`,
+        `- 作成者: ${formatUserName(issue.author)}`,
+        `- カテゴリ: ${issue.category?.name ?? '未設定'}`,
+        `- 対象バージョン: ${issue.version?.name ?? '未設定'}`,
+        `- 親チケット: ${issue.parent ? `#${issue.parent.number} ${issue.parent.subject}` : 'なし'}`,
+        `- 子チケット: ${issue.children.length ? issue.children.map((child) => `#${child.number} ${child.subject} (${child.status.name})`).join(', ') : 'なし'}`,
+        `- 開始日: ${formatDate(issue.startDate)}`,
+        `- 期日: ${formatDate(issue.dueDate)} (${daysFromNow(issue.dueDate)})`,
+        `- 予定工数: ${issue.estimatedHours ?? '未設定'}`,
+        `- 実績工数合計: ${totalHours(issue).toFixed(2)}h`,
+        `- 進捗率: ${issue.doneRatio}%`,
+        `- 作成日時: ${formatDateTime(issue.createdAt)}`,
+        `- 更新日時: ${formatDateTime(issue.updatedAt)} (${staleDays(issue.updatedAt)}日前)`,
+        '- 説明:',
+        truncateText(issue.description, config.AI_TASK_INSTRUCTION_MAX_DESCRIPTION_CHARS),
+        '- 直近コメント:',
+        comments.length ? comments.join('\n') : '    - なし',
+      ].join('\n');
+    })
+    : ['未完了チケットなし'];
+
+  const omittedCount = Math.max(0, issueCount - issues.length);
+  const input = [
+    '# タスク指示対象',
+    `- 実行日時: ${formatDateTime(now)}`,
+    '- 目的: プロジェクト内の未完了チケット状況から、次に実行すべきタスク指示を出す',
+    '',
+    '# プロジェクト',
+    `- タイトル: ${project.name}`,
+    `- 識別子: ${project.identifier}`,
+    `- 作成日時: ${formatDateTime(project.createdAt)}`,
+    `- 更新日時: ${formatDateTime(project.updatedAt)}`,
+    `- メンバー数: ${project._count.members}`,
+    `- 全チケット数: ${project._count.issues}`,
+    '- 概要:',
+    compactText(project.description),
+    '',
+    '# メンバー',
+    ...memberLines,
+    '',
+    '# 未完了チケット集計',
+    `- 取得件数: ${issues.length} / ${issueCount}`,
+    omittedCount ? `- 省略件数: ${omittedCount}` : '',
+    `- 期日超過: ${overdueCount}件`,
+    `- 14日以内に期日到来: ${dueSoonCount}件`,
+    `- 14日以上更新なし: ${staleCount}件`,
+    ...topLines('担当者別', summaryMaps.assignee),
+    ...topLines('ステータス別', summaryMaps.status),
+    ...topLines('トラッカー別', summaryMaps.tracker),
+    '',
+    '# 未完了チケット詳細',
+    ...issueLines,
+  ].filter((line) => line !== '').join('\n');
+
+  return { input: limitTaskInstructionInputChars(input), issueCount, issueLimit };
+}
+
 router.get(
   '/',
   authenticate,
@@ -1273,6 +1490,31 @@ router.post(
       lateClosedIssueCount,
       overdueOpenIssueLimit,
       lateClosedIssueLimit,
+    });
+  }),
+);
+
+router.post(
+  '/:id/ai/task-instruction',
+  authenticate,
+  catchAsync(async (req, res) => {
+    const project = await resolveProjectRef(req.params.id);
+    if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+
+    const canUseAiActions = await userIsProjectMember(req.user?.userId, project.id);
+    if (!canUseAiActions) throw AppError.forbidden();
+    const issueTrackingEnabled = await prisma.enabledModule.count({
+      where: { projectId: project.id, name: 'issue_tracking' },
+    });
+    if (!issueTrackingEnabled) throw AppError.forbidden('このプロジェクトではチケットトラッキングが無効です');
+
+    const { input, issueCount, issueLimit } = await buildProjectTaskInstructionInput(project.id);
+    const instructions = await createOpenAiProjectTaskInstruction(input);
+
+    return sendSuccess(res, {
+      instructions,
+      issueCount,
+      issueLimit,
     });
   }),
 );

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useProject, useProjectAiBottleneckDetection, useProjectAiProgressSummary, useProjectAiWeeklyReport, useProjectIssues } from '../api/hooks';
+import { useProject, useProjectAiBottleneckDetection, useProjectAiProgressSummary, useProjectAiTaskInstruction, useProjectAiWeeklyReport, useProjectIssues } from '../api/hooks';
 import ProjectSubNav from '../components/ProjectSubNav';
 import { renderMarkdown } from '../components/RichTextEditor';
 
@@ -40,6 +40,7 @@ export default function ProjectDetailPage() {
   const progressSummary = useProjectAiProgressSummary();
   const weeklyReport = useProjectAiWeeklyReport();
   const bottleneckDetection = useProjectAiBottleneckDetection();
+  const taskInstruction = useProjectAiTaskInstruction();
 
   const base = `/projects/${id}`;
 
@@ -50,7 +51,7 @@ export default function ProjectDetailPage() {
   const issuesQuery = useProjectIssues(id, { per_page: 1 });
   const openIssueCount = issuesQuery.data?.pagination?.total ?? '—';
   const canUseAiActions = Boolean(project?.permissions?.canUseAiActions);
-  const isAiPending = progressSummary.isPending || weeklyReport.isPending || bottleneckDetection.isPending;
+  const isAiPending = progressSummary.isPending || weeklyReport.isPending || bottleneckDetection.isPending || taskInstruction.isPending;
   const shouldShowAiResult = Boolean(
     isAiPending ||
     progressSummary.data ||
@@ -59,6 +60,8 @@ export default function ProjectDetailPage() {
     weeklyReport.isError ||
     bottleneckDetection.data ||
     bottleneckDetection.isError ||
+    taskInstruction.data ||
+    taskInstruction.isError ||
     aiActionMessage,
   );
 
@@ -68,6 +71,7 @@ export default function ProjectDetailPage() {
     progressSummary.reset();
     weeklyReport.reset();
     bottleneckDetection.reset();
+    taskInstruction.reset();
 
     if (selectedAiAction === 'progress-summary') {
       progressSummary.mutate(id);
@@ -84,6 +88,11 @@ export default function ProjectDetailPage() {
       return;
     }
 
+    if (selectedAiAction === 'task-instruction') {
+      taskInstruction.mutate(id);
+      return;
+    }
+
     setAiActionMessage('このAIアクションはまだ実装されていません。');
   };
 
@@ -93,6 +102,7 @@ export default function ProjectDetailPage() {
     progressSummary.reset();
     weeklyReport.reset();
     bottleneckDetection.reset();
+    taskInstruction.reset();
   };
 
   return (
@@ -190,6 +200,10 @@ export default function ProjectDetailPage() {
                     <p className="text-sm text-red-600">
                       {errorMessage(bottleneckDetection.error, 'AIボトルネック検知の実行に失敗しました。')}
                     </p>
+                  ) : taskInstruction.isError ? (
+                    <p className="text-sm text-red-600">
+                      {errorMessage(taskInstruction.error, 'AIタスク指示の実行に失敗しました。')}
+                    </p>
                   ) : progressSummary.data ? (
                     <div className="space-y-3">
                       <div className="flex flex-wrap gap-2 text-xs text-slate-500">
@@ -226,6 +240,17 @@ export default function ProjectDetailPage() {
                       <div
                         className="rte-preview text-sm leading-6 text-slate-700"
                         dangerouslySetInnerHTML={{ __html: renderMarkdown(bottleneckDetection.data.data.report) }}
+                      />
+                    </div>
+                  ) : taskInstruction.data ? (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                        <span>未完了チケット: {taskInstruction.data.data.issueCount}</span>
+                        <span>取得上限: {taskInstruction.data.data.issueLimit}</span>
+                      </div>
+                      <div
+                        className="rte-preview text-sm leading-6 text-slate-700"
+                        dangerouslySetInnerHTML={{ __html: renderMarkdown(taskInstruction.data.data.instructions) }}
                       />
                     </div>
                   ) : (
