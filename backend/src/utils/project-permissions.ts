@@ -107,6 +107,23 @@ export async function userHasProjectRoleName(
   return roles.some((memberRole) => (memberRole.role?.name ?? '') === roleName);
 }
 
+export async function userIsProjectMember(
+  userId: string | undefined,
+  projectId: string,
+): Promise<boolean> {
+  if (!userId) return false;
+
+  const groupIds = await getUserGroupIds(userId);
+  const member = await prisma.member.findFirst({
+    where: {
+      projectId,
+      OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])],
+    },
+    select: { id: true },
+  });
+  return Boolean(member);
+}
+
 export async function userCanManageProject(
   userId: string | undefined,
   isAdmin: boolean | undefined,

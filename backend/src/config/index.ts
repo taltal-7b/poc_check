@@ -34,6 +34,14 @@ const envSchema = z.object({
   AI_DUE_SUMMARY_MOCK_OPENAI: envBoolean.default(false),
   AI_DUE_SUMMARY_DRY_RUN: envBoolean.default(false),
   AI_DUE_SUMMARY_PROMPT: envString('あなたはプロジェクト管理ツールのチケット内容を担当者向けに要約するアシスタントです。タイトル、説明、コメントから、期限前に担当者が確認すべき状況・未解決点・次の行動を日本語で簡潔にまとめてください。'),
+  AI_PROGRESS_SUMMARY_MODEL: envString('gpt-5-mini'),
+  AI_PROGRESS_SUMMARY_ISSUE_LIMIT: z.coerce.number().int().min(1).max(1000).default(100),
+  AI_PROGRESS_SUMMARY_MAX_COMMENTS: z.coerce.number().int().min(0).max(20).default(3),
+  AI_PROGRESS_SUMMARY_MAX_DESCRIPTION_CHARS: z.coerce.number().int().min(100).max(20000).default(1200),
+  AI_PROGRESS_SUMMARY_MAX_COMMENT_CHARS: z.coerce.number().int().min(100).max(10000).default(600),
+  AI_PROGRESS_SUMMARY_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(100).max(4000).default(900),
+  AI_PROGRESS_SUMMARY_MAX_INPUT_CHARS: z.coerce.number().int().min(1000).max(200000).default(50000),
+  AI_PROGRESS_SUMMARY_PROMPT: envString('あなたはプロジェクト管理ツールの進捗を要約するアシスタントです。プロジェクト概要、メンバー、未完了チケットの内容から、進捗状況、注意点、次の指示を日本語で簡潔にまとめてください。'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 });
 

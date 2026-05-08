@@ -31,8 +31,15 @@ export interface Project {
     canEditIssue: boolean;
     canAddIssueNotes: boolean;
     canManageProject: boolean;
+    canUseAiActions?: boolean;
   };
   _count?: { issues?: number; members?: number };
+}
+
+export interface ProjectAiProgressSummary {
+  summary: string;
+  issueCount: number;
+  issueLimit: number;
 }
 
 export interface Tracker {

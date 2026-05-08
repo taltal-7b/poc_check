@@ -1,12 +1,15 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { config } from '../config';
 import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
-import { authenticate, authenticateOrQueryApiKey, requireAdmin } from '../middleware/auth';
+import { authenticate, authenticateOrQueryApiKey } from '../middleware/auth';
+import { createOpenAiProjectProgressSummary } from '../services/openai-service';
 import {
   getUserGroupIds,
   getUserProjectPermissionSet,
   hasAnyProjectPermission,
+  userIsProjectMember,
   userCanManageProject,
 } from '../utils/project-permissions';
 import { z } from 'zod';
@@ -111,6 +114,169 @@ async function validateIssueProjectCustomFieldIds(customFieldIds: string[]) {
     throw AppError.badRequest('存在しないカスタムフィールド ID が含まれています');
   }
   return fields.map((field) => field.id);
+}
+
+function compactText(value: string | null | undefined, fallback = 'なし'): string {
+  const text = value?.replace(/\r\n/g, '\n').trim();
+  return text || fallback;
+}
+
+function truncateText(value: string | null | undefined, maxChars: number, fallback = 'なし'): string {
+  const text = compactText(value, fallback);
+  if (text === fallback || text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n[上限文字数により省略]`;
+}
+
+function formatDate(value: Date | null | undefined): string {
+  return value ? value.toISOString().slice(0, 10) : '未設定';
+}
+
+function priorityLabel(priority: number): string {
+  const labels: Record<number, string> = {
+    1: '低め',
+    2: '通常',
+    3: '高め',
+    4: '急いで',
+    5: '今すぐ',
+  };
+  return labels[priority] ?? String(priority);
+}
+
+function limitInputChars(input: string): string {
+  if (input.length <= config.AI_PROGRESS_SUMMARY_MAX_INPUT_CHARS) return input;
+  return `${input.slice(0, config.AI_PROGRESS_SUMMARY_MAX_INPUT_CHARS)}\n\n[入力が上限文字数を超えたため、以降は省略しました]`;
+}
+
+async function buildProjectProgressSummaryInput(projectId: string): Promise<{ input: string; issueCount: number; issueLimit: number }> {
+  const issueLimit = config.AI_PROGRESS_SUMMARY_ISSUE_LIMIT;
+
+  const [project, members, issueCount, issues] = await Promise.all([
+    prisma.project.findUniqueOrThrow({
+      where: { id: projectId },
+      select: {
+        name: true,
+        identifier: true,
+        description: true,
+      },
+    }),
+    prisma.member.findMany({
+      where: { projectId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        user: { select: { login: true, firstname: true, lastname: true } },
+        group: { select: { name: true } },
+        memberRoles: {
+          select: { role: { select: { name: true } } },
+          orderBy: { role: { position: 'asc' } },
+        },
+      },
+    }),
+    prisma.issue.count({
+      where: { projectId, status: { isClosed: false } },
+    }),
+    prisma.issue.findMany({
+      where: { projectId, status: { isClosed: false } },
+      orderBy: [{ priority: 'desc' }, { dueDate: 'asc' }, { updatedAt: 'desc' }],
+      take: issueLimit,
+      select: {
+        number: true,
+        subject: true,
+        description: true,
+        priority: true,
+        startDate: true,
+        dueDate: true,
+        estimatedHours: true,
+        doneRatio: true,
+        createdAt: true,
+        updatedAt: true,
+        tracker: { select: { name: true } },
+        status: { select: { name: true } },
+        author: { select: { login: true, firstname: true, lastname: true } },
+        assignee: { select: { login: true, firstname: true, lastname: true } },
+        assigneeGroup: { select: { name: true } },
+        category: { select: { name: true } },
+        version: { select: { name: true } },
+        journals: {
+          where: { private: false, notes: { not: null } },
+          orderBy: { createdAt: 'desc' },
+          take: config.AI_PROGRESS_SUMMARY_MAX_COMMENTS,
+          select: {
+            notes: true,
+            createdAt: true,
+            user: { select: { login: true, firstname: true, lastname: true } },
+          },
+        },
+      },
+    }),
+  ]);
+
+  const memberLines = members.length
+    ? members.map((member) => {
+      const name = member.user
+        ? `${member.user.lastname} ${member.user.firstname} (${member.user.login})`
+        : `グループ: ${member.group?.name ?? '不明'}`;
+      const roles = member.memberRoles.map((row) => row.role.name).join(', ') || 'ロールなし';
+      return `- ${name} / ${roles}`;
+    })
+    : ['- メンバーなし'];
+
+  const issueLines = issues.length
+    ? issues.map((issue) => {
+      const assignee = issue.assignee
+        ? `${issue.assignee.lastname} ${issue.assignee.firstname} (${issue.assignee.login})`
+        : issue.assigneeGroup
+          ? `グループ: ${issue.assigneeGroup.name}`
+          : '未担当';
+      const comments = issue.journals
+        .slice()
+        .reverse()
+        .map((journal) => {
+          const author = `${journal.user.lastname} ${journal.user.firstname} (${journal.user.login})`;
+          return `    - ${formatDate(journal.createdAt)} ${author}: ${truncateText(journal.notes, config.AI_PROGRESS_SUMMARY_MAX_COMMENT_CHARS)}`;
+        });
+
+      return [
+        `## #${issue.number} ${issue.subject}`,
+        `- トラッカー: ${issue.tracker.name}`,
+        `- ステータス: ${issue.status.name}`,
+        `- 優先度: ${priorityLabel(issue.priority)}`,
+        `- 担当者: ${assignee}`,
+        `- 作成者: ${issue.author.lastname} ${issue.author.firstname} (${issue.author.login})`,
+        `- カテゴリ: ${issue.category?.name ?? '未設定'}`,
+        `- 対象バージョン: ${issue.version?.name ?? '未設定'}`,
+        `- 開始日: ${formatDate(issue.startDate)}`,
+        `- 期日: ${formatDate(issue.dueDate)}`,
+        `- 予定工数: ${issue.estimatedHours ?? '未設定'}`,
+        `- 進捗率: ${issue.doneRatio}%`,
+        `- 作成日: ${formatDate(issue.createdAt)}`,
+        `- 更新日: ${formatDate(issue.updatedAt)}`,
+        '- 説明:',
+        truncateText(issue.description, config.AI_PROGRESS_SUMMARY_MAX_DESCRIPTION_CHARS),
+        '- コメント:',
+        comments.length ? comments.join('\n') : '    - なし',
+      ].join('\n');
+    })
+    : ['未完了チケットなし'];
+
+  const omittedCount = Math.max(0, issueCount - issues.length);
+  const input = [
+    '# プロジェクト',
+    `- タイトル: ${project.name}`,
+    `- 識別子: ${project.identifier}`,
+    '- 概要:',
+    compactText(project.description),
+    '',
+    '# メンバー',
+    ...memberLines,
+    '',
+    '# 未完了チケット',
+    `- 対象件数: ${issues.length} / ${issueCount}`,
+    omittedCount ? `- 環境変数の上限により ${omittedCount} 件を省略` : '',
+    '',
+    ...issueLines,
+  ].filter((line) => line !== '').join('\n');
+
+  return { input: limitInputChars(input), issueCount, issueLimit };
 }
 
 router.get(
@@ -332,6 +498,27 @@ router.get(
   }),
 );
 
+router.post(
+  '/:id/ai/progress-summary',
+  authenticate,
+  catchAsync(async (req, res) => {
+    const project = await resolveProjectRef(req.params.id);
+    if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+
+    const canUseAiActions = await userIsProjectMember(req.user?.userId, project.id);
+    if (!canUseAiActions) throw AppError.forbidden();
+
+    const { input, issueCount, issueLimit } = await buildProjectProgressSummaryInput(project.id);
+    const summary = await createOpenAiProjectProgressSummary(input);
+
+    return sendSuccess(res, {
+      summary,
+      issueCount,
+      issueLimit,
+    });
+  }),
+);
+
 router.get(
   '/:id',
   authenticate,
@@ -372,6 +559,7 @@ router.get(
     if (!ok) throw AppError.forbidden();
 
     const permissionSet = await getUserProjectPermissionSet(req.user?.userId, req.user?.admin, project.id);
+    const canUseAiActions = await userIsProjectMember(req.user?.userId, project.id);
     const permissions = {
       canCreateIssue: Boolean(req.user?.admin || permissionSet?.has('add_issues')),
       canEditIssue: await hasAnyProjectPermission(req.user?.userId, req.user?.admin, project.id, [
@@ -385,6 +573,7 @@ router.get(
         'edit_issues',
       ]),
       canManageProject: await userCanManageProject(req.user?.userId, req.user?.admin, project),
+      canUseAiActions,
     };
 
     return sendSuccess(res, { ...project, permissions });
