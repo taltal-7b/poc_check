@@ -47,6 +47,11 @@ async function weeklyReportPrompt(): Promise<string> {
   return setting?.value.trim() || config.AI_WEEKLY_REPORT_PROMPT;
 }
 
+async function bottleneckDetectionPrompt(): Promise<string> {
+  const setting = await prisma.setting.findUnique({ where: { name: 'ai_bottleneck_detection_prompt' } });
+  return setting?.value.trim() || config.AI_BOTTLENECK_DETECTION_PROMPT;
+}
+
 function sectionValue(input: string, label: string): string {
   const match = input.match(new RegExp(`${label}:?\\n([\\s\\S]*?)(?:\\n\\n[^\\n]+:?\\n|$)`));
   return match?.[1]?.trim() ?? '';
@@ -169,5 +174,44 @@ export async function createOpenAiProjectWeeklyReport(input: string): Promise<st
 
   const report = extractOutputText(body);
   if (!report) throw new Error('OpenAI API returned an empty weekly report');
+  return report;
+}
+
+export async function createOpenAiProjectBottleneckDetection(input: string): Promise<string> {
+  if (config.AI_BOTTLENECK_DETECTION_MOCK_OPENAI) {
+    return [
+      'AIボトルネック検知',
+      '期日超過チケットと遅延完了チケットの情報をもとに、遅延要因と改善策を整理しました。',
+      '',
+      input.slice(0, 1000),
+    ].join('\n');
+  }
+
+  if (!config.OPENAI_API_KEY.trim()) {
+    throw new Error('OPENAI_API_KEY is not configured');
+  }
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: config.AI_BOTTLENECK_DETECTION_MODEL,
+      instructions: await bottleneckDetectionPrompt(),
+      input,
+      max_output_tokens: config.AI_BOTTLENECK_DETECTION_MAX_OUTPUT_TOKENS,
+      store: false,
+    }),
+  });
+
+  const body = (await response.json().catch(() => ({}))) as ResponsesApiBody;
+  if (!response.ok) {
+    throw new Error(body.error?.message ?? `OpenAI API request failed with status ${response.status}`);
+  }
+
+  const report = extractOutputText(body);
+  if (!report) throw new Error('OpenAI API returned an empty bottleneck detection report');
   return report;
 }

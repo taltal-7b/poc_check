@@ -50,6 +50,14 @@ export interface ProjectAiWeeklyReport {
   periodEnd: string;
 }
 
+export interface ProjectAiBottleneckDetection {
+  report: string;
+  overdueOpenIssueCount: number;
+  lateClosedIssueCount: number;
+  overdueOpenIssueLimit: number;
+  lateClosedIssueLimit: number;
+}
+
 export interface Tracker {
   id: string;
   name: string;

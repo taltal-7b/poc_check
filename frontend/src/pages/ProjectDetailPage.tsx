@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useProject, useProjectAiProgressSummary, useProjectAiWeeklyReport, useProjectIssues } from '../api/hooks';
+import { useProject, useProjectAiBottleneckDetection, useProjectAiProgressSummary, useProjectAiWeeklyReport, useProjectIssues } from '../api/hooks';
 import ProjectSubNav from '../components/ProjectSubNav';
 import { renderMarkdown } from '../components/RichTextEditor';
 
@@ -39,6 +39,7 @@ export default function ProjectDetailPage() {
   const project = data?.data;
   const progressSummary = useProjectAiProgressSummary();
   const weeklyReport = useProjectAiWeeklyReport();
+  const bottleneckDetection = useProjectAiBottleneckDetection();
 
   const base = `/projects/${id}`;
 
@@ -49,13 +50,15 @@ export default function ProjectDetailPage() {
   const issuesQuery = useProjectIssues(id, { per_page: 1 });
   const openIssueCount = issuesQuery.data?.pagination?.total ?? '—';
   const canUseAiActions = Boolean(project?.permissions?.canUseAiActions);
-  const isAiPending = progressSummary.isPending || weeklyReport.isPending;
+  const isAiPending = progressSummary.isPending || weeklyReport.isPending || bottleneckDetection.isPending;
   const shouldShowAiResult = Boolean(
     isAiPending ||
     progressSummary.data ||
     progressSummary.isError ||
     weeklyReport.data ||
     weeklyReport.isError ||
+    bottleneckDetection.data ||
+    bottleneckDetection.isError ||
     aiActionMessage,
   );
 
@@ -64,6 +67,7 @@ export default function ProjectDetailPage() {
     setAiActionMessage('');
     progressSummary.reset();
     weeklyReport.reset();
+    bottleneckDetection.reset();
 
     if (selectedAiAction === 'progress-summary') {
       progressSummary.mutate(id);
@@ -75,6 +79,11 @@ export default function ProjectDetailPage() {
       return;
     }
 
+    if (selectedAiAction === 'bottleneck-detection') {
+      bottleneckDetection.mutate(id);
+      return;
+    }
+
     setAiActionMessage('このAIアクションはまだ実装されていません。');
   };
 
@@ -83,6 +92,7 @@ export default function ProjectDetailPage() {
     setAiActionMessage('');
     progressSummary.reset();
     weeklyReport.reset();
+    bottleneckDetection.reset();
   };
 
   return (
@@ -176,6 +186,10 @@ export default function ProjectDetailPage() {
                     <p className="text-sm text-red-600">
                       {errorMessage(weeklyReport.error, 'AI週次レポートの実行に失敗しました。')}
                     </p>
+                  ) : bottleneckDetection.isError ? (
+                    <p className="text-sm text-red-600">
+                      {errorMessage(bottleneckDetection.error, 'AIボトルネック検知の実行に失敗しました。')}
+                    </p>
                   ) : progressSummary.data ? (
                     <div className="space-y-3">
                       <div className="flex flex-wrap gap-2 text-xs text-slate-500">
@@ -199,6 +213,19 @@ export default function ProjectDetailPage() {
                       <div
                         className="rte-preview text-sm leading-6 text-slate-700"
                         dangerouslySetInnerHTML={{ __html: renderMarkdown(weeklyReport.data.data.report) }}
+                      />
+                    </div>
+                  ) : bottleneckDetection.data ? (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                        <span>未完了・期日超過: {bottleneckDetection.data.data.overdueOpenIssueCount}</span>
+                        <span>取得上限: {bottleneckDetection.data.data.overdueOpenIssueLimit}</span>
+                        <span>期日超過後に完了: {bottleneckDetection.data.data.lateClosedIssueCount}</span>
+                        <span>取得上限: {bottleneckDetection.data.data.lateClosedIssueLimit}</span>
+                      </div>
+                      <div
+                        className="rte-preview text-sm leading-6 text-slate-700"
+                        dangerouslySetInnerHTML={{ __html: renderMarkdown(bottleneckDetection.data.data.report) }}
                       />
                     </div>
                   ) : (

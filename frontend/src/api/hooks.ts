@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from './client';
 import { useAuthStore } from '../stores/auth';
-import type { ApiResponse, Project, ProjectAiProgressSummary, ProjectAiWeeklyReport, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, WorkflowSnapshot, CopyWorkflowPayload, IssueStatusUsage, MailNotificationPreference, TotpSetup, TotpStatus, SearchResponse } from '../types';
+import type { ApiResponse, Project, ProjectAiBottleneckDetection, ProjectAiProgressSummary, ProjectAiWeeklyReport, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, WorkflowSnapshot, CopyWorkflowPayload, IssueStatusUsage, MailNotificationPreference, TotpSetup, TotpStatus, SearchResponse } from '../types';
 
 function get<T>(url: string, params?: Record<string, unknown>) {
   return api.get<ApiResponse<T>>(url, { params }).then(r => r.data);
@@ -143,6 +143,10 @@ export const useProjectAiProgressSummary = () =>
 export const useProjectAiWeeklyReport = () =>
   useMutation({
     mutationFn: (projectId: string) => post<ProjectAiWeeklyReport>(`/projects/${projectId}/ai/weekly-report`),
+  });
+export const useProjectAiBottleneckDetection = () =>
+  useMutation({
+    mutationFn: (projectId: string) => post<ProjectAiBottleneckDetection>(`/projects/${projectId}/ai/bottleneck-detection`),
   });
 
 // ========== Issues ==========

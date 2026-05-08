@@ -51,6 +51,16 @@ const envSchema = z.object({
   AI_WEEKLY_REPORT_MAX_INPUT_CHARS: z.coerce.number().int().min(1000).max(300000).default(80000),
   AI_WEEKLY_REPORT_MOCK_OPENAI: envBoolean.default(false),
   AI_WEEKLY_REPORT_PROMPT: envString('あなたはプロジェクト管理ツールの週次レポートを作成するアシスタントです。プロジェクト情報、直近1週間に作成・更新・期日到来したチケット情報から、今週の動き、完了/進行中の状況、リスク、来週の推奨アクションを日本語で簡潔にまとめてください。'),
+  AI_BOTTLENECK_DETECTION_MODEL: envString('gpt-5-mini'),
+  AI_BOTTLENECK_DETECTION_OPEN_ISSUE_LIMIT: z.coerce.number().int().min(1).max(1000).default(30),
+  AI_BOTTLENECK_DETECTION_CLOSED_ISSUE_LIMIT: z.coerce.number().int().min(1).max(1000).default(30),
+  AI_BOTTLENECK_DETECTION_MAX_COMMENTS: z.coerce.number().int().min(0).max(20).default(3),
+  AI_BOTTLENECK_DETECTION_MAX_DESCRIPTION_CHARS: z.coerce.number().int().min(100).max(20000).default(1200),
+  AI_BOTTLENECK_DETECTION_MAX_COMMENT_CHARS: z.coerce.number().int().min(100).max(10000).default(600),
+  AI_BOTTLENECK_DETECTION_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(100).max(6000).default(2200),
+  AI_BOTTLENECK_DETECTION_MAX_INPUT_CHARS: z.coerce.number().int().min(1000).max(300000).default(80000),
+  AI_BOTTLENECK_DETECTION_MOCK_OPENAI: envBoolean.default(false),
+  AI_BOTTLENECK_DETECTION_PROMPT: envString('あなたはチケット管理システムのボトルネック検知アシスタントです。未完了で期日超過しているチケットと、過去に期日超過後に完了したチケットの情報から、担当者・内容・トラッカー・カテゴリ・見積・進捗・履歴に見られる法則性、遅延要因、改善策を日本語で簡潔に示してください。個人攻撃ではなく、プロセス改善につながる表現にしてください。'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 });
 

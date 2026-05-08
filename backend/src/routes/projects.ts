@@ -4,7 +4,7 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
 import { authenticate, authenticateOrQueryApiKey } from '../middleware/auth';
-import { createOpenAiProjectProgressSummary, createOpenAiProjectWeeklyReport } from '../services/openai-service';
+import { createOpenAiProjectBottleneckDetection, createOpenAiProjectProgressSummary, createOpenAiProjectWeeklyReport } from '../services/openai-service';
 import {
   getUserGroupIds,
   getUserProjectPermissionSet,
@@ -150,6 +150,11 @@ function limitInputChars(input: string): string {
 function limitWeeklyReportInputChars(input: string): string {
   if (input.length <= config.AI_WEEKLY_REPORT_MAX_INPUT_CHARS) return input;
   return `${input.slice(0, config.AI_WEEKLY_REPORT_MAX_INPUT_CHARS)}\n\n[入力が上限文字数を超えたため、以降は省略しました]`;
+}
+
+function limitBottleneckDetectionInputChars(input: string): string {
+  if (input.length <= config.AI_BOTTLENECK_DETECTION_MAX_INPUT_CHARS) return input;
+  return `${input.slice(0, config.AI_BOTTLENECK_DETECTION_MAX_INPUT_CHARS)}\n\n[入力が上限文字数を超えたため、以降は省略しました]`;
 }
 
 function formatDateTime(value: Date | null | undefined): string {
@@ -730,6 +735,248 @@ async function buildProjectWeeklyReportInput(projectId: string): Promise<{
   };
 }
 
+async function buildProjectBottleneckDetectionInput(projectId: string): Promise<{
+  input: string;
+  overdueOpenIssueCount: number;
+  lateClosedIssueCount: number;
+  overdueOpenIssueLimit: number;
+  lateClosedIssueLimit: number;
+}> {
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const overdueOpenIssueLimit = config.AI_BOTTLENECK_DETECTION_OPEN_ISSUE_LIMIT;
+  const lateClosedIssueLimit = config.AI_BOTTLENECK_DETECTION_CLOSED_ISSUE_LIMIT;
+  const overdueOpenWhere = { projectId, dueDate: { lt: todayStart }, status: { isClosed: false } };
+
+  const issueSelect = {
+    number: true,
+    subject: true,
+    description: true,
+    priority: true,
+    startDate: true,
+    dueDate: true,
+    estimatedHours: true,
+    doneRatio: true,
+    closedOn: true,
+    createdAt: true,
+    updatedAt: true,
+    tracker: { select: { name: true } },
+    status: { select: { name: true, isClosed: true } },
+    author: { select: { login: true, firstname: true, lastname: true } },
+    assignee: { select: { login: true, firstname: true, lastname: true } },
+    assigneeGroup: { select: { name: true } },
+    category: { select: { name: true } },
+    version: { select: { name: true } },
+    journals: {
+      where: { private: false, notes: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      take: config.AI_BOTTLENECK_DETECTION_MAX_COMMENTS,
+      select: {
+        notes: true,
+        createdAt: true,
+        user: { select: { login: true, firstname: true, lastname: true } },
+      },
+    },
+    timeEntries: {
+      select: { hours: true },
+    },
+  } as const;
+
+  const [project, members, overdueOpenIssueCount, overdueOpenIssues, lateClosedIssueRows] = await Promise.all([
+    prisma.project.findUniqueOrThrow({
+      where: { id: projectId },
+      select: {
+        name: true,
+        identifier: true,
+        description: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: { select: { members: true, issues: true } },
+      },
+    }),
+    prisma.member.findMany({
+      where: { projectId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        user: { select: { login: true, firstname: true, lastname: true } },
+        group: { select: { name: true } },
+        memberRoles: {
+          select: { role: { select: { name: true } } },
+          orderBy: { role: { position: 'asc' } },
+        },
+      },
+    }),
+    prisma.issue.count({ where: overdueOpenWhere }),
+    prisma.issue.findMany({
+      where: overdueOpenWhere,
+      orderBy: [{ dueDate: 'asc' }, { priority: 'desc' }, { updatedAt: 'asc' }],
+      take: overdueOpenIssueLimit,
+      select: issueSelect,
+    }),
+    prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT i.id
+      FROM issues i
+      INNER JOIN issue_statuses s ON s.id = i.status_id
+      WHERE i.project_id = ${projectId}
+        AND i.due_date IS NOT NULL
+        AND i.closed_on IS NOT NULL
+        AND s.is_closed = true
+        AND DATE(i.closed_on) > DATE(i.due_date)
+      ORDER BY i.closed_on DESC, i.due_date DESC
+    `,
+  ]);
+  const lateClosedIssueIds = lateClosedIssueRows.map((row) => row.id);
+  const lateClosedIssueCount = lateClosedIssueIds.length;
+  const lateClosedIssues = lateClosedIssueIds.length
+    ? await prisma.issue.findMany({
+      where: { id: { in: lateClosedIssueIds.slice(0, lateClosedIssueLimit) } },
+      orderBy: [{ closedOn: 'desc' }, { dueDate: 'desc' }],
+      select: issueSelect,
+    })
+    : [];
+
+  const dayDiff = (from: Date | null | undefined, to: Date | null | undefined): string => {
+    if (!from || !to) return '不明';
+    return `${Math.max(0, Math.ceil((to.getTime() - from.getTime()) / (24 * 60 * 60 * 1000)))}日`;
+  };
+  const assigneeName = (issue: {
+    assignee: { login: string; firstname: string; lastname: string } | null;
+    assigneeGroup: { name: string } | null;
+  }) => issue.assignee
+    ? formatUserName(issue.assignee)
+    : issue.assigneeGroup
+      ? `グループ: ${issue.assigneeGroup.name}`
+      : '未担当';
+  const totalHours = (issue: { timeEntries: Array<{ hours: number }> }) => (
+    issue.timeEntries.reduce((sum, entry) => sum + entry.hours, 0)
+  );
+  const issueKey = (issue: {
+    assignee: { login: string; firstname: string; lastname: string } | null;
+    assigneeGroup: { name: string } | null;
+    tracker: { name: string };
+    category: { name: string } | null;
+  }) => ({
+    assignee: assigneeName(issue),
+    tracker: issue.tracker.name,
+    category: issue.category?.name ?? '未設定',
+  });
+  const addCount = (map: Map<string, number>, key: string) => map.set(key, (map.get(key) ?? 0) + 1);
+  const summaryMaps = {
+    assignee: new Map<string, number>(),
+    tracker: new Map<string, number>(),
+    category: new Map<string, number>(),
+  };
+  for (const issue of [...overdueOpenIssues, ...lateClosedIssues]) {
+    const key = issueKey(issue);
+    addCount(summaryMaps.assignee, key.assignee);
+    addCount(summaryMaps.tracker, key.tracker);
+    addCount(summaryMaps.category, key.category);
+  }
+  const topLines = (title: string, map: Map<string, number>) => [
+    `- ${title}:`,
+    ...(map.size
+      ? Array.from(map.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([name, count]) => `  - ${name}: ${count}件`)
+      : ['  - なし']),
+  ];
+  const memberLines = members.length
+    ? members.map((member) => {
+      const name = member.user ? formatUserName(member.user) : `グループ: ${member.group?.name ?? '不明'}`;
+      const roles = member.memberRoles.map((row) => row.role.name).join(', ') || 'ロールなし';
+      return `- ${name} / ${roles}`;
+    })
+    : ['- メンバーなし'];
+  const issueLines = (
+    issues: typeof overdueOpenIssues,
+    kind: 'open' | 'closed',
+  ) => issues.length
+    ? issues.map((issue) => {
+      const journals = issue.journals
+        .slice()
+        .reverse()
+        .map((journal) => (
+          `    - ${formatDate(journal.createdAt)} ${formatUserName(journal.user)}: ${truncateText(journal.notes, config.AI_BOTTLENECK_DETECTION_MAX_COMMENT_CHARS)}`
+        ));
+      const delay = kind === 'open'
+        ? dayDiff(issue.dueDate, now)
+        : dayDiff(issue.dueDate, issue.closedOn);
+      return [
+        `## #${issue.number} ${issue.subject}`,
+        `- 種別: ${kind === 'open' ? '未完了・期日超過中' : '期日超過後に完了'}`,
+        `- 遅延日数: ${delay}`,
+        `- トラッカー: ${issue.tracker.name}`,
+        `- ステータス: ${issue.status.name} / 完了扱い: ${issue.status.isClosed ? 'はい' : 'いいえ'}`,
+        `- 優先度: ${priorityLabel(issue.priority)}`,
+        `- 担当者: ${assigneeName(issue)}`,
+        `- 作成者: ${formatUserName(issue.author)}`,
+        `- カテゴリ: ${issue.category?.name ?? '未設定'}`,
+        `- 対象バージョン: ${issue.version?.name ?? '未設定'}`,
+        `- 開始日: ${formatDate(issue.startDate)}`,
+        `- 期日: ${formatDate(issue.dueDate)}`,
+        `- 完了日: ${formatDate(issue.closedOn)}`,
+        `- 予定工数: ${issue.estimatedHours ?? '未設定'}`,
+        `- 実績工数合計: ${totalHours(issue).toFixed(2)}h`,
+        `- 進捗率: ${issue.doneRatio}%`,
+        `- 作成日時: ${formatDateTime(issue.createdAt)}`,
+        `- 更新日時: ${formatDateTime(issue.updatedAt)}`,
+        '- 説明:',
+        truncateText(issue.description, config.AI_BOTTLENECK_DETECTION_MAX_DESCRIPTION_CHARS),
+        '- 直近コメント:',
+        journals.length ? journals.join('\n') : '    - なし',
+      ].join('\n');
+    })
+    : ['対象チケットなし'];
+
+  const omittedOpenCount = Math.max(0, overdueOpenIssueCount - overdueOpenIssues.length);
+  const omittedClosedCount = Math.max(0, lateClosedIssueCount - lateClosedIssues.length);
+  const input = [
+    '# ボトルネック検知対象',
+    `- 実行日時: ${formatDateTime(now)}`,
+    '- 条件:',
+    '  - 未完了で期日を過ぎているチケット',
+    '  - 過去に期日を過ぎてから完了したチケット',
+    '',
+    '# プロジェクト',
+    `- タイトル: ${project.name}`,
+    `- 識別子: ${project.identifier}`,
+    `- 作成日時: ${formatDateTime(project.createdAt)}`,
+    `- 更新日時: ${formatDateTime(project.updatedAt)}`,
+    `- メンバー数: ${project._count.members}`,
+    `- 全チケット数: ${project._count.issues}`,
+    '- 概要:',
+    compactText(project.description),
+    '',
+    '# メンバー',
+    ...memberLines,
+    '',
+    '# 集計',
+    `- 未完了・期日超過中: ${overdueOpenIssues.length} / ${overdueOpenIssueCount}`,
+    omittedOpenCount ? `- 未完了・期日超過中の省略件数: ${omittedOpenCount}` : '',
+    `- 期日超過後に完了: ${lateClosedIssues.length} / ${lateClosedIssueCount}`,
+    omittedClosedCount ? `- 期日超過後に完了の省略件数: ${omittedClosedCount}` : '',
+    ...topLines('担当者別の対象件数', summaryMaps.assignee),
+    ...topLines('トラッカー別の対象件数', summaryMaps.tracker),
+    ...topLines('カテゴリ別の対象件数', summaryMaps.category),
+    '',
+    '# 未完了・期日超過中チケット',
+    ...issueLines(overdueOpenIssues, 'open'),
+    '',
+    '# 期日超過後に完了したチケット',
+    ...issueLines(lateClosedIssues, 'closed'),
+  ].filter((line) => line !== '').join('\n');
+
+  return {
+    input: limitBottleneckDetectionInputChars(input),
+    overdueOpenIssueCount,
+    lateClosedIssueCount,
+    overdueOpenIssueLimit,
+    lateClosedIssueLimit,
+  };
+}
+
 router.get(
   '/',
   authenticate,
@@ -993,6 +1240,39 @@ router.post(
       issueLimit,
       periodStart,
       periodEnd,
+    });
+  }),
+);
+
+router.post(
+  '/:id/ai/bottleneck-detection',
+  authenticate,
+  catchAsync(async (req, res) => {
+    const project = await resolveProjectRef(req.params.id);
+    if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+
+    const canUseAiActions = await userIsProjectMember(req.user?.userId, project.id);
+    if (!canUseAiActions) throw AppError.forbidden();
+    const issueTrackingEnabled = await prisma.enabledModule.count({
+      where: { projectId: project.id, name: 'issue_tracking' },
+    });
+    if (!issueTrackingEnabled) throw AppError.forbidden('このプロジェクトではチケットトラッキングが無効です');
+
+    const {
+      input,
+      overdueOpenIssueCount,
+      lateClosedIssueCount,
+      overdueOpenIssueLimit,
+      lateClosedIssueLimit,
+    } = await buildProjectBottleneckDetectionInput(project.id);
+    const report = await createOpenAiProjectBottleneckDetection(input);
+
+    return sendSuccess(res, {
+      report,
+      overdueOpenIssueCount,
+      lateClosedIssueCount,
+      overdueOpenIssueLimit,
+      lateClosedIssueLimit,
     });
   }),
 );
