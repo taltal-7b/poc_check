@@ -147,8 +147,8 @@ jobs:
             'bash -s' -- "$DEPLOY_PATH" "${GHCR_USERNAME:-}" "${GHCR_TOKEN:-}" <<'REMOTE'
           set -euo pipefail
           DEPLOY_PATH="$1"
-          GHCR_USERNAME="$2"
-          GHCR_TOKEN="$3"
+          GHCR_USERNAME="${2:-}"
+          GHCR_TOKEN="${3:-}"
           cd "$DEPLOY_PATH"
           if [ -n "$GHCR_USERNAME" ] && [ -n "$GHCR_TOKEN" ]; then
             printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
