@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useProject, useProjectAiProgressSummary, useProjectIssues } from '../api/hooks';
+import { useProject, useProjectAiProgressSummary, useProjectAiWeeklyReport, useProjectIssues } from '../api/hooks';
 import ProjectSubNav from '../components/ProjectSubNav';
+import { renderMarkdown } from '../components/RichTextEditor';
 
 const aiActionOptions = [
   { key: 'progress-summary', label: 'AI進捗要約/指示' },
@@ -37,6 +38,7 @@ export default function ProjectDetailPage() {
   const { data, isLoading, isError } = useProject(id);
   const project = data?.data;
   const progressSummary = useProjectAiProgressSummary();
+  const weeklyReport = useProjectAiWeeklyReport();
 
   const base = `/projects/${id}`;
 
@@ -47,17 +49,29 @@ export default function ProjectDetailPage() {
   const issuesQuery = useProjectIssues(id, { per_page: 1 });
   const openIssueCount = issuesQuery.data?.pagination?.total ?? '—';
   const canUseAiActions = Boolean(project?.permissions?.canUseAiActions);
+  const isAiPending = progressSummary.isPending || weeklyReport.isPending;
   const shouldShowAiResult = Boolean(
-    progressSummary.isPending || progressSummary.data || progressSummary.isError || aiActionMessage,
+    isAiPending ||
+    progressSummary.data ||
+    progressSummary.isError ||
+    weeklyReport.data ||
+    weeklyReport.isError ||
+    aiActionMessage,
   );
 
   const runAiAction = () => {
     if (!selectedAiAction) return;
     setAiActionMessage('');
     progressSummary.reset();
+    weeklyReport.reset();
 
     if (selectedAiAction === 'progress-summary') {
       progressSummary.mutate(id);
+      return;
+    }
+
+    if (selectedAiAction === 'weekly-report') {
+      weeklyReport.mutate(id);
       return;
     }
 
@@ -68,6 +82,7 @@ export default function ProjectDetailPage() {
     setSelectedAiAction(null);
     setAiActionMessage('');
     progressSummary.reset();
+    weeklyReport.reset();
   };
 
   return (
@@ -112,7 +127,7 @@ export default function ProjectDetailPage() {
                   <button
                     type="button"
                     onClick={runAiAction}
-                    disabled={!selectedAiAction || progressSummary.isPending}
+                    disabled={!selectedAiAction || isAiPending}
                     className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     実行
@@ -120,7 +135,7 @@ export default function ProjectDetailPage() {
                   <button
                     type="button"
                     onClick={clearAiAction}
-                    disabled={(!selectedAiAction && !shouldShowAiResult) || progressSummary.isPending}
+                    disabled={(!selectedAiAction && !shouldShowAiResult) || isAiPending}
                     className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     クリア
@@ -151,11 +166,15 @@ export default function ProjectDetailPage() {
 
               {shouldShowAiResult && (
                 <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  {progressSummary.isPending ? (
+                  {isAiPending ? (
                     <p className="text-sm font-medium text-slate-700">思考中…</p>
                   ) : progressSummary.isError ? (
                     <p className="text-sm text-red-600">
                       {errorMessage(progressSummary.error, 'AI進捗要約の実行に失敗しました。')}
+                    </p>
+                  ) : weeklyReport.isError ? (
+                    <p className="text-sm text-red-600">
+                      {errorMessage(weeklyReport.error, 'AI週次レポートの実行に失敗しました。')}
                     </p>
                   ) : progressSummary.data ? (
                     <div className="space-y-3">
@@ -163,9 +182,24 @@ export default function ProjectDetailPage() {
                         <span>未完了チケット: {progressSummary.data.data.issueCount}</span>
                         <span>取得上限: {progressSummary.data.data.issueLimit}</span>
                       </div>
-                      <div className="whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                        {progressSummary.data.data.summary}
+                      <div
+                        className="rte-preview text-sm leading-6 text-slate-700"
+                        dangerouslySetInnerHTML={{ __html: renderMarkdown(progressSummary.data.data.summary) }}
+                      />
+                    </div>
+                  ) : weeklyReport.data ? (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                        <span>対象チケット: {weeklyReport.data.data.issueCount}</span>
+                        <span>取得上限: {weeklyReport.data.data.issueLimit}</span>
+                        <span>
+                          対象期間: {new Date(weeklyReport.data.data.periodStart).toLocaleDateString()} - {new Date(weeklyReport.data.data.periodEnd).toLocaleDateString()}
+                        </span>
                       </div>
+                      <div
+                        className="rte-preview text-sm leading-6 text-slate-700"
+                        dangerouslySetInnerHTML={{ __html: renderMarkdown(weeklyReport.data.data.report) }}
+                      />
                     </div>
                   ) : (
                     <p className="text-sm text-slate-600">{aiActionMessage}</p>

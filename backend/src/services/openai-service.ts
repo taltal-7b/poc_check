@@ -42,6 +42,11 @@ async function progressSummaryPrompt(): Promise<string> {
   return setting?.value.trim() || config.AI_PROGRESS_SUMMARY_PROMPT;
 }
 
+async function weeklyReportPrompt(): Promise<string> {
+  const setting = await prisma.setting.findUnique({ where: { name: 'ai_weekly_report_prompt' } });
+  return setting?.value.trim() || config.AI_WEEKLY_REPORT_PROMPT;
+}
+
 function sectionValue(input: string, label: string): string {
   const match = input.match(new RegExp(`${label}:?\\n([\\s\\S]*?)(?:\\n\\n[^\\n]+:?\\n|$)`));
   return match?.[1]?.trim() ?? '';
@@ -126,4 +131,43 @@ export async function createOpenAiProjectProgressSummary(input: string): Promise
   const summary = extractOutputText(body);
   if (!summary) throw new Error('OpenAI API returned an empty summary');
   return summary;
+}
+
+export async function createOpenAiProjectWeeklyReport(input: string): Promise<string> {
+  if (config.AI_WEEKLY_REPORT_MOCK_OPENAI) {
+    return [
+      'AI週次レポート',
+      '直近1週間のチケット情報をもとに、週次レポートを作成しました。',
+      '',
+      input.slice(0, 1000),
+    ].join('\n');
+  }
+
+  if (!config.OPENAI_API_KEY.trim()) {
+    throw new Error('OPENAI_API_KEY is not configured');
+  }
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: config.AI_WEEKLY_REPORT_MODEL,
+      instructions: await weeklyReportPrompt(),
+      input,
+      max_output_tokens: config.AI_WEEKLY_REPORT_MAX_OUTPUT_TOKENS,
+      store: false,
+    }),
+  });
+
+  const body = (await response.json().catch(() => ({}))) as ResponsesApiBody;
+  if (!response.ok) {
+    throw new Error(body.error?.message ?? `OpenAI API request failed with status ${response.status}`);
+  }
+
+  const report = extractOutputText(body);
+  if (!report) throw new Error('OpenAI API returned an empty weekly report');
+  return report;
 }

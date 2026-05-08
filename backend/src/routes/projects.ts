@@ -4,7 +4,7 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
 import { authenticate, authenticateOrQueryApiKey } from '../middleware/auth';
-import { createOpenAiProjectProgressSummary } from '../services/openai-service';
+import { createOpenAiProjectProgressSummary, createOpenAiProjectWeeklyReport } from '../services/openai-service';
 import {
   getUserGroupIds,
   getUserProjectPermissionSet,
@@ -147,6 +147,74 @@ function limitInputChars(input: string): string {
   return `${input.slice(0, config.AI_PROGRESS_SUMMARY_MAX_INPUT_CHARS)}\n\n[入力が上限文字数を超えたため、以降は省略しました]`;
 }
 
+function limitWeeklyReportInputChars(input: string): string {
+  if (input.length <= config.AI_WEEKLY_REPORT_MAX_INPUT_CHARS) return input;
+  return `${input.slice(0, config.AI_WEEKLY_REPORT_MAX_INPUT_CHARS)}\n\n[入力が上限文字数を超えたため、以降は省略しました]`;
+}
+
+function formatDateTime(value: Date | null | undefined): string {
+  return value ? value.toISOString() : '未設定';
+}
+
+function formatUserName(user: { login: string; firstname: string; lastname: string } | null | undefined): string {
+  return user ? `${user.lastname} ${user.firstname} (${user.login})` : '不明';
+}
+
+function uniqueValues(values: Array<string | null | undefined>): string[] {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
+}
+
+const WEEKLY_REPORT_FIELD_LABELS: Record<string, string> = {
+  projectId: 'プロジェクト',
+  trackerId: 'トラッカー',
+  statusId: 'ステータス',
+  priority: '優先度',
+  subject: '題名',
+  description: '説明',
+  assigneeId: '担当者',
+  assigneeGroupId: '担当グループ',
+  categoryId: 'カテゴリ',
+  versionId: '対象バージョン',
+  parentId: '親チケット',
+  startDate: '開始日',
+  dueDate: '期日',
+  estimatedHours: '予定工数',
+  doneRatio: '進捗率',
+};
+
+function isUuidLike(value: string | null | undefined): value is string {
+  return Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
+}
+
+function formatWeeklyReportChangeValue(propKey: string, value: string | null | undefined, labels: Map<string, string>): string {
+  if (!value) return 'なし';
+  if (labels.has(value)) return labels.get(value)!;
+  if (propKey === 'startDate' || propKey === 'dueDate') {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) return formatDate(date);
+  }
+  if (propKey === 'doneRatio') return `${value}%`;
+  if (propKey === 'priority') {
+    const priority = Number(value);
+    if (!Number.isNaN(priority)) return priorityLabel(priority);
+  }
+  return value;
+}
+
+function parseStoredWeeklyCustomValue(value: string | null): string[] {
+  if (!value?.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.map(String);
+  } catch {
+    // Fall through to simple separators.
+  }
+  return value
+    .split(/[,\r\n]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 async function buildProjectProgressSummaryInput(projectId: string): Promise<{ input: string; issueCount: number; issueLimit: number }> {
   const issueLimit = config.AI_PROGRESS_SUMMARY_ISSUE_LIMIT;
 
@@ -277,6 +345,389 @@ async function buildProjectProgressSummaryInput(projectId: string): Promise<{ in
   ].filter((line) => line !== '').join('\n');
 
   return { input: limitInputChars(input), issueCount, issueLimit };
+}
+
+async function buildProjectWeeklyReportInput(projectId: string): Promise<{
+  input: string;
+  issueCount: number;
+  issueLimit: number;
+  periodStart: string;
+  periodEnd: string;
+}> {
+  const issueLimit = config.AI_WEEKLY_REPORT_ISSUE_LIMIT;
+  const periodEndDate = new Date();
+  const periodStartDate = new Date(periodEndDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  const issueWhere = {
+    projectId,
+    OR: [
+      { createdAt: { gte: periodStartDate, lte: periodEndDate } },
+      { updatedAt: { gte: periodStartDate, lte: periodEndDate } },
+      { dueDate: { gte: periodStartDate, lte: periodEndDate } },
+    ],
+  };
+
+  const [project, members, issueCount, issues, weeklyTimeEntries] = await Promise.all([
+    prisma.project.findUniqueOrThrow({
+      where: { id: projectId },
+      select: {
+        name: true,
+        identifier: true,
+        description: true,
+        isPublic: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: {
+          select: {
+            members: true,
+            issues: true,
+            documents: true,
+            news: true,
+            timeEntries: true,
+          },
+        },
+      },
+    }),
+    prisma.member.findMany({
+      where: { projectId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        user: { select: { login: true, firstname: true, lastname: true } },
+        group: { select: { name: true } },
+        memberRoles: {
+          select: { role: { select: { name: true } } },
+          orderBy: { role: { position: 'asc' } },
+        },
+      },
+    }),
+    prisma.issue.count({ where: issueWhere }),
+    prisma.issue.findMany({
+      where: issueWhere,
+      orderBy: [{ updatedAt: 'desc' }, { priority: 'desc' }, { dueDate: 'asc' }],
+      take: issueLimit,
+      select: {
+        id: true,
+        number: true,
+        subject: true,
+        description: true,
+        priority: true,
+        startDate: true,
+        dueDate: true,
+        estimatedHours: true,
+        doneRatio: true,
+        closedOn: true,
+        createdAt: true,
+        updatedAt: true,
+        tracker: { select: { name: true } },
+        status: { select: { name: true, isClosed: true } },
+        author: { select: { login: true, firstname: true, lastname: true } },
+        assignee: { select: { login: true, firstname: true, lastname: true } },
+        assigneeGroup: { select: { name: true } },
+        category: { select: { name: true } },
+        version: { select: { name: true } },
+        parent: { select: { number: true, subject: true } },
+        children: { select: { number: true, subject: true, status: { select: { name: true, isClosed: true } } } },
+        relationsFrom: {
+          select: {
+            relationType: true,
+            delay: true,
+            issueTo: { select: { number: true, subject: true, status: { select: { name: true, isClosed: true } } } },
+          },
+        },
+        relationsTo: {
+          select: {
+            relationType: true,
+            delay: true,
+            issueFrom: { select: { number: true, subject: true, status: { select: { name: true, isClosed: true } } } },
+          },
+        },
+        journals: {
+          where: { private: false, createdAt: { gte: periodStartDate, lte: periodEndDate } },
+          orderBy: { createdAt: 'desc' },
+          take: config.AI_WEEKLY_REPORT_MAX_COMMENTS,
+          select: {
+            notes: true,
+            createdAt: true,
+            user: { select: { login: true, firstname: true, lastname: true } },
+            details: { select: { property: true, propKey: true, oldValue: true, newValue: true } },
+          },
+        },
+        timeEntries: {
+          where: { spentOn: { gte: periodStartDate, lte: periodEndDate } },
+          orderBy: { spentOn: 'desc' },
+          take: 20,
+          select: {
+            spentOn: true,
+            hours: true,
+            comments: true,
+            user: { select: { login: true, firstname: true, lastname: true } },
+            activity: { select: { name: true } },
+          },
+        },
+      },
+    }),
+    prisma.timeEntry.findMany({
+      where: { projectId, spentOn: { gte: periodStartDate, lte: periodEndDate } },
+      select: {
+        hours: true,
+        user: { select: { login: true, firstname: true, lastname: true } },
+        activity: { select: { name: true } },
+      },
+    }),
+  ]);
+
+  const issueIds = issues.map((issue) => issue.id);
+  const customValues = issueIds.length
+    ? await prisma.customValue.findMany({
+      where: { customizedType: 'Issue', customizedId: { in: issueIds } },
+      select: {
+        customizedId: true,
+        value: true,
+        customField: { select: { name: true, fieldFormat: true } },
+      },
+      orderBy: { customField: { position: 'asc' } },
+    })
+    : [];
+
+  const customValuesByIssue = new Map<string, typeof customValues>();
+  for (const customValue of customValues) {
+    const values = customValuesByIssue.get(customValue.customizedId) ?? [];
+    values.push(customValue);
+    customValuesByIssue.set(customValue.customizedId, values);
+  }
+
+  const changeDetails = issues.flatMap((issue) => issue.journals.flatMap((journal) => journal.details));
+  const changeLabels = new Map<string, string>();
+  const customFieldIds = uniqueValues(changeDetails.filter((detail) => detail.property === 'cf' && isUuidLike(detail.propKey)).map((detail) => detail.propKey));
+  const projectIds = uniqueValues(changeDetails.filter((detail) => detail.propKey === 'projectId').flatMap((detail) => [detail.oldValue, detail.newValue]));
+  const trackerIds = uniqueValues(changeDetails.filter((detail) => detail.propKey === 'trackerId').flatMap((detail) => [detail.oldValue, detail.newValue]));
+  const statusIds = uniqueValues(changeDetails.filter((detail) => detail.propKey === 'statusId').flatMap((detail) => [detail.oldValue, detail.newValue]));
+  const assigneeIds = uniqueValues(changeDetails.filter((detail) => detail.propKey === 'assigneeId').flatMap((detail) => [detail.oldValue, detail.newValue]));
+  const assigneeGroupIds = uniqueValues(changeDetails.filter((detail) => detail.propKey === 'assigneeGroupId').flatMap((detail) => [detail.oldValue, detail.newValue]));
+  const categoryIds = uniqueValues(changeDetails.filter((detail) => detail.propKey === 'categoryId').flatMap((detail) => [detail.oldValue, detail.newValue]));
+  const versionIds = uniqueValues(changeDetails.filter((detail) => detail.propKey === 'versionId').flatMap((detail) => [detail.oldValue, detail.newValue]));
+  const parentIds = uniqueValues(changeDetails.filter((detail) => detail.propKey === 'parentId').flatMap((detail) => [detail.oldValue, detail.newValue]));
+
+  await Promise.all([
+    customFieldIds.length
+      ? prisma.customField.findMany({ where: { id: { in: customFieldIds } }, select: { id: true, name: true } })
+        .then((rows) => rows.forEach((row) => changeLabels.set(row.id, row.name)))
+      : Promise.resolve(),
+    projectIds.length
+      ? prisma.project.findMany({ where: { id: { in: projectIds } }, select: { id: true, name: true } })
+        .then((rows) => rows.forEach((row) => changeLabels.set(row.id, row.name)))
+      : Promise.resolve(),
+    trackerIds.length
+      ? prisma.tracker.findMany({ where: { id: { in: trackerIds } }, select: { id: true, name: true } })
+        .then((rows) => rows.forEach((row) => changeLabels.set(row.id, row.name)))
+      : Promise.resolve(),
+    statusIds.length
+      ? prisma.issueStatus.findMany({ where: { id: { in: statusIds } }, select: { id: true, name: true } })
+        .then((rows) => rows.forEach((row) => changeLabels.set(row.id, row.name)))
+      : Promise.resolve(),
+    assigneeIds.length
+      ? prisma.user.findMany({ where: { id: { in: assigneeIds } }, select: { id: true, login: true, firstname: true, lastname: true } })
+        .then((rows) => rows.forEach((row) => changeLabels.set(row.id, formatUserName(row))))
+      : Promise.resolve(),
+    assigneeGroupIds.length
+      ? prisma.group.findMany({ where: { id: { in: assigneeGroupIds } }, select: { id: true, name: true } })
+        .then((rows) => rows.forEach((row) => changeLabels.set(row.id, `グループ: ${row.name}`)))
+      : Promise.resolve(),
+    categoryIds.length
+      ? prisma.issueCategory.findMany({ where: { id: { in: categoryIds } }, select: { id: true, name: true } })
+        .then((rows) => rows.forEach((row) => changeLabels.set(row.id, row.name)))
+      : Promise.resolve(),
+    versionIds.length
+      ? prisma.version.findMany({ where: { id: { in: versionIds } }, select: { id: true, name: true } })
+        .then((rows) => rows.forEach((row) => changeLabels.set(row.id, row.name)))
+      : Promise.resolve(),
+    parentIds.length
+      ? prisma.issue.findMany({ where: { id: { in: parentIds } }, select: { id: true, number: true, subject: true } })
+        .then((rows) => rows.forEach((row) => changeLabels.set(row.id, `#${row.number} ${row.subject}`)))
+      : Promise.resolve(),
+  ]);
+
+  const customValueIdsByFormat = customValues.reduce<Record<string, string[]>>((acc, customValue) => {
+    if (!customValue.value) return acc;
+    const values = parseStoredWeeklyCustomValue(customValue.value).filter(isUuidLike);
+    if (!values.length) return acc;
+    const format = customValue.customField.fieldFormat;
+    acc[format] = uniqueValues([...(acc[format] ?? []), ...values]);
+    return acc;
+  }, {});
+  const customValueLabels = new Map<string, string>();
+  await Promise.all([
+    customValueIdsByFormat.user?.length
+      ? prisma.user.findMany({ where: { id: { in: customValueIdsByFormat.user } }, select: { id: true, login: true, firstname: true, lastname: true } })
+        .then((rows) => rows.forEach((row) => customValueLabels.set(row.id, formatUserName(row))))
+      : Promise.resolve(),
+    customValueIdsByFormat.issue?.length
+      ? prisma.issue.findMany({ where: { id: { in: customValueIdsByFormat.issue } }, select: { id: true, number: true, subject: true } })
+        .then((rows) => rows.forEach((row) => customValueLabels.set(row.id, `#${row.number} ${row.subject}`)))
+      : Promise.resolve(),
+    customValueIdsByFormat.attachment?.length
+      ? prisma.attachment.findMany({ where: { id: { in: customValueIdsByFormat.attachment } }, select: { id: true, filename: true } })
+        .then((rows) => rows.forEach((row) => customValueLabels.set(row.id, row.filename)))
+      : Promise.resolve(),
+  ]);
+
+  const formatCustomValue = (value: string | null, fieldFormat: string) => {
+    const values = parseStoredWeeklyCustomValue(value);
+    if (!values.length) return 'なし';
+    if (!['user', 'issue', 'attachment'].includes(fieldFormat)) return values.join(', ');
+    return values
+      .map((part) => customValueLabels.get(part) ?? part)
+      .join(', ');
+  };
+
+  const totalHours = weeklyTimeEntries.reduce((sum, entry) => sum + entry.hours, 0);
+  const hoursByUser = new Map<string, number>();
+  const hoursByActivity = new Map<string, number>();
+  for (const entry of weeklyTimeEntries) {
+    const user = formatUserName(entry.user);
+    hoursByUser.set(user, (hoursByUser.get(user) ?? 0) + entry.hours);
+    hoursByActivity.set(entry.activity.name, (hoursByActivity.get(entry.activity.name) ?? 0) + entry.hours);
+  }
+  const hourLines = [
+    `- 合計: ${totalHours.toFixed(2)}h`,
+    '- ユーザー別:',
+    ...(hoursByUser.size ? Array.from(hoursByUser.entries()).map(([name, hours]) => `  - ${name}: ${hours.toFixed(2)}h`) : ['  - なし']),
+    '- 作業分類別:',
+    ...(hoursByActivity.size ? Array.from(hoursByActivity.entries()).map(([name, hours]) => `  - ${name}: ${hours.toFixed(2)}h`) : ['  - なし']),
+  ];
+
+  const memberLines = members.length
+    ? members.map((member) => {
+      const name = member.user ? formatUserName(member.user) : `グループ: ${member.group?.name ?? '不明'}`;
+      const roles = member.memberRoles.map((row) => row.role.name).join(', ') || 'ロールなし';
+      return `- ${name} / ${roles}`;
+    })
+    : ['- メンバーなし'];
+
+  const issueLines = issues.length
+    ? issues.map((issue) => {
+      const categories = [
+        issue.createdAt >= periodStartDate && issue.createdAt <= periodEndDate ? '作成' : '',
+        issue.updatedAt >= periodStartDate && issue.updatedAt <= periodEndDate ? '更新' : '',
+        issue.dueDate && issue.dueDate >= periodStartDate && issue.dueDate <= periodEndDate ? '期日' : '',
+      ].filter(Boolean).join(', ');
+      const assignee = issue.assignee
+        ? formatUserName(issue.assignee)
+        : issue.assigneeGroup
+          ? `グループ: ${issue.assigneeGroup.name}`
+          : '未担当';
+      const recentJournals = issue.journals
+        .slice()
+        .reverse()
+        .map((journal) => {
+          const actor = formatUserName(journal.user);
+          const details = journal.details.length
+            ? journal.details.map((detail) => {
+              const label = detail.property === 'cf'
+                ? (changeLabels.get(detail.propKey) ?? detail.propKey)
+                : (WEEKLY_REPORT_FIELD_LABELS[detail.propKey] ?? detail.propKey);
+              const oldValue = formatWeeklyReportChangeValue(detail.propKey, detail.oldValue, changeLabels);
+              const newValue = formatWeeklyReportChangeValue(detail.propKey, detail.newValue, changeLabels);
+              return `${actor} が ${label} を ${oldValue} から ${newValue} に変更`;
+            }).join('; ')
+            : '変更詳細なし';
+          return [
+            `    - ${formatDateTime(journal.createdAt)} 実行者: ${actor}`,
+            `      コメント: ${truncateText(journal.notes, config.AI_WEEKLY_REPORT_MAX_COMMENT_CHARS)}`,
+            `      変更: ${details}`,
+          ].join('\n');
+        });
+      const timeEntries = issue.timeEntries.map((entry) => (
+        `    - ${formatDate(entry.spentOn)} ${formatUserName(entry.user)} ${entry.activity.name} ${entry.hours}h: ${truncateText(entry.comments, 300)}`
+      ));
+      const customFieldLines = (customValuesByIssue.get(issue.id) ?? []).map((customValue) => (
+        `    - ${customValue.customField.name} (${customValue.customField.fieldFormat}): ${formatCustomValue(customValue.value, customValue.customField.fieldFormat)}`
+      ));
+      const relations = [
+        ...issue.relationsFrom.map((relation) => (
+          `${relation.relationType} -> #${relation.issueTo.number} ${relation.issueTo.subject} (${relation.issueTo.status.name})${relation.delay ? ` / 遅延: ${relation.delay}日` : ''}`
+        )),
+        ...issue.relationsTo.map((relation) => (
+          `${relation.relationType} <- #${relation.issueFrom.number} ${relation.issueFrom.subject} (${relation.issueFrom.status.name})${relation.delay ? ` / 遅延: ${relation.delay}日` : ''}`
+        )),
+      ];
+
+      return [
+        `## #${issue.number} ${issue.subject}`,
+        `- 該当カテゴリ: ${categories || 'なし'}`,
+        `- トラッカー: ${issue.tracker.name}`,
+        `- ステータス: ${issue.status.name} / 完了扱い: ${issue.status.isClosed ? 'はい' : 'いいえ'}`,
+        `- 優先度: ${priorityLabel(issue.priority)}`,
+        `- 担当者: ${assignee}`,
+        `- 作成者: ${formatUserName(issue.author)}`,
+        `- カテゴリ: ${issue.category?.name ?? '未設定'}`,
+        `- 対象バージョン: ${issue.version?.name ?? '未設定'}`,
+        `- 親チケット: ${issue.parent ? `#${issue.parent.number} ${issue.parent.subject}` : 'なし'}`,
+        `- 子チケット: ${issue.children.length ? issue.children.map((child) => `#${child.number} ${child.subject} (${child.status.name})`).join(', ') : 'なし'}`,
+        `- 開始日: ${formatDate(issue.startDate)}`,
+        `- 期日: ${formatDate(issue.dueDate)}`,
+        `- 予定工数: ${issue.estimatedHours ?? '未設定'}`,
+        `- 進捗率: ${issue.doneRatio}%`,
+        `- 終了日: ${formatDate(issue.closedOn)}`,
+        `- 作成日時: ${formatDateTime(issue.createdAt)}`,
+        `- 更新日時: ${formatDateTime(issue.updatedAt)}`,
+        '- 説明:',
+        truncateText(issue.description, config.AI_WEEKLY_REPORT_MAX_DESCRIPTION_CHARS),
+        '- カスタムフィールド:',
+        customFieldLines.length ? customFieldLines.join('\n') : '    - なし',
+        '- 関連チケット:',
+        relations.length ? relations.map((relation) => `    - ${relation}`).join('\n') : '    - なし',
+        '- 直近1週間の履歴:',
+        recentJournals.length ? recentJournals.join('\n') : '    - なし',
+        '- 直近1週間の作業時間:',
+        timeEntries.length ? timeEntries.join('\n') : '    - なし',
+      ].join('\n');
+    })
+    : ['対象チケットなし'];
+
+  const omittedCount = Math.max(0, issueCount - issues.length);
+  const input = [
+    '# 週次レポート対象期間',
+    `- 開始: ${formatDateTime(periodStartDate)}`,
+    `- 終了: ${formatDateTime(periodEndDate)}`,
+    '',
+    '# プロジェクト',
+    `- タイトル: ${project.name}`,
+    `- 識別子: ${project.identifier}`,
+    `- 公開: ${project.isPublic ? 'はい' : 'いいえ'}`,
+    `- ステータス: ${project.status}`,
+    `- 作成日時: ${formatDateTime(project.createdAt)}`,
+    `- 更新日時: ${formatDateTime(project.updatedAt)}`,
+    `- メンバー数: ${project._count.members}`,
+    `- 全チケット数: ${project._count.issues}`,
+    `- 文書数: ${project._count.documents}`,
+    `- ニュース数: ${project._count.news}`,
+    `- 工数入力数: ${project._count.timeEntries}`,
+    '- 概要:',
+    compactText(project.description),
+    '',
+    '# メンバー',
+    ...memberLines,
+    '',
+    '# 対象チケット',
+    '- 条件: 直近1週間に作成されたチケット、更新のあったチケット、または期日が直近1週間に含まれるチケット',
+    `- 取得件数: ${issues.length} / ${issueCount}`,
+    omittedCount ? `- 環境変数の上限により ${omittedCount} 件を省略` : '',
+    '',
+    '# 直近1週間の工数集計',
+    ...hourLines,
+    '',
+    ...issueLines,
+  ].filter((line) => line !== '').join('\n');
+
+  return {
+    input: limitWeeklyReportInputChars(input),
+    issueCount,
+    issueLimit,
+    periodStart: periodStartDate.toISOString(),
+    periodEnd: periodEndDate.toISOString(),
+  };
 }
 
 router.get(
@@ -515,6 +966,33 @@ router.post(
       summary,
       issueCount,
       issueLimit,
+    });
+  }),
+);
+
+router.post(
+  '/:id/ai/weekly-report',
+  authenticate,
+  catchAsync(async (req, res) => {
+    const project = await resolveProjectRef(req.params.id);
+    if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+
+    const canUseAiActions = await userIsProjectMember(req.user?.userId, project.id);
+    if (!canUseAiActions) throw AppError.forbidden();
+    const issueTrackingEnabled = await prisma.enabledModule.count({
+      where: { projectId: project.id, name: 'issue_tracking' },
+    });
+    if (!issueTrackingEnabled) throw AppError.forbidden('このプロジェクトではチケットトラッキングが無効です');
+
+    const { input, issueCount, issueLimit, periodStart, periodEnd } = await buildProjectWeeklyReportInput(project.id);
+    const report = await createOpenAiProjectWeeklyReport(input);
+
+    return sendSuccess(res, {
+      report,
+      issueCount,
+      issueLimit,
+      periodStart,
+      periodEnd,
     });
   }),
 );

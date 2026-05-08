@@ -42,6 +42,14 @@ export interface ProjectAiProgressSummary {
   issueLimit: number;
 }
 
+export interface ProjectAiWeeklyReport {
+  report: string;
+  issueCount: number;
+  issueLimit: number;
+  periodStart: string;
+  periodEnd: string;
+}
+
 export interface Tracker {
   id: string;
   name: string;
