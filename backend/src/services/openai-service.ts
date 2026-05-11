@@ -12,6 +12,8 @@ type ResponseOutput = {
 };
 
 type ResponsesApiBody = {
+  status?: string;
+  incomplete_details?: { reason?: string };
   output_text?: string;
   output?: ResponseOutput[];
   error?: { message?: string };
@@ -31,6 +33,17 @@ function extractOutputText(body: ResponsesApiBody): string {
 
   return text ?? '';
 }
+
+function appendIncompleteNotice(text: string, body: ResponsesApiBody): string {
+  if (body.status !== 'incomplete') return text;
+  const reason = body.incomplete_details?.reason;
+  const reasonText = reason === 'max_output_tokens'
+    ? 'OpenAIの出力上限に達したため、回答が途中で終了しました。'
+    : `OpenAIの回答が未完了の状態で終了しました。理由: ${reason ?? 'unknown'}`;
+  return `${text}\n\n---\n※ ${reasonText}`;
+}
+
+const minimalReasoning = { effort: 'minimal' };
 
 async function summaryPrompt(): Promise<string> {
   const setting = await prisma.setting.findUnique({ where: { name: 'ai_due_summary_prompt' } });
@@ -89,6 +102,7 @@ export async function createOpenAiSummary(input: string): Promise<string> {
       model: config.OPENAI_MODEL,
       instructions: await summaryPrompt(),
       input,
+      reasoning: minimalReasoning,
       max_output_tokens: 800,
       store: false,
     }),
@@ -99,7 +113,7 @@ export async function createOpenAiSummary(input: string): Promise<string> {
     throw new Error(body.error?.message ?? `OpenAI API request failed with status ${response.status}`);
   }
 
-  const summary = extractOutputText(body);
+  const summary = appendIncompleteNotice(extractOutputText(body), body);
   if (!summary) throw new Error('OpenAI API returned an empty summary');
   return summary;
 }
@@ -128,6 +142,7 @@ export async function createOpenAiProjectProgressSummary(input: string): Promise
       model: config.AI_PROGRESS_SUMMARY_MODEL,
       instructions: await progressSummaryPrompt(),
       input,
+      reasoning: minimalReasoning,
       max_output_tokens: config.AI_PROGRESS_SUMMARY_MAX_OUTPUT_TOKENS,
       store: false,
     }),
@@ -138,7 +153,7 @@ export async function createOpenAiProjectProgressSummary(input: string): Promise
     throw new Error(body.error?.message ?? `OpenAI API request failed with status ${response.status}`);
   }
 
-  const summary = extractOutputText(body);
+  const summary = appendIncompleteNotice(extractOutputText(body), body);
   if (!summary) throw new Error('OpenAI API returned an empty summary');
   return summary;
 }
@@ -167,6 +182,7 @@ export async function createOpenAiProjectWeeklyReport(input: string): Promise<st
       model: config.AI_WEEKLY_REPORT_MODEL,
       instructions: await weeklyReportPrompt(),
       input,
+      reasoning: minimalReasoning,
       max_output_tokens: config.AI_WEEKLY_REPORT_MAX_OUTPUT_TOKENS,
       store: false,
     }),
@@ -177,7 +193,7 @@ export async function createOpenAiProjectWeeklyReport(input: string): Promise<st
     throw new Error(body.error?.message ?? `OpenAI API request failed with status ${response.status}`);
   }
 
-  const report = extractOutputText(body);
+  const report = appendIncompleteNotice(extractOutputText(body), body);
   if (!report) throw new Error('OpenAI API returned an empty weekly report');
   return report;
 }
@@ -206,6 +222,7 @@ export async function createOpenAiProjectBottleneckDetection(input: string): Pro
       model: config.AI_BOTTLENECK_DETECTION_MODEL,
       instructions: await bottleneckDetectionPrompt(),
       input,
+      reasoning: minimalReasoning,
       max_output_tokens: config.AI_BOTTLENECK_DETECTION_MAX_OUTPUT_TOKENS,
       store: false,
     }),
@@ -216,7 +233,7 @@ export async function createOpenAiProjectBottleneckDetection(input: string): Pro
     throw new Error(body.error?.message ?? `OpenAI API request failed with status ${response.status}`);
   }
 
-  const report = extractOutputText(body);
+  const report = appendIncompleteNotice(extractOutputText(body), body);
   if (!report) throw new Error('OpenAI API returned an empty bottleneck detection report');
   return report;
 }
@@ -245,6 +262,7 @@ export async function createOpenAiProjectTaskInstruction(input: string): Promise
       model: config.AI_TASK_INSTRUCTION_MODEL,
       instructions: await taskInstructionPrompt(),
       input,
+      reasoning: minimalReasoning,
       max_output_tokens: config.AI_TASK_INSTRUCTION_MAX_OUTPUT_TOKENS,
       store: false,
     }),
@@ -255,7 +273,7 @@ export async function createOpenAiProjectTaskInstruction(input: string): Promise
     throw new Error(body.error?.message ?? `OpenAI API request failed with status ${response.status}`);
   }
 
-  const instructions = extractOutputText(body);
+  const instructions = appendIncompleteNotice(extractOutputText(body), body);
   if (!instructions) throw new Error('OpenAI API returned empty task instructions');
   return instructions;
 }

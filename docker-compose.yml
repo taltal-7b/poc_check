@@ -36,7 +36,7 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-noreply@tasknova.local}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.2}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-nano}
       AI_DUE_SUMMARY_ENABLED: ${AI_DUE_SUMMARY_ENABLED:-true}
       AI_DUE_SUMMARY_TIME_ZONE: ${AI_DUE_SUMMARY_TIME_ZONE:-Asia/Tokyo}
       AI_DUE_SUMMARY_HOUR: ${AI_DUE_SUMMARY_HOUR:-7}
