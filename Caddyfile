@@ -1,8 +1,0 @@
-{$SITE_DOMAIN} {
-    encode zstd gzip
-
-    reverse_proxy frontend:80 {
-        header_up X-Forwarded-Proto {scheme}
-        header_up X-Forwarded-Host {host}
-    }
-}

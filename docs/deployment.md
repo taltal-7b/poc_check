@@ -30,15 +30,14 @@ Required:
 - `JWT_SECRET`: long random JWT secret.
 - `JWT_REFRESH_SECRET`: long random refresh-token secret.
 - `FRONTEND_URL`: public URL, for example `https://tasknova.example.com`.
-- `SITE_DOMAIN`: public hostname for Caddy and Let's Encrypt, for example `tasknova.example.com`.
 
 Optional:
 
 - `DEPLOY_PORT`: SSH port. Defaults to `22`.
 - `POSTGRES_USER`: defaults to `tasknova`.
 - `POSTGRES_DB`: defaults to `tasknova`.
-- `HTTP_PORT`: host port for HTTP. Defaults to `80`.
-- `HTTPS_PORT`: host port for HTTPS. Defaults to `443`.
+- `FRONTEND_BIND`: frontend bind address. Defaults to `127.0.0.1`.
+- `FRONTEND_PORT`: frontend host port for the local reverse proxy. Defaults to `8081`.
 - `BACKEND_BIND`: backend bind address. Defaults to `127.0.0.1`.
 - `BACKEND_PORT`: backend host port. Defaults to `3000`.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`.
@@ -46,7 +45,56 @@ Optional:
 
 ## Notes
 
-Production HTTPS is terminated by Caddy. Point the DNS A/AAAA record for `SITE_DOMAIN` at the server and allow inbound TCP `80` and `443`; Caddy will issue and renew Let's Encrypt certificates automatically. Set `FRONTEND_URL` to the matching `https://...` URL so CORS, password reset links, and notification links use HTTPS.
+On a shared server, terminate HTTPS in the existing host-level web server and proxy only `project-jre.com` to TaskNova. By default the frontend listens on `127.0.0.1:8081`, so configure the existing nginx, Apache, or Caddy virtual host to proxy `https://project-jre.com` to `http://127.0.0.1:8081`. Set `FRONTEND_URL` to the matching `https://...` URL so CORS, password reset links, and notification links use HTTPS.
+
+Example nginx virtual host:
+
+```nginx
+server {
+    listen 80;
+    server_name project-jre.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name project-jre.com;
+
+    ssl_certificate /path/to/fullchain.pem;
+    ssl_certificate_key /path/to/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
+```
+
+Example Apache virtual host:
+
+```apache
+<VirtualHost *:80>
+    ServerName project-jre.com
+    Redirect permanent / https://project-jre.com/
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName project-jre.com
+
+    SSLEngine on
+    SSLCertificateFile /path/to/fullchain.pem
+    SSLCertificateKeyFile /path/to/privkey.pem
+
+    ProxyPreserveHost On
+    RequestHeader set X-Forwarded-Proto "https"
+    ProxyPass / http://127.0.0.1:8081/
+    ProxyPassReverse / http://127.0.0.1:8081/
+</VirtualHost>
+```
 
 The production compose file intentionally overrides the backend container command and does not use `--accept-data-loss`. This project currently has a Prisma schema but no checked-in migration history, so deploys run `prisma db push --skip-generate`. Before storing important production data, add Prisma migrations and switch the production command to `prisma migrate deploy`.
 

@@ -91,7 +91,6 @@ jobs:
           SSH_PORT="${DEPLOY_PORT:-22}"
           ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
           scp -i ~/.ssh/deploy_key -P "$SSH_PORT" docker-compose.prod.yml "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/docker-compose.yml"
-          scp -i ~/.ssh/deploy_key -P "$SSH_PORT" Caddyfile "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/Caddyfile"
 
       - name: Pull images and restart services
         shell: bash
@@ -114,9 +113,8 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           SMTP_FROM: ${{ secrets.SMTP_FROM }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          SITE_DOMAIN: ${{ secrets.SITE_DOMAIN }}
-          HTTP_PORT: ${{ secrets.HTTP_PORT }}
-          HTTPS_PORT: ${{ secrets.HTTPS_PORT }}
+          FRONTEND_BIND: ${{ secrets.FRONTEND_BIND }}
+          FRONTEND_PORT: ${{ secrets.FRONTEND_PORT }}
           BACKEND_BIND: ${{ secrets.BACKEND_BIND }}
           BACKEND_PORT: ${{ secrets.BACKEND_PORT }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
@@ -140,9 +138,8 @@ jobs:
           SMTP_PASS=${SMTP_PASS:-}
           SMTP_FROM=${SMTP_FROM:-}
           OPENAI_API_KEY=${OPENAI_API_KEY:-}
-          SITE_DOMAIN=$SITE_DOMAIN
-          HTTP_PORT=${HTTP_PORT:-80}
-          HTTPS_PORT=${HTTPS_PORT:-443}
+          FRONTEND_BIND=${FRONTEND_BIND:-127.0.0.1}
+          FRONTEND_PORT=${FRONTEND_PORT:-8081}
           BACKEND_BIND=${BACKEND_BIND:-127.0.0.1}
           BACKEND_PORT=${BACKEND_PORT:-3000}
           EOF
