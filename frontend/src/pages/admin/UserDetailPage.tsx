@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import AppSelect from '../../components/AppSelect';
 import {
   useAddGroupUser,
   useAdminDisableTotp,
@@ -315,18 +316,13 @@ export default function UserDetailPage() {
           <div className="mt-4 space-y-4">
             <label className="block text-sm">
               <span className="mb-1 block text-sm font-medium text-gray-700">{t('projects.title')}</span>
-              <select
+              <AppSelect
                 value={selectedProjectId}
-                onChange={(e) => setSelectedProjectId(e.target.value)}
+                onChange={setSelectedProjectId}
+                options={[{ value: '', label: '-' }, ...availableProjects.map((p) => ({ value: p.id, label: p.name }))]}
+                ariaLabel={t('projects.title')}
                 className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-              >
-                <option value="">－</option>
-                {availableProjects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <fieldset className="rounded border border-gray-200 p-3">
               <legend className="px-1 text-sm font-medium text-gray-700">{t('members.roles')}</legend>
@@ -419,3 +415,4 @@ export default function UserDetailPage() {
     </div>
   );
 }
+

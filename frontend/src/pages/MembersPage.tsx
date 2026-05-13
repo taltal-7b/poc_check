@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import ProjectSubNav from '../components/ProjectSubNav';
+import AppSelect from '../components/AppSelect';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { UserPlus, UserMinus, Pencil } from 'lucide-react';
 import { useMembers, useUsers, useRoles, useProject, useProjectMemberGroups } from '../api/hooks';
@@ -9,6 +10,7 @@ import api from '../api/client';
 import type { Member, User, Role } from '../types';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { useAuthStore } from '../stores/auth';
+import axios from 'axios';
 
 function unwrapList<T>(raw: unknown): T[] {
   if (raw == null) return [];
@@ -25,6 +27,17 @@ function unwrapObject<T>(raw: unknown): T | null {
     return ((raw as { data?: T }).data ?? null) as T | null;
   }
   return raw as T;
+}
+
+function memberAddErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    if (error.response?.status === 409) {
+      return '選択したユーザーまたはグループは既にメンバー登録されています。';
+    }
+    const message = (error.response?.data as { message?: unknown } | undefined)?.message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 export default function MembersPage() {
@@ -49,7 +62,9 @@ export default function MembersPage() {
   const project = useMemo(() => unwrapObject<{ id: string; createdByUserId?: string | null }>(projectRaw.data), [projectRaw.data]);
 
   const existingUserIds = useMemo(() => new Set(members.map((m) => m.userId).filter(Boolean)), [members]);
+  const existingGroupIds = useMemo(() => new Set(members.map((m) => m.groupId).filter(Boolean)), [members]);
   const availableUsers = useMemo(() => users.filter((u) => !existingUserIds.has(u.id)), [users, existingUserIds]);
+  const availableGroups = useMemo(() => groups.filter((g) => !existingGroupIds.has(g.id)), [groups, existingGroupIds]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [userId, setUserId] = useState('');
@@ -219,39 +234,32 @@ export default function MembersPage() {
             <div className="mt-4 space-y-4">
               <label className="block text-sm">
                 <span className="text-gray-700">{t('members.user')}</span>
-                <select
+                <AppSelect
                   value={userId}
-                  onChange={(e) => {
-                    setUserId(e.target.value);
-                    if (e.target.value) setGroupId('');
+                  onChange={(value) => {
+                    setUserId(value);
+                    if (value) setGroupId('');
                   }}
+                  options={[
+                    { value: '', label: '-' },
+                    ...availableUsers.map((u) => ({ value: u.id, label: `${u.login} (${u.lastname} ${u.firstname})` })),
+                  ]}
+                  ariaLabel={t('members.user')}
                   className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                >
-                  <option value="">—</option>
-                  {availableUsers.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.login} ({u.lastname} {u.firstname})
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
               <label className="block text-sm">
                 <span className="text-gray-700">{t('groups.title')}</span>
-                <select
+                <AppSelect
                   value={groupId}
-                  onChange={(e) => {
-                    setGroupId(e.target.value);
-                    if (e.target.value) setUserId('');
+                  onChange={(value) => {
+                    setGroupId(value);
+                    if (value) setUserId('');
                   }}
+                  options={[{ value: '', label: '-' }, ...availableGroups.map((g) => ({ value: g.id, label: g.name }))]}
+                  ariaLabel={t('groups.title')}
                   className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                >
-                  <option value="">—</option>
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
               <fieldset>
                 <legend className="text-sm text-gray-700 mb-2">{t('members.roles')}</legend>
@@ -274,7 +282,7 @@ export default function MembersPage() {
               </fieldset>
               {addMember.isError && (
                 <p className="text-sm text-red-600">
-                  {(addMember.error as Error)?.message ?? t('app.error')}
+                  {memberAddErrorMessage(addMember.error, t('app.error'))}
                 </p>
               )}
               <div className="flex justify-end gap-2">
@@ -378,3 +386,4 @@ export default function MembersPage() {
     </div>
   );
 }
+

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import ProjectSubNav from '../components/ProjectSubNav';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { format, parseISO } from 'date-fns';
 import { Pencil, Trash2 } from 'lucide-react';
+import AppSelect from '../components/AppSelect';
 import {
   useProject,
   useTimeEntries,
@@ -429,20 +430,22 @@ export default function TimeEntriesPage() {
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         <label className="text-sm">
           <span className="mb-1 block text-gray-600">{t('timeEntries.spentOn')}</span>
-          <select
+          <AppSelect
             value={spentOnOperator}
-            onChange={(e) => setSpentOnOperator(e.target.value as SpentOnOperator)}
+            onChange={(value) => setSpentOnOperator(value as SpentOnOperator)}
+            options={[
+              { value: '*', label: 'すべて' },
+              { value: '><', label: '次の範囲内' },
+              { value: 't', label: '今日' },
+              { value: 'w', label: '今週' },
+              { value: 'lw', label: '先週' },
+              { value: 'l2w', label: '直近2週間' },
+              { value: 'm', label: '今月' },
+              { value: 'lm', label: '先月' },
+            ]}
+            ariaLabel={t('timeEntries.spentOn')}
             className="rounded border border-gray-300 px-2 py-1.5 text-sm"
-          >
-            <option value="*">すべて</option>
-            <option value="><">次の範囲内</option>
-            <option value="t">今日</option>
-            <option value="w">今週</option>
-            <option value="lw">先週</option>
-            <option value="l2w">直近2週間</option>
-            <option value="m">今月</option>
-            <option value="lm">先月</option>
-          </select>
+          />
         </label>
         {spentOnOperator === '><' && (
           <>
@@ -501,18 +504,13 @@ export default function TimeEntriesPage() {
         </label>
         <label className="text-sm min-w-[12rem]">
           <span className="mb-1 block text-gray-600">{t('timeEntries.activity')}</span>
-          <select
+          <AppSelect
             value={filterActivityId}
-            onChange={(e) => setFilterActivityId(e.target.value)}
+            onChange={setFilterActivityId}
+            options={[{ value: '', label: '-' }, ...availableActivities.map((activity) => ({ value: activity.id, label: activity.name }))]}
+            ariaLabel={t('timeEntries.activity')}
             className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-          >
-            <option value="">－</option>
-            {availableActivities.map((activity) => (
-              <option key={activity.id} value={activity.id}>
-                {activity.name}
-              </option>
-            ))}
-          </select>
+          />
         </label>
       </div>
 
@@ -664,19 +662,13 @@ export default function TimeEntriesPage() {
               </label>
               <label className="block text-sm">
                 <span className="text-gray-700">ユーザー *</span>
-                <select
-                  required
+                <AppSelect
                   value={form.userId}
-                  onChange={(e) => setForm((f) => ({ ...f, userId: e.target.value }))}
+                  onChange={(value) => setForm((f) => ({ ...f, userId: value }))}
+                  options={[{ value: '', label: '-' }, ...memberUsers.map((u) => ({ value: u.id, label: `${u.lastname} ${u.firstname}`.trim() || u.login }))]}
+                  ariaLabel="ユーザー"
                   className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                >
-                  <option value="">—</option>
-                  {memberUsers.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {`${u.lastname} ${u.firstname}`.trim() || u.login}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block text-sm">
@@ -712,19 +704,13 @@ export default function TimeEntriesPage() {
               </label>
               <label className="block text-sm">
                 <span className="text-gray-700">{t('timeEntries.activity')} *</span>
-                <select
-                  required
+                <AppSelect
                   value={form.activityId}
-                  onChange={(e) => setForm((f) => ({ ...f, activityId: e.target.value }))}
+                  onChange={(value) => setForm((f) => ({ ...f, activityId: value }))}
+                  options={[{ value: '', label: '--- 選んでください ---' }, ...availableActivities.map((activity) => ({ value: activity.id, label: activity.name }))]}
+                  ariaLabel={t('timeEntries.activity')}
                   className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                >
-                  <option value="">--- 選んでください ---</option>
-                  {availableActivities.map((activity) => (
-                    <option key={activity.id} value={activity.id}>
-                      {activity.name}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
               {formError && <p className="text-sm text-red-600">{formError}</p>}
               {createEntry.isError && <p className="text-sm text-red-600">{t('app.error')}</p>}
@@ -823,19 +809,13 @@ export default function TimeEntriesPage() {
               </label>
               <label className="block text-sm">
                 <span className="text-gray-700">{t('timeEntries.activity')} *</span>
-                <select
-                  required
+                <AppSelect
                   value={editForm.activityId}
-                  onChange={(e) => setEditForm((f) => ({ ...f, activityId: e.target.value }))}
+                  onChange={(value) => setEditForm((f) => ({ ...f, activityId: value }))}
+                  options={[{ value: '', label: '--- 選んでください ---' }, ...availableActivities.map((activity) => ({ value: activity.id, label: activity.name }))]}
+                  ariaLabel={t('timeEntries.activity')}
                   className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                >
-                  <option value="">--- 選んでください ---</option>
-                  {availableActivities.map((activity) => (
-                    <option key={activity.id} value={activity.id}>
-                      {activity.name}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
               {editError && <p className="text-sm text-red-600">{editError}</p>}
               <div className="flex justify-end gap-2 pt-2">
@@ -862,3 +842,8 @@ export default function TimeEntriesPage() {
     </div>
   );
 }
+
+
+
+
+

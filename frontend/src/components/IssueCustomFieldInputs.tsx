@@ -1,3 +1,4 @@
+﻿import AppSelect from './AppSelect';
 import type { CustomField, IssueCustomFieldValue } from '../types';
 
 type Field = CustomField | IssueCustomFieldValue;
@@ -88,15 +89,13 @@ function ReferenceSelect({
   }
 
   return (
-    <select
+    <AppSelect
       value={stringValue(current)}
-      onChange={(e) => onChange(e.target.value)}
-      required={required}
+      onChange={onChange}
+      options={[{ value: '', label: '-' }, ...options]}
+      ariaLabel={field.name}
       className={inputClassName}
-    >
-      <option value="">-</option>
-      {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-    </select>
+    />
   );
 }
 
@@ -163,15 +162,13 @@ export default function IssueCustomFieldInputs({
           return (
             <div key={field.id}>
               <label className={labelClassName}>{field.name}{requiredMark}</label>
-              <select
+              <AppSelect
                 value={stringValue(current)}
-                onChange={(e) => onChange(field.id, e.target.value)}
-                required={field.isRequired}
+                onChange={(value) => onChange(field.id, value)}
+                options={[{ value: '', label: '-' }, ...options]}
+                ariaLabel={field.name}
                 className={inputClassName}
-              >
-                <option value="">-</option>
-                {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
+              />
             </div>
           );
         }
@@ -280,3 +277,4 @@ export default function IssueCustomFieldInputs({
     </>
   );
 }
+

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { useTrackers, useStatuses, useCreateTracker, useUpdateTracker, useDeleteTracker, useReorderTrackers } from '../../api/hooks';
+import AppSelect from '../../components/AppSelect';
 import type { Tracker } from '../../types';
 
 export default function TrackersPage() {
@@ -168,14 +169,13 @@ export default function TrackersPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">{t('trackers.defaultStatus')}</label>
-                <select className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={defaultStatusId} onChange={e => setDefaultStatusId(e.target.value)}>
-                  <option value="">—</option>
-                  {sortedStatuses.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
+                <AppSelect
+                  value={defaultStatusId}
+                  onChange={setDefaultStatusId}
+                  options={[{ value: '', label: '-' }, ...sortedStatuses.map((item) => ({ value: item.id, label: item.name }))]}
+                  ariaLabel={t('trackers.defaultStatus')}
+                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">{t('projects.description')}</label>
@@ -200,3 +200,4 @@ export default function TrackersPage() {
     </div>
   );
 }
+

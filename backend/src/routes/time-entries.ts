@@ -94,6 +94,32 @@ function isoWeekKey(d: Date): string {
   return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }
 
+async function userCanEditTimeEntry(
+  userId: string | undefined,
+  isAdmin: boolean | undefined,
+  entry: { userId: string; projectId: string },
+): Promise<boolean> {
+  if (isAdmin) return true;
+  if (!userId) return false;
+  if (entry.userId === userId) {
+    return hasAnyProjectPermission(userId, isAdmin, entry.projectId, ['log_time', 'edit_time_entries']);
+  }
+  return hasAnyProjectPermission(userId, isAdmin, entry.projectId, ['edit_time_entries']);
+}
+
+async function userCanDeleteTimeEntry(
+  userId: string | undefined,
+  isAdmin: boolean | undefined,
+  entry: { userId: string; projectId: string },
+): Promise<boolean> {
+  if (isAdmin) return true;
+  if (!userId) return false;
+  if (entry.userId === userId) {
+    return hasAnyProjectPermission(userId, isAdmin, entry.projectId, ['log_time', 'delete_time_entries']);
+  }
+  return hasAnyProjectPermission(userId, isAdmin, entry.projectId, ['delete_time_entries']);
+}
+
 router.get(
   '/',
   authenticate,
@@ -296,13 +322,19 @@ router.post(
         throw AppError.badRequest('更新するフィールドがありません');
       }
 
-      const where: Prisma.TimeEntryWhereInput = { id: { in: body.ids } };
-      if (!req.user!.admin) {
-        where.userId = req.user!.userId;
+      const entries = await prisma.timeEntry.findMany({
+        where: { id: { in: body.ids } },
+        select: { id: true, userId: true, projectId: true },
+      });
+      const allowedIds: string[] = [];
+      for (const entry of entries) {
+        if (await userCanEditTimeEntry(req.user?.userId, req.user?.admin, entry)) {
+          allowedIds.push(entry.id);
+        }
       }
 
       const result = await prisma.timeEntry.updateMany({
-        where,
+        where: { id: { in: allowedIds } },
         data: data as Prisma.TimeEntryUpdateManyMutationInput,
       });
       return sendSuccess(res, { updated: result.count });
@@ -408,7 +440,7 @@ router.put(
       const id = String(req.params.id);
       const existing = await prisma.timeEntry.findUnique({ where: { id } });
       if (!existing) throw AppError.notFound('工数エントリが見つかりません');
-      if (!req.user!.admin && existing.userId !== req.user!.userId) {
+      if (!(await userCanEditTimeEntry(req.user?.userId, req.user?.admin, existing))) {
         throw AppError.forbidden();
       }
 
@@ -461,7 +493,7 @@ router.delete(
       const id = String(req.params.id);
       const existing = await prisma.timeEntry.findUnique({ where: { id } });
       if (!existing) throw AppError.notFound('工数エントリが見つかりません');
-      if (!req.user!.admin && existing.userId !== req.user!.userId) {
+      if (!(await userCanDeleteTimeEntry(req.user?.userId, req.user?.admin, existing))) {
         throw AppError.forbidden();
       }
 

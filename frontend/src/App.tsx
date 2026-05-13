@@ -51,7 +51,6 @@ import AdminGroupNewPage from './pages/admin/GroupNewPage';
 import AdminGroupDetailPage from './pages/admin/GroupDetailPage';
 import AdminTrackersPage from './pages/admin/TrackersPage';
 import AdminStatusesPage from './pages/admin/StatusesPage';
-import AdminWorkflowsPage from './pages/admin/WorkflowsPage';
 import AdminCustomFieldsPage from './pages/admin/CustomFieldsPage';
 import AdminEnumerationsPage from './pages/admin/EnumerationsPage';
 import AdminSettingsPage from './pages/admin/SettingsPage';
@@ -139,7 +138,7 @@ export default function App() {
       <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
         <Route index element={<HomePage />} />
         <Route path="projects" element={<ProjectsPage />} />
-        <Route path="projects/new" element={<ProjectNewPage />} />
+        <Route path="projects/new" element={<AdminRoute><ProjectNewPage /></AdminRoute>} />
         <Route path="projects/:identifier/edit" element={<ProjectNewPage isEdit />} />
         <Route path="projects/:identifier" element={<ProjectDetailPage />} />
         <Route path="projects/:identifier/settings" element={<ProjectSettingsPage />} />
@@ -190,7 +189,6 @@ export default function App() {
         <Route path="admin/groups/:groupId" element={<AdminRoute><AdminGroupDetailPage /></AdminRoute>} />
         <Route path="admin/trackers" element={<AdminRoute><AdminTrackersPage /></AdminRoute>} />
         <Route path="admin/statuses" element={<AdminRoute><AdminStatusesPage /></AdminRoute>} />
-        <Route path="admin/workflows" element={<AdminRoute><AdminWorkflowsPage /></AdminRoute>} />
         <Route path="admin/custom-fields" element={<AdminRoute><AdminCustomFieldsPage /></AdminRoute>} />
         <Route path="admin/enumerations" element={<AdminRoute><AdminEnumerationsPage /></AdminRoute>} />
         <Route path="admin/settings" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />

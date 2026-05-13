@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { useUsers, useCreateUser, useUpdateUser, useDeleteUser } from '../../api/hooks';
+import AppSelect from '../../components/AppSelect';
 import { type User, UserStatusCode } from '../../types';
 
 function userDisplayName(u: User) {
@@ -267,16 +268,18 @@ export default function UsersPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-gray-900">{t('users.title')}</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <select
-            className="rounded border border-gray-300 px-3 py-2 text-sm"
+          <AppSelect
             value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value as StatusFilter)}
-          >
-            <option value="all">{t('search.scope.all')}</option>
-            <option value="active">{t('users.status.active')}</option>
-            <option value="registered">{t('users.status.registered')}</option>
-            <option value="locked">{t('users.status.locked')}</option>
-          </select>
+            onChange={(value) => setStatusFilter(value as StatusFilter)}
+            options={[
+              { value: 'all', label: t('search.scope.all') },
+              { value: 'active', label: t('users.status.active') },
+              { value: 'registered', label: t('users.status.registered') },
+              { value: 'locked', label: t('users.status.locked') },
+            ]}
+            ariaLabel={t('users.status.title')}
+            className="rounded border border-gray-300 px-3 py-2 text-sm"
+          />
           <button type="button" onClick={() => { resetForm(); setPasswordError(''); setAddOpen(true); }} className="rounded bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700">
             {t('users.new')}
           </button>

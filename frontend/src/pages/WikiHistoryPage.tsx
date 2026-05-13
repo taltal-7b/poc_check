@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { Trash2 } from 'lucide-react';
 import ProjectSubNav from '../components/ProjectSubNav';
+import AppSelect from '../components/AppSelect';
 import { useDeleteWikiVersion, useProject, useWikiHistory, useWikiPage } from '../api/hooks';
 
 export default function WikiHistoryPage() {
@@ -112,33 +113,23 @@ export default function WikiHistoryPage() {
               <div className="flex flex-wrap items-end gap-3">
                 <label className="text-sm">
                   <span className="mb-1 block text-gray-600">比較元</span>
-                  <select
+                  <AppSelect
                     value={fromVersion}
-                    onChange={(e) => setFromVersion(e.target.value)}
+                    onChange={setFromVersion}
+                    options={[{ value: '', label: '-' }, ...rows.map((r) => ({ value: String(r.version), label: String(r.version) }))]}
+                    ariaLabel="比較元"
                     className="rounded border border-gray-300 px-2 py-1.5 text-sm"
-                  >
-                    <option value="">—</option>
-                    {rows.map((r) => (
-                      <option key={`from-${r.id}`} value={r.version}>
-                        {r.version}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </label>
                 <label className="text-sm">
                   <span className="mb-1 block text-gray-600">比較先</span>
-                  <select
+                  <AppSelect
                     value={toVersion}
-                    onChange={(e) => setToVersion(e.target.value)}
+                    onChange={setToVersion}
+                    options={[{ value: '', label: '-' }, ...rows.map((r) => ({ value: String(r.version), label: String(r.version) }))]}
+                    ariaLabel="比較先"
                     className="rounded border border-gray-300 px-2 py-1.5 text-sm"
-                  >
-                    <option value="">—</option>
-                    {rows.map((r) => (
-                      <option key={`to-${r.id}`} value={r.version}>
-                        {r.version}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </label>
                 <button
                   type="button"
@@ -195,3 +186,5 @@ export default function WikiHistoryPage() {
     </div>
   );
 }
+
+

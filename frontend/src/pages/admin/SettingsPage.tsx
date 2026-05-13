@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings, useUpdateSettings, useTestEmail } from '../../api/hooks';
+import AppSelect from '../../components/AppSelect';
 
 const TABS = ['general', 'display', 'authentication', 'notifications', 'projects', 'issues', 'timeTracking'] as const;
 
@@ -53,15 +54,17 @@ export default function SettingsPage() {
   const TwoFactorField = () => (
     <label className="block text-sm">
       <span className="block font-medium text-gray-700">二要素認証</span>
-      <select
-        className="mt-1 w-full max-w-xl rounded border border-gray-300 px-3 py-2 text-sm"
+      <AppSelect
         value={values.two_factor_authentication ?? 'optional'}
-        onChange={(e) => setField('two_factor_authentication', e.target.value)}
-      >
-        <option value="optional">任意</option>
-        <option value="required">必須</option>
-        <option value="admin">システム管理者のみ必須</option>
-      </select>
+        onChange={(value) => setField('two_factor_authentication', value)}
+        options={[
+          { value: 'optional', label: '任意' },
+          { value: 'required', label: '必須' },
+          { value: 'admin', label: 'システム管理者のみ必須' },
+        ]}
+        ariaLabel="二要素認証"
+        className="mt-1 w-full max-w-xl rounded border border-gray-300 px-3 py-2 text-sm"
+      />
     </label>
   );
 
@@ -102,14 +105,6 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <Field k="per_page_options" label={t('settings.perPageOptions')} />
               <Field k="text_formatting" label={t('settings.textFormatting')} />
-              <button
-                type="button"
-                className="rounded border border-gray-300 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100 disabled:opacity-50"
-                onClick={() => testEmail.mutate()}
-                disabled={testEmail.isPending}
-              >
-                {t('admin.testEmail')}
-              </button>
             </div>
           )}
           {tab === 'authentication' && (
@@ -123,6 +118,14 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <Field k="mail_from" label={t('settings.mailFrom')} />
               <Field k="bcc_recipients" label={t('settings.bccRecipients')} />
+              <button
+                type="button"
+                className="w-fit rounded border border-gray-300 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100 disabled:opacity-50"
+                onClick={() => testEmail.mutate()}
+                disabled={testEmail.isPending}
+              >
+                {t('admin.testEmail')}
+              </button>
             </div>
           )}
           {tab === 'projects' && (
@@ -145,3 +148,4 @@ export default function SettingsPage() {
     </div>
   );
 }
+

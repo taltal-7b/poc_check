@@ -65,14 +65,19 @@ router.get(
     if (!project) throw AppError.notFound('プロジェクトが見つかりません');
     const projectId = project.id;
 
-    await requireProjectView(req.user, projectId, [
-      'view_issues',
-      'view_messages',
-      'view_wiki_pages',
-      'view_documents',
-      'view_news',
-      'view_time_entries',
-    ]);
+    await requireProjectView(
+      req.user,
+      projectId,
+      [
+        'view_issues',
+        'view_messages',
+        'view_wiki_pages',
+        'view_documents',
+        'view_news',
+        'view_time_entries',
+      ],
+      { allowPublic: false },
+    );
 
     const members = await prisma.member.findMany({
       where: { projectId },

@@ -3,7 +3,7 @@ import { config } from '../config';
 import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
-import { authenticate, authenticateOrQueryApiKey } from '../middleware/auth';
+import { authenticate, authenticateOrQueryApiKey, requireAdmin } from '../middleware/auth';
 import { createOpenAiProjectBottleneckDetection, createOpenAiProjectProgressSummary, createOpenAiProjectTaskInstruction, createOpenAiProjectWeeklyReport } from '../services/openai-service';
 import {
   getUserGroupIds,
@@ -1583,6 +1583,7 @@ router.get(
 router.post(
   '/',
   authenticate,
+  requireAdmin,
   catchAsync(async (req, res) => {
     const parsed = createProjectSchema.safeParse(req.body);
     if (!parsed.success) {

@@ -40,7 +40,6 @@ export const ja = {
   },
   trackers: { name: 'トラッカー' },
   statuses: { name: 'ステータス' },
-  workflows: { name: 'ワークフロー' },
   customFields: { name: 'カスタムフィールド' },
   timeEntries: {
     name: '工数',

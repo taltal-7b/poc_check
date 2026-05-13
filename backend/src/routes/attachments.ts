@@ -19,12 +19,13 @@ import { upload } from '../middleware/upload';
 import { config } from '../config';
 import { z } from 'zod';
 import { userCanAccessAttachment } from '../utils/project-access';
+import { hasAnyProjectPermission } from '../utils/project-permissions';
 
 const router = Router({ mergeParams: true });
 
 function scoreFilename(s: string): number {
   const jp = (s.match(/[\u3040-\u30ff\u3400-\u9fff]/g) ?? []).length;
-  const bad = (s.match(/[ãÃâÂ¢�]/g) ?? []).length;
+  const bad = (s.match(/[\u00e3\u00c3\u00e2\u00c2\u00a2\ufffd]/g) ?? []).length;
   return jp * 2 - bad * 2;
 }
 
@@ -56,6 +57,67 @@ function cleanupUploadedFiles(req: Request) {
   }
 }
 
+async function userCanWriteAttachmentTarget(
+  user: Express.Request['user'],
+  attachment: {
+    issueId?: string | null;
+    documentId?: string | null;
+    journalId?: string | null;
+    containerType?: string | null;
+    containerId?: string | null;
+  },
+): Promise<boolean> {
+  if (user?.admin) return true;
+  if (!user?.userId) return false;
+
+  if (attachment.issueId) {
+    const issue = await prisma.issue.findUnique({ where: { id: attachment.issueId }, select: { projectId: true } });
+    return issue
+      ? hasAnyProjectPermission(user.userId, user.admin, issue.projectId, ['add_issues', 'edit_issues', 'add_issue_notes'])
+      : false;
+  }
+
+  if (attachment.documentId) {
+    const document = await prisma.document.findUnique({ where: { id: attachment.documentId }, select: { projectId: true } });
+    return document ? hasAnyProjectPermission(user.userId, user.admin, document.projectId, ['manage_documents']) : false;
+  }
+
+  if (attachment.journalId) {
+    const journal = await prisma.journal.findUnique({
+      where: { id: attachment.journalId },
+      select: { issue: { select: { projectId: true } } },
+    });
+    return journal
+      ? hasAnyProjectPermission(user.userId, user.admin, journal.issue.projectId, ['add_issue_notes', 'edit_issue_notes', 'edit_issues'])
+      : false;
+  }
+
+  if (attachment.containerType && attachment.containerId) {
+    if (attachment.containerType === 'News') {
+      const news = await prisma.news.findUnique({ where: { id: attachment.containerId }, select: { projectId: true } });
+      return news ? hasAnyProjectPermission(user.userId, user.admin, news.projectId, ['manage_news']) : false;
+    }
+
+    if (attachment.containerType === 'WikiPage') {
+      const page = await prisma.wikiPage.findUnique({
+        where: { id: attachment.containerId },
+        select: { wiki: { select: { projectId: true } } },
+      });
+      return page ? hasAnyProjectPermission(user.userId, user.admin, page.wiki.projectId, ['edit_wiki_pages']) : false;
+    }
+
+    if (attachment.containerType === 'Message') {
+      const message = await prisma.message.findUnique({
+        where: { id: attachment.containerId },
+        select: { board: { select: { projectId: true } } },
+      });
+      return message ? hasAnyProjectPermission(user.userId, user.admin, message.board.projectId, ['add_messages', 'manage_boards']) : false;
+    }
+  }
+
+  return true;
+}
+
 router.post(
   '/upload',
   authenticate,
@@ -77,15 +139,20 @@ router.post(
       }
 
       if (meta && (meta.issueId || meta.documentId || meta.journalId || (meta.containerType && meta.containerId))) {
-        const canAttach = await userCanAccessAttachment(req.user, {
-          authorId: req.user!.userId,
+        const target = {
           containerType: meta.containerType ?? null,
           containerId: meta.containerId ?? null,
           issueId: meta.issueId ?? null,
           documentId: meta.documentId ?? null,
           journalId: meta.journalId ?? null,
+        };
+        const canAttach = await userCanAccessAttachment(req.user, {
+          authorId: req.user!.userId,
+          ...target,
         });
         if (!canAttach) throw AppError.forbidden();
+        const canWriteTarget = await userCanWriteAttachmentTarget(req.user, target);
+        if (!canWriteTarget) throw AppError.forbidden();
       }
 
       const created = await prisma.$transaction(
@@ -201,6 +268,9 @@ router.delete(
       if (!attachment) throw AppError.notFound('添付が見つかりません');
 
       if (!req.user!.admin && attachment.authorId !== req.user!.userId) {
+        throw AppError.forbidden();
+      }
+      if (!req.user!.admin && !(await userCanWriteAttachmentTarget(req.user, attachment))) {
         throw AppError.forbidden();
       }
 

@@ -408,20 +408,6 @@ export const UserStatusCode = {
   Locked: 3,
 } as const;
 
-export interface WorkflowSnapshot {
-  trackerId: string;
-  roleId: string;
-  /** Map: fromStatusId → allowed target status ids */
-  allowedTransitions: Record<string, string[]>;
-}
-
-export interface CopyWorkflowPayload {
-  sourceTrackerId: string;
-  sourceRoleId: string;
-  targetTrackerIds: string[];
-  targetRoleIds: string[];
-}
-
 export interface IssueStatusUsage {
   inUse: boolean;
   count: number;

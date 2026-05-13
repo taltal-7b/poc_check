@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type MouseEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { renderMarkdown } from '../components/RichTextEditor';
@@ -6,10 +6,12 @@ import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { Pencil, FileIcon, Download, Trash2, Check, X, Rss } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
+import AppSelect from '../components/AppSelect';
 import IssueCustomFieldInputs from '../components/IssueCustomFieldInputs';
 import { useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useUpdateJournal, useDeleteJournal, useTrackers, useStatuses, useMembers, useProjectIssues, useIssueCustomFields } from '../api/hooks';
 import { AttachmentLink, AttachmentPreview } from '../components/AttachmentLink';
 import { useAuthStore } from '../stores/auth';
+import { openAuthenticatedAtom } from '../utils/atom';
 import type { CustomField, Issue, IssueCustomFieldValue, Journal, JournalDetail, User, Attachment } from '../types';
 
 type IssueWithExtras = Issue & {
@@ -338,6 +340,20 @@ export default function IssueDetailPage() {
     );
   }, [isAuthenticated, currentUser, permissionSet]);
 
+  const canEditJournal = (journalUserId: string) => {
+    if (!isAuthenticated) return false;
+    if (currentUser?.admin) return true;
+    if (journalUserId === currentUser?.id) return canComment;
+    return permissionSet.has('edit_issue_notes') || permissionSet.has('edit_issues');
+  };
+
+  const canDeleteJournal = (journalUserId: string) => {
+    if (!isAuthenticated) return false;
+    if (currentUser?.admin) return true;
+    if (journalUserId === currentUser?.id) return canComment;
+    return permissionSet.has('delete_issue_notes') || permissionSet.has('edit_issues');
+  };
+
   useEffect(() => {
     const raw = issue?.description;
     if (!raw) { setDescHtml(''); return; }
@@ -611,6 +627,10 @@ export default function IssueDetailPage() {
   const issueAtomUrl = projectSlug || issue.project?.identifier
     ? `/api/v1/projects/${projectSlug || issue.project?.identifier}/issues/${issue.id}/atom`
     : `/api/v1/issues/${issue.id}/atom`;
+  const openIssueAtom = async (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    await openAuthenticatedAtom(issueAtomUrl);
+  };
   const repositoryValue = (issue as Issue & { repository?: string }).repository;
   const customFieldDisplayText = (field: IssueCustomFieldValue): string => {
     const raw = field.value;
@@ -790,30 +810,43 @@ export default function IssueDetailPage() {
           <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.tracker')}</label>
-              <select value={form.trackerId} onChange={(e) => setField('trackerId', e.target.value)} className={selectCls}>
-                {trackers.map((tr) => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
-              </select>
+              <AppSelect
+                value={form.trackerId}
+                onChange={(value) => setField('trackerId', value)}
+                options={trackers.map((tr) => ({ value: tr.id, label: tr.name }))}
+                ariaLabel={t('issues.tracker')}
+                className={selectCls}
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.status')}</label>
-              <select value={form.statusId} onChange={(e) => setField('statusId', e.target.value)} className={selectCls}>
-                {statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
+              <AppSelect
+                value={form.statusId}
+                onChange={(value) => setField('statusId', value)}
+                options={statuses.map((item) => ({ value: item.id, label: item.name }))}
+                ariaLabel={t('issues.status')}
+                className={selectCls}
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.priority')}</label>
-              <select value={form.priority} onChange={(e) => setField('priority', e.target.value)} className={selectCls}>
-                {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{t(`issues.priorities.${n}` as 'issues.priorities.1')}</option>)}
-              </select>
+              <AppSelect
+                value={form.priority}
+                onChange={(value) => setField('priority', value)}
+                options={[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: t(`issues.priorities.${n}` as 'issues.priorities.1') }))}
+                ariaLabel={t('issues.priority')}
+                className={selectCls}
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.assignee')}</label>
-              <select value={form.assigneeValue} onChange={(e) => setField('assigneeValue', e.target.value)} className={selectCls}>
-                <option value="">-</option>
-                {assigneeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
+              <AppSelect
+                value={form.assigneeValue}
+                onChange={(value) => setField('assigneeValue', value)}
+                options={[{ value: '', label: '-' }, ...assigneeOptions]}
+                ariaLabel={t('issues.assignee')}
+                className={selectCls}
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.startDate')}</label>
@@ -838,14 +871,16 @@ export default function IssueDetailPage() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.parent')}</label>
-              <select value={form.parentId} onChange={(e) => setField('parentId', e.target.value)} className={selectCls}>
-                <option value="">-</option>
-                {(projectIssues ?? []).map((iss) => (
-                  <option key={iss.id} value={iss.id}>
-                    #{(iss as Issue).number} {iss.subject}
-                  </option>
-                ))}
-              </select>
+              <AppSelect
+                value={form.parentId}
+                onChange={(value) => setField('parentId', value)}
+                options={[
+                  { value: '', label: '-' },
+                  ...(projectIssues ?? []).map((item) => ({ value: item.id, label: `#${(item as Issue).number} ${item.subject}` })),
+                ]}
+                ariaLabel={t('issues.parent')}
+                className={selectCls}
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.repository')}</label>
@@ -1033,7 +1068,8 @@ export default function IssueDetailPage() {
                   const imgs = (j.attachments ?? []).filter((a) => a.contentType?.startsWith('image/'));
                   const nonImgs = (j.attachments ?? []).filter((a) => !a.contentType?.startsWith('image/'));
                   const userName = j.user ? `${j.user.lastname} ${j.user.firstname}`.trim() || j.user.login : '-';
-                  const canEdit = isAuthenticated && (j.userId === currentUser?.id || currentUser?.admin);
+                  const canEdit = canEditJournal(j.userId);
+                  const canDelete = canDeleteJournal(j.userId);
                   const isEdited = j.updatedAt && j.createdAt !== j.updatedAt;
 
                   return (
@@ -1042,23 +1078,27 @@ export default function IssueDetailPage() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5 text-[11px] text-slate-400 leading-tight">
                           <span className="font-medium text-slate-600">{userName}</span>
-                          <span>ﾂｷ</span>
+                          <span>・</span>
                           <time dateTime={j.createdAt}>{format(new Date(j.createdAt), 'yyyy-MM-dd HH:mm', { locale })}</time>
                           {isEdited && <span className="text-slate-400">{t('activity.edited')}</span>}
                         </div>
-                        {canEdit && hasNotes && editingJournalId !== j.id && (
+                        {(canEdit || canDelete) && hasNotes && editingJournalId !== j.id && (
                           <div className="flex items-center gap-0.5">
-                            <button type="button" onClick={() => startEditJournal(j)}
-                              title={t('app.edit')}
-                              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                            <button type="button"
-                              onClick={() => setDeleteJournalTarget({ id: j.id, userName })}
-                              title={t('app.delete')}
-                              className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-500">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            {canEdit && (
+                              <button type="button" onClick={() => startEditJournal(j)}
+                                title={t('app.edit')}
+                                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button type="button"
+                                onClick={() => setDeleteJournalTarget({ id: j.id, userName })}
+                                title={t('app.delete')}
+                                className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-500">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1191,6 +1231,7 @@ export default function IssueDetailPage() {
               </button>
               <a
                 href={issueAtomUrl}
+                onClick={openIssueAtom}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
               >
                 <Rss className="h-4 w-4" />
@@ -1248,3 +1289,4 @@ export default function IssueDetailPage() {
     </div>
   );
 }
+

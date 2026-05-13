@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type MouseEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Clock, Rss } from 'lucide-react';
@@ -7,6 +7,8 @@ import { ja } from 'date-fns/locale';
 import { useIssues, useProjectIssues, useStatuses, useTrackers, useMembers, useProject } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 import ProjectSubNav from '../components/ProjectSubNav';
+import AppSelect from '../components/AppSelect';
+import { openAuthenticatedAtom } from '../utils/atom';
 import type { Issue } from '../types';
 
 const PER_PAGE = 10;
@@ -73,6 +75,11 @@ export default function IssuesPage() {
     return `${base}${qs ? `?${qs}` : ''}`;
   }, [identifier, trackerId, statusId, priority, assignee]);
 
+  const openAtom = async (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    await openAuthenticatedAtom(atomUrl);
+  };
+
   const globalQuery = useIssues(queryParams, { enabled: !identifier });
   const projectQuery = useProjectIssues(identifier ?? '', queryParams, { enabled: !!identifier });
 
@@ -101,9 +108,24 @@ export default function IssuesPage() {
 
   const membersQuery = useMembers(identifier ?? '');
   const members = identifier ? (membersQuery.data?.data ?? []) : [];
+  const trackerOptions = useMemo(
+    () => [{ value: '', label: EMPTY_MARK }, ...trackers.map((tr) => ({ value: tr.id, label: tr.name }))],
+    [trackers],
+  );
+  const statusOptions = useMemo(
+    () => [{ value: '', label: EMPTY_MARK }, ...statuses.map((s) => ({ value: s.id, label: s.name }))],
+    [statuses],
+  );
+  const priorityOptions = useMemo(
+    () => [
+      { value: '', label: EMPTY_MARK },
+      ...[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: t(`issues.priorities.${n}` as const) })),
+    ],
+    [t],
+  );
   const assigneeOptions = useMemo(() => {
     const seen = new Set<string>();
-    return members.flatMap((member) => {
+    const options = members.flatMap((member) => {
       if (member.user) {
         const value = `user:${member.user.id}`;
         if (seen.has(value)) return [];
@@ -121,6 +143,7 @@ export default function IssuesPage() {
       }
       return [];
     });
+    return [{ value: '', label: EMPTY_MARK }, ...options];
   }, [members]);
 
   const setFilter = (key: string, value: string) => {
@@ -161,63 +184,43 @@ export default function IssuesPage() {
       <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 lg:grid-cols-5">
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-500">{t('issues.tracker')}</label>
-          <select
+          <AppSelect
             value={trackerId}
-            onChange={(e) => setFilter('trackerId', e.target.value)}
+            onChange={(value) => setFilter('trackerId', value)}
+            options={trackerOptions}
+            ariaLabel={t('issues.tracker')}
             className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
-          >
-            <option value="">{EMPTY_MARK}</option>
-            {trackers.map((tr) => (
-              <option key={tr.id} value={tr.id}>
-                {tr.name}
-              </option>
-            ))}
-          </select>
+          />
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-500">{t('issues.status')}</label>
-          <select
+          <AppSelect
             value={statusId}
-            onChange={(e) => setFilter('statusId', e.target.value)}
+            onChange={(value) => setFilter('statusId', value)}
+            options={statusOptions}
+            ariaLabel={t('issues.status')}
             className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
-          >
-            <option value="">{EMPTY_MARK}</option>
-            {statuses.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+          />
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-500">{t('issues.priority')}</label>
-          <select
+          <AppSelect
             value={priority}
-            onChange={(e) => setFilter('priority', e.target.value)}
+            onChange={(value) => setFilter('priority', value)}
+            options={priorityOptions}
+            ariaLabel={t('issues.priority')}
             className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
-          >
-            <option value="">{EMPTY_MARK}</option>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <option key={n} value={String(n)}>
-                {t(`issues.priorities.${n}` as const)}
-              </option>
-            ))}
-          </select>
+          />
         </div>
         <div className="md:col-span-2 lg:col-span-2">
           <label className="mb-1 block text-xs font-medium text-slate-500">{t('issues.assignee')}</label>
-          <select
+          <AppSelect
             value={assignee}
-            onChange={(e) => setFilter('assignee', e.target.value)}
+            onChange={(value) => setFilter('assignee', value)}
+            options={assigneeOptions}
+            ariaLabel={t('issues.assignee')}
             className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
-          >
-            <option value="">{EMPTY_MARK}</option>
-            {assigneeOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          />
         </div>
       </div>
 
@@ -225,13 +228,13 @@ export default function IssuesPage() {
       {isError && <p className="text-red-600">{t('app.error')}</p>}
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-hidden">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50">
               <tr>
                 <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.number')}</th>
                 <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.tracker')}</th>
-                <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.subject')}</th>
+                <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.subjectColumn')}</th>
                 <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.status')}</th>
                 <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.priority')}</th>
                 <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.assignee')}</th>
@@ -315,6 +318,7 @@ export default function IssuesPage() {
       <div className="flex justify-end pt-2">
         <a
           href={atomUrl}
+          onClick={openAtom}
           className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
         >
           <Rss className="h-4 w-4" />

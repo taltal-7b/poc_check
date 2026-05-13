@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from './client';
 import { useAuthStore } from '../stores/auth';
-import type { ApiResponse, Project, ProjectAiBottleneckDetection, ProjectAiProgressSummary, ProjectAiTaskInstruction, ProjectAiWeeklyReport, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, WorkflowSnapshot, CopyWorkflowPayload, IssueStatusUsage, MailNotificationPreference, TotpSetup, TotpStatus, SearchResponse } from '../types';
+import type { ApiResponse, Project, ProjectAiBottleneckDetection, ProjectAiProgressSummary, ProjectAiTaskInstruction, ProjectAiWeeklyReport, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, IssueStatusUsage, MailNotificationPreference, TotpSetup, TotpStatus, SearchResponse } from '../types';
 
 function get<T>(url: string, params?: Record<string, unknown>) {
   return api.get<ApiResponse<T>>(url, { params }).then(r => r.data);
@@ -594,28 +594,6 @@ export const useDeleteIssueStatus = () => {
 };
 export const useIssueStatusUsage = (id: string) =>
   useQuery({ queryKey: ['issueStatusUsage', id], queryFn: () => get<IssueStatusUsage>(`/issue_statuses/${id}/usage`), enabled: !!id });
-
-// ========== Workflows ==========
-export const useWorkflow = (trackerId: string, roleId: string) =>
-  useQuery({
-    queryKey: ['workflow', trackerId, roleId],
-    queryFn: () => get<WorkflowSnapshot>('/workflows', { trackerId, roleId }),
-    enabled: !!trackerId && !!roleId,
-  });
-export const useUpdateWorkflow = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (body: WorkflowSnapshot) => put('/workflows', body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['workflow'] }),
-  });
-};
-export const useCopyWorkflow = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CopyWorkflowPayload) => post('/workflows/copy', body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['workflow'] }),
-  });
-};
 
 // ========== Custom fields (admin) ==========
 export const useCreateCustomField = () => {

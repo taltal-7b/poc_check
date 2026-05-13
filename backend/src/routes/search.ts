@@ -5,6 +5,7 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
 import { authenticate } from '../middleware/auth';
+import { readableProjectIds, resolveProjectRef } from '../utils/project-access';
 
 const router = Router();
 
@@ -34,22 +35,6 @@ function parseTypes(raw: string | undefined): SearchType[] {
     .map((t) => typeEnum.parse(t));
 }
 
-async function assertProjectAccess(userId: string, projectId: string, isAdmin: boolean) {
-  if (isAdmin) return;
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
-  if (!project) throw AppError.notFound('Project not found');
-  if (project.isPublic) return;
-  const member = await prisma.member.findFirst({ where: { projectId, userId } });
-  if (!member) throw AppError.forbidden('You cannot access this project');
-}
-
-function projectReadableFilter(userId: string, isAdmin: boolean): Prisma.ProjectWhereInput | undefined {
-  if (isAdmin) return undefined;
-  return {
-    OR: [{ isPublic: true }, { members: { some: { userId } } }],
-  };
-}
-
 function excerpt(value: string | null | undefined, q: string): string {
   const text = (value ?? '').replace(/\s+/g, ' ').trim();
   if (!text) return '';
@@ -60,14 +45,16 @@ function excerpt(value: string | null | undefined, q: string): string {
   return `${start > 0 ? '...' : ''}${text.slice(start, end)}${end < text.length ? '...' : ''}`;
 }
 
-function projectScope(scope: string): Prisma.IssueWhereInput {
-  return scope === 'all' ? {} : { projectId: scope };
-}
-
 function sortByDateDesc(a: SearchResult, b: SearchResult) {
   const ad = (a.updatedAt ?? a.createdAt)?.getTime() ?? 0;
   const bd = (b.updatedAt ?? b.createdAt)?.getTime() ?? 0;
   return bd - ad;
+}
+
+function scopedProjectId(readableIds: string[] | null, scopeProjectId: string | undefined) {
+  if (readableIds === null) return scopeProjectId ?? undefined;
+  if (scopeProjectId) return readableIds.includes(scopeProjectId) ? scopeProjectId : null;
+  return readableIds.length ? { in: readableIds } : null;
 }
 
 router.get('/', authenticate, async (req: Request, res: Response, next: NextFunction) => {
@@ -85,15 +72,18 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
       throw AppError.badRequest('Invalid search types');
     }
 
-    const userId = req.user!.userId;
-    const isAdmin = req.user!.admin;
-    if (scopeRaw !== 'all') {
-      await assertProjectAccess(userId, scopeRaw, isAdmin);
+    const scopeProject = scopeRaw === 'all' ? null : await resolveProjectRef(scopeRaw);
+    if (scopeRaw !== 'all' && !scopeProject) {
+      throw AppError.notFound('Project not found');
     }
+    const scopeProjectId = scopeProject?.id;
 
     const contains = { contains: q, mode: 'insensitive' as const };
-    const readable = projectReadableFilter(userId, isAdmin);
-    const scopedProject = scopeRaw === 'all' ? {} : { projectId: scopeRaw };
+    const issueProjectId = scopedProjectId(await readableProjectIds(req.user, ['view_issues']), scopeProjectId);
+    const newsProjectId = scopedProjectId(await readableProjectIds(req.user, ['view_news']), scopeProjectId);
+    const documentProjectId = scopedProjectId(await readableProjectIds(req.user, ['view_documents']), scopeProjectId);
+    const wikiProjectId = scopedProjectId(await readableProjectIds(req.user, ['view_wiki_pages']), scopeProjectId);
+    const messageProjectId = scopedProjectId(await readableProjectIds(req.user, ['view_messages']), scopeProjectId);
     const grouped: Record<SearchType, SearchResult[]> = {
       issues: [],
       news: [],
@@ -102,12 +92,11 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
       messages: [],
     };
 
-    if (types.includes('issues')) {
+    if (types.includes('issues') && issueProjectId !== null) {
       const issueWhere: Prisma.IssueWhereInput = {
         AND: [
           { OR: [{ subject: contains }, { description: contains }] },
-          projectScope(scopeRaw),
-          readable ? { project: readable } : {},
+          issueProjectId === undefined ? {} : { projectId: issueProjectId },
         ],
       };
       const issues = await prisma.issue.findMany({
@@ -146,8 +135,7 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
             {
               issue: {
                 AND: [
-                  scopedProject,
-                  readable ? { project: readable } : {},
+                  issueProjectId === undefined ? {} : { projectId: issueProjectId },
                 ],
               },
             },
@@ -203,8 +191,7 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
           where: {
             AND: [
               { id: { in: customIssueIds } },
-              projectScope(scopeRaw),
-              readable ? { project: readable } : {},
+              issueProjectId === undefined ? {} : { projectId: issueProjectId },
             ],
           },
           select: {
@@ -238,13 +225,12 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
       grouped.issues.sort(sortByDateDesc);
     }
 
-    if (types.includes('news')) {
+    if (types.includes('news') && newsProjectId !== null) {
       const news = await prisma.news.findMany({
         where: {
           AND: [
             { OR: [{ title: contains }, { summary: contains }, { description: contains }] },
-            scopedProject,
-            readable ? { project: readable } : {},
+            newsProjectId === undefined ? {} : { projectId: newsProjectId },
           ],
         },
         take: 50,
@@ -280,8 +266,7 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
             {
               news: {
                 AND: [
-                  scopedProject,
-                  readable ? { project: readable } : {},
+                  newsProjectId === undefined ? {} : { projectId: newsProjectId },
                 ],
               },
             },
@@ -318,13 +303,12 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
       grouped.news.sort(sortByDateDesc);
     }
 
-    if (types.includes('documents')) {
+    if (types.includes('documents') && documentProjectId !== null) {
       const documents = await prisma.document.findMany({
         where: {
           AND: [
             { OR: [{ title: contains }, { description: contains }] },
-            scopedProject,
-            readable ? { project: readable } : {},
+            documentProjectId === undefined ? {} : { projectId: documentProjectId },
           ],
         },
         take: 50,
@@ -351,16 +335,12 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
       }));
     }
 
-    if (types.includes('wiki')) {
+    if (types.includes('wiki') && wikiProjectId !== null) {
       const pages = await prisma.wikiPage.findMany({
         where: {
           AND: [
             { OR: [{ title: contains }, { content: { text: contains } }, { content: { comments: contains } }] },
-            scopeRaw === 'all'
-              ? readable
-                ? { wiki: { project: readable } }
-                : {}
-              : { wiki: { projectId: scopeRaw } },
+            wikiProjectId === undefined ? {} : { wiki: { projectId: wikiProjectId } },
           ],
         },
         take: 50,
@@ -391,16 +371,12 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
       }));
     }
 
-    if (types.includes('messages')) {
+    if (types.includes('messages') && messageProjectId !== null) {
       const messages = await prisma.message.findMany({
         where: {
           AND: [
             { OR: [{ subject: contains }, { content: contains }] },
-            scopeRaw === 'all'
-              ? readable
-                ? { board: { project: readable } }
-                : {}
-              : { board: { projectId: scopeRaw } },
+            messageProjectId === undefined ? {} : { board: { projectId: messageProjectId } },
           ],
         },
         take: 50,

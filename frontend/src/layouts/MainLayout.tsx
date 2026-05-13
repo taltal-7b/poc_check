@@ -47,7 +47,6 @@ export default function MainLayout() {
     { to: '/admin/groups', label: t('groups.title') },
     { to: '/admin/trackers', label: t('trackers.title') },
     { to: '/admin/statuses', label: t('statuses.title') },
-    { to: '/admin/workflows', label: t('workflows.title') },
     { to: '/admin/custom-fields', label: t('customFields.title') },
     { to: '/admin/enumerations', label: t('enumerations.pageTitle') },
     { to: '/admin/settings', label: t('settings.title') },

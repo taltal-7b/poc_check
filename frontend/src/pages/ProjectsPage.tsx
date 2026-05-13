@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type MouseEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Pencil, Rss, Trash2 } from 'lucide-react';
 import { useProjects, useDeleteProject } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
+import { openAuthenticatedAtom } from '../utils/atom';
 import type { Project } from '../types';
 
 type Tab = 'active' | 'archived' | 'closed' | 'all';
@@ -54,6 +55,11 @@ export default function ProjectsPage() {
     const qs = query.toString();
     return `/api/v1/projects/atom${qs ? `?${qs}` : ''}`;
   }, [params]);
+
+  const openAtom = async (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    await openAuthenticatedAtom(atomUrl);
+  };
 
   const { data, isLoading, isError } = useProjects({
     ...(params ?? {}),
@@ -200,7 +206,7 @@ export default function ProjectsPage() {
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-slate-900">{t('projects.title')}</h1>
-        {isAuthenticated && (
+        {isAuthenticated && isAdmin && (
           <Link
             to="/projects/new"
             className="inline-flex justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-700"
@@ -241,6 +247,7 @@ export default function ProjectsPage() {
       <div className="flex justify-end pt-2">
         <a
           href={atomUrl}
+          onClick={openAtom}
           className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
         >
           <Rss className="h-4 w-4" />

@@ -3,6 +3,7 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
 import { authenticate } from '../middleware/auth';
+import { hasAnyProjectPermission } from '../utils/project-permissions';
 import { notifyIssueEvent } from '../services/notification-service';
 import { logger } from '../utils/logger';
 import { z } from 'zod';
@@ -30,6 +31,32 @@ const updateJournalSchema = z.object({
   notes: z.string().min(1),
 });
 
+async function userCanEditJournal(
+  userId: string | undefined,
+  isAdmin: boolean | undefined,
+  journal: { userId: string; issue: { projectId: string } },
+): Promise<boolean> {
+  if (isAdmin) return true;
+  if (!userId) return false;
+  const permissions = journal.userId === userId
+    ? ['add_issue_notes', 'edit_own_issue_notes', 'edit_issue_notes', 'edit_issues']
+    : ['edit_issue_notes', 'edit_issues'];
+  return hasAnyProjectPermission(userId, isAdmin, journal.issue.projectId, permissions);
+}
+
+async function userCanDeleteJournal(
+  userId: string | undefined,
+  isAdmin: boolean | undefined,
+  journal: { userId: string; issue: { projectId: string } },
+): Promise<boolean> {
+  if (isAdmin) return true;
+  if (!userId) return false;
+  const permissions = journal.userId === userId
+    ? ['add_issue_notes', 'delete_issue_notes', 'edit_issue_notes', 'edit_issues']
+    : ['delete_issue_notes', 'edit_issues'];
+  return hasAnyProjectPermission(userId, isAdmin, journal.issue.projectId, permissions);
+}
+
 router.put(
   '/:id',
   authenticate,
@@ -45,7 +72,7 @@ router.put(
     });
     if (!journal) throw AppError.notFound('ジャーナルが見つかりません');
 
-    if (journal.userId !== req.user!.userId && !req.user!.admin) {
+    if (!(await userCanEditJournal(req.user?.userId, req.user?.admin, journal))) {
       throw AppError.forbidden('自分のコメントのみ編集できます');
     }
 
@@ -76,11 +103,11 @@ router.delete(
   catchAsync(async (req, res) => {
     const journal = await prisma.journal.findUnique({
       where: { id: req.params.id },
-      include: { details: true },
+      include: { details: true, issue: { select: { projectId: true } } },
     });
     if (!journal) throw AppError.notFound('ジャーナルが見つかりません');
 
-    if (journal.userId !== req.user!.userId && !req.user!.admin) {
+    if (!(await userCanDeleteJournal(req.user?.userId, req.user?.admin, journal))) {
       throw AppError.forbidden('自分のコメントのみ削除できます');
     }
 

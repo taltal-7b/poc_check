@@ -6,7 +6,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { renderMarkdown } from '../components/RichTextEditor';
 import { AttachmentLink } from '../components/AttachmentLink';
-import { Book, History, Lock, LockOpen, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Book, Download, History, Lock, LockOpen, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { useProject, useWikiPage, useWikiPages, useMembers } from '../api/hooks';
 import api from '../api/client';
 import { useAuthStore } from '../stores/auth';
@@ -51,6 +51,36 @@ function parsePermissions(raw: unknown): string[] {
     }
   }
   return [];
+}
+
+function filenameFromContentDisposition(value: string | undefined, fallback: string): string {
+  if (!value) return fallback;
+
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(value);
+  if (encoded?.[1]) {
+    try {
+      return decodeURIComponent(encoded[1]);
+    } catch {
+      return fallback;
+    }
+  }
+
+  const quoted = /filename="([^"]+)"/i.exec(value);
+  if (quoted?.[1]) return quoted[1];
+
+  const plain = /filename=([^;]+)/i.exec(value);
+  return plain?.[1]?.trim() || fallback;
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 export default function WikiPage() {
@@ -128,6 +158,26 @@ export default function WikiPage() {
   const [wikiActionsOpen, setWikiActionsOpen] = useState(false);
   const [deleteWikiOpen, setDeleteWikiOpen] = useState(false);
   const [deleteErrorMessage, setDeleteErrorMessage] = useState<string | null>(null);
+  const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(null);
+
+  const exportWikiPdf = useMutation({
+    mutationFn: async () => {
+      if (!projectId || !decodedTitle) return;
+      setExportErrorMessage(null);
+      const res = await api.get(`/projects/${projectId}/wiki/${encodeURIComponent(decodedTitle)}/export/pdf`, {
+        responseType: 'blob',
+      });
+      const filename = filenameFromContentDisposition(
+        res.headers['content-disposition'],
+        `${decodedTitle}.pdf`,
+      );
+      downloadBlob(res.data, filename);
+    },
+    onError: (error: any) => {
+      const msg = error?.response?.data?.error?.message || t('app.error');
+      setExportErrorMessage(msg);
+    },
+  });
 
   const toggleProtect = useMutation({
     mutationFn: async () => {
@@ -260,13 +310,15 @@ export default function WikiPage() {
                     {t('wiki.editPage')}
                   </button>
                 )}
-                <a
-                  href={`/api/v1/projects/${projectId}/wiki/${encodeURIComponent(decodedTitle)}/export/pdf`}
-                  download
+                <button
+                  type="button"
+                  disabled={exportWikiPdf.isPending || !projectId || !decodedTitle}
+                  onClick={() => exportWikiPdf.mutate()}
                   className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
                 >
+                  <Download size={14} />
                   {t('wiki.export')}
-                </a>
+                </button>
                 <div className="relative">
                 <button
                   type="button"
@@ -355,6 +407,11 @@ export default function WikiPage() {
               <div className="p-8 text-center text-gray-500">{t('app.error')}</div>
             ) : (
               <>
+                {exportErrorMessage && (
+                  <div className="border-b border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700">
+                    {exportErrorMessage}
+                  </div>
+                )}
                 <article
                   className="p-6 text-sm text-gray-800 max-w-none space-y-3 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-semibold [&_pre]:bg-gray-100 [&_pre]:p-3 [&_pre]:rounded-md [&_pre]:overflow-x-auto [&_a]:text-primary-700 [&_ul]:list-disc [&_ul]:pl-5"
                   dangerouslySetInnerHTML={{ __html: html || `<p>${t('app.noData')}</p>` }}

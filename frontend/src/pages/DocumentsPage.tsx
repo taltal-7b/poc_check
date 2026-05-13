@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -6,6 +6,7 @@ import { format, parseISO } from 'date-fns';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { FileText, Pencil, Plus, Trash2, X } from 'lucide-react';
 import ProjectSubNav from '../components/ProjectSubNav';
+import AppSelect from '../components/AppSelect';
 import {
   useProject,
   useDocuments,
@@ -477,16 +478,18 @@ export default function DocumentsPage() {
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 text-sm text-gray-600">
             並び替え
-            <select
+            <AppSelect
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortKey)}
+              onChange={(value) => setSortBy(value as SortKey)}
+              options={[
+                { value: 'category', label: 'カテゴリ順' },
+                { value: 'date', label: '日付順' },
+                { value: 'title', label: 'タイトル順' },
+                { value: 'author', label: '作成者順' },
+              ]}
+              ariaLabel="並び替え"
               className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
-            >
-              <option value="category">カテゴリ順</option>
-              <option value="date">日付順</option>
-              <option value="title">タイトル順</option>
-              <option value="author">作成者順</option>
-            </select>
+            />
           </label>
           {canModify && (
             <button
@@ -701,18 +704,16 @@ export default function DocumentsPage() {
 
               <label className="block text-sm">
                 <span className="text-gray-700">{t('documents.category')}</span>
-                <select
+                <AppSelect
                   value={form.categoryId}
-                  onChange={(e) => setForm((prev) => ({ ...prev, categoryId: e.target.value }))}
+                  onChange={(value) => setForm((prev) => ({ ...prev, categoryId: value }))}
+                  options={[
+                    { value: '', label: t('app.required') },
+                    ...categories.map((c) => ({ value: c.id, label: c.name })),
+                  ]}
+                  ariaLabel={t('documents.category')}
                   className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                >
-                  <option value="">{t('app.required')}</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
 
               {editingDoc && (editingDoc.attachments?.length ?? 0) > 0 && (
@@ -811,3 +812,4 @@ export default function DocumentsPage() {
     </div>
   );
 }
+

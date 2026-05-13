@@ -11,6 +11,7 @@ import {
   Ticket,
 } from 'lucide-react';
 import { useProject, useActivities } from '../api/hooks';
+import AppSelect from '../components/AppSelect';
 import type { Activity as ActivityRow } from '../types';
 
 function unwrapList<T>(raw: unknown): T[] {
@@ -128,14 +129,13 @@ export default function ActivityPage() {
       <div className="flex flex-wrap gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         <label className="text-sm">
           <span className="block text-gray-600 mb-1">Type</span>
-          <select value={actType} onChange={(e) => setActType(e.target.value)} className="rounded border border-gray-300 px-2 py-1.5 text-sm min-w-[10rem]">
-            <option value="">All</option>
-            {types.map((x) => (
-              <option key={x} value={x}>
-                {activityTypeLabel(x)}
-              </option>
-            ))}
-          </select>
+          <AppSelect
+            value={actType}
+            onChange={setActType}
+            options={[{ value: '', label: 'All' }, ...types.map((x) => ({ value: x, label: activityTypeLabel(x) }))]}
+            ariaLabel="Type"
+            className="min-w-[10rem] rounded border border-gray-300 px-2 py-1.5 text-sm"
+          />
         </label>
         <label className="text-sm">
           <span className="block text-gray-600 mb-1">{t('issues.startDate')}</span>

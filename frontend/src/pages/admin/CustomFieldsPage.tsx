@@ -9,6 +9,7 @@ import {
   useTrackers,
   useUpdateCustomField,
 } from '../../api/hooks';
+import AppSelect from '../../components/AppSelect';
 import type { CustomField } from '../../types';
 
 const FIELD_FORMATS = [
@@ -252,13 +253,13 @@ export default function CustomFieldsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">{t('customFields.fieldFormat')}</label>
-                <select className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={fieldFormat} onChange={(e) => setFieldFormat(e.target.value)}>
-                  {FIELD_FORMATS.map((format) => (
-                    <option key={format} value={format}>
-                      {fieldFormatLabel(format)}
-                    </option>
-                  ))}
-                </select>
+                <AppSelect
+                  value={fieldFormat}
+                  onChange={setFieldFormat}
+                  options={FIELD_FORMATS.map((format) => ({ value: format, label: fieldFormatLabel(format) }))}
+                  ariaLabel={t('customFields.fieldFormat')}
+                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                />
               </div>
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={isRequired} onChange={(e) => setIsRequired(e.target.checked)} />

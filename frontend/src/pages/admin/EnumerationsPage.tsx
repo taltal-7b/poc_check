@@ -5,7 +5,6 @@ import { useEnumerations, useCreateEnumeration, useUpdateEnumeration, useDeleteE
 import type { Enumeration } from '../../types';
 
 const TAB_TYPES = [
-  { id: 'priorities', apiType: 'IssuePriority', labelKey: 'enumerations.priorities' as const },
   { id: 'documents', apiType: 'DocumentCategory', labelKey: 'enumerations.documentCategories' as const },
   { id: 'time', apiType: 'TimeEntryActivity', labelKey: 'enumerations.timeActivities' as const },
 ];

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft } from 'lucide-react';
 import { useCreateProject, useProject, useUpdateProject, useProjects, useTrackers } from '../api/hooks';
+import AppSelect from '../components/AppSelect';
 import type { Project } from '../types';
 
 const DEFAULT_MODULES = [
@@ -321,18 +322,13 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">{t('projects.parent')}</label>
-          <select
+          <AppSelect
             value={parentId}
-            onChange={(e) => setParentId(e.target.value)}
+            onChange={setParentId}
+            options={[{ value: '', label: '-' }, ...parentOptions.map((p) => ({ value: p.id, label: p.label }))]}
+            ariaLabel={t('projects.parent')}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
-          >
-            <option value="">—</option>
-            {parentOptions.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
+          />
         </div>
         <fieldset>
           <legend className="mb-2 text-sm font-medium text-slate-700">{t('projects.modules')}</legend>
@@ -381,3 +377,4 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
     </div>
   );
 }
+

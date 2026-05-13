@@ -21,7 +21,7 @@ const storage = multer.diskStorage({
 
 function scoreFilename(s: string): number {
   const jp = (s.match(/[\u3040-\u30ff\u3400-\u9fff]/g) ?? []).length;
-  const bad = (s.match(/[ãÃâÂ¢�]/g) ?? []).length;
+  const bad = (s.match(/[\u00e3\u00c3\u00e2\u00c2\u00a2\ufffd]/g) ?? []).length;
   return jp * 2 - bad * 2;
 }
 

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useCreateIssue, useUploadAttachments, useEnumerations, useProject, useStatuses, useMembers, useProjectIssues, useIssueCustomFields } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
+import AppSelect from '../components/AppSelect';
 import RichTextEditor from '../components/RichTextEditor';
 import IssueCustomFieldInputs from '../components/IssueCustomFieldInputs';
 import type { Issue } from '../types';
@@ -213,18 +214,14 @@ export default function IssueNewPage() {
           <label className="mb-1 block text-sm font-medium text-slate-700">
             {t('issues.tracker')}<RequiredMark />
           </label>
-          <select
+          <AppSelect
             value={trackerId}
-            onChange={(e) => setTrackerId(e.target.value)}
-            required
+            onChange={setTrackerId}
+            options={trackers.length === 0 ? [{ value: '', label: '-' }] : trackers.map((tr) => ({ value: tr.id, label: tr.name }))}
+            ariaLabel={t('issues.tracker')}
             disabled={!canCreateIssue || trackers.length === 0}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          >
-            {trackers.length === 0 && <option value="">—</option>}
-            {trackers.map((tr) => (
-              <option key={tr.id} value={tr.id}>{tr.name}</option>
-            ))}
-          </select>
+          />
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">
@@ -253,71 +250,55 @@ export default function IssueNewPage() {
           <label className="mb-1 block text-sm font-medium text-slate-700">
             {t('issues.status')}<RequiredMark />
           </label>
-          <select
+          <AppSelect
             value={statusId}
-            onChange={(e) => setStatusId(e.target.value)}
-            required
+            onChange={setStatusId}
+            options={statuses.map((item) => ({ value: item.id, label: item.name }))}
+            ariaLabel={t('issues.status')}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          >
-            {statuses.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
+          />
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">
             {t('issues.priority')}<RequiredMark />
           </label>
-          <select
-            value={priority}
-            onChange={(e) => setPriority(Number(e.target.value))}
+          <AppSelect
+            value={String(priority)}
+            onChange={(value) => setPriority(Number(value))}
+            options={[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: t(`issues.priorities.${n}` as const) }))}
+            ariaLabel={t('issues.priority')}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          >
-            {[1, 2, 3, 4, 5].map((n) => (
-              <option key={n} value={n}>{t(`issues.priorities.${n}` as const)}</option>
-            ))}
-          </select>
+          />
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.assignee')}</label>
-          <select
+          <AppSelect
             value={assigneeValue}
-            onChange={(e) => setAssigneeValue(e.target.value)}
+            onChange={setAssigneeValue}
+            options={[{ value: '', label: '-' }, ...assigneeOptions]}
+            ariaLabel={t('issues.assignee')}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="">—</option>
-            {assigneeOptions.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
+          />
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.category')}</label>
-          <select
+          <AppSelect
             value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
+            onChange={setCategoryId}
+            options={[{ value: '', label: '-' }, ...categories.map((item) => ({ value: item.id, label: item.name }))]}
+            ariaLabel={t('issues.category')}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="">—</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
+          />
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.parent')}</label>
-          <select
+          <AppSelect
             value={parentId}
-            onChange={(e) => setParentId(e.target.value)}
+            onChange={setParentId}
+            options={[{ value: '', label: '-' }, ...projectIssues.map((item) => ({ value: item.id, label: `#${item.number} ${item.subject}` }))]}
+            ariaLabel={t('issues.parent')}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="">—</option>
-            {projectIssues.map((iss) => (
-              <option key={iss.id} value={iss.id}>
-                #{iss.number} {iss.subject}
-              </option>
-            ))}
-          </select>
+          />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
@@ -394,3 +375,4 @@ export default function IssueNewPage() {
     </div>
   );
 }
+

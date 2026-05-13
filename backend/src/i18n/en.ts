@@ -42,7 +42,6 @@ export const en: TranslationKeys = {
   },
   trackers: { name: 'Tracker' },
   statuses: { name: 'Status' },
-  workflows: { name: 'Workflow' },
   customFields: { name: 'Custom field' },
   timeEntries: {
     name: 'Time entry',
