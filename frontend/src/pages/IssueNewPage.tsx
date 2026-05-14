@@ -195,12 +195,8 @@ export default function IssueNewPage() {
   if (projectQuery.isLoading || !currentUser?.id || !project) {
     return (
       <div className="space-y-6">
-        {id && (
-          <div className="mx-auto max-w-3xl px-4">
-            <ProjectSubNav identifier={id} />
-          </div>
-        )}
-        <div className="px-4 py-8">
+        {id && <ProjectSubNav identifier={id} />}
+        <div className="mx-auto max-w-3xl px-4 py-8">
           <p className="text-slate-500">{t('app.loading')}</p>
         </div>
       </div>
@@ -213,9 +209,7 @@ export default function IssueNewPage() {
 
   return (
     <div className="space-y-6">
-      <div className="mx-auto max-w-3xl px-4">
-        <ProjectSubNav identifier={project.identifier} />
-      </div>
+      <ProjectSubNav identifier={project.identifier} />
       <div className="mx-auto max-w-3xl px-4 py-2">
         <h1 className="mb-2 text-2xl font-bold text-slate-900">{t('issues.new')}</h1>
         <p className="mb-6 text-sm text-slate-500">
