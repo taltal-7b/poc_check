@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Image, Link as LinkIcon, Trash2 } from 'lucide-react';
+import ProjectSubNav from '../components/ProjectSubNav';
 import RichTextEditor from '../components/RichTextEditor';
 import { AttachmentLink } from '../components/AttachmentLink';
 import {
@@ -164,12 +165,19 @@ export default function WikiEditPage() {
   if (!identifier) return <p className="text-gray-500">{t('app.noData')}</p>;
 
   if (!canEditWiki && !membersQuery.isLoading) {
-    return <p className="text-gray-500">{t('app.loading')}</p>;
+    return (
+      <div className="space-y-6">
+        <ProjectSubNav identifier={identifier} />
+        <p className="text-gray-500">{t('app.loading')}</p>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900">{t('wiki.editPage')}</h1>
+    <div className="space-y-6">
+      <ProjectSubNav identifier={identifier} />
+      <div className="space-y-4">
+        <h1 className="text-2xl font-bold text-gray-900">{t('wiki.editPage')}</h1>
       {saveMessage && (
         <div
           className={`rounded-md border px-3 py-2 text-sm ${
@@ -265,24 +273,25 @@ export default function WikiEditPage() {
         </div>
       )}
 
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={save}
-          disabled={
-            create.isPending ||
-            update.isPending ||
-            uploadAttachments.isPending ||
-            deleteAttachment.isPending ||
-            !title.trim()
-          }
-          className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-        >
-          {t('app.save')}
-        </button>
-        <button type="button" onClick={cancel} className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50">
-          {t('app.cancel')}
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={save}
+            disabled={
+              create.isPending ||
+              update.isPending ||
+              uploadAttachments.isPending ||
+              deleteAttachment.isPending ||
+              !title.trim()
+            }
+            className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+          >
+            {t('app.save')}
+          </button>
+          <button type="button" onClick={cancel} className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50">
+            {t('app.cancel')}
+          </button>
+        </div>
       </div>
     </div>
   );
