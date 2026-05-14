@@ -233,7 +233,7 @@ export default function ProjectSettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="space-y-6">
       {identifier && <ProjectSubNav identifier={identifier} />}
       <div className="mx-auto max-w-3xl space-y-6">
       <h1 className="text-2xl font-bold text-slate-900">{t('nav.settings')}</h1>

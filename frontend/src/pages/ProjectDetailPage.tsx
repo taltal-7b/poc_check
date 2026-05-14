@@ -106,12 +106,13 @@ export default function ProjectDetailPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      {isLoading && <p className="text-slate-500">{t('app.loading')}</p>}
-      {isError && <p className="text-red-600">{t('app.error')}</p>}
+    <div className="space-y-6">
       <ProjectSubNav identifier={id} />
-      {project && (
-        <>
+      <div className="mx-auto max-w-6xl space-y-6">
+        {isLoading && <p className="text-slate-500">{t('app.loading')}</p>}
+        {isError && <p className="text-red-600">{t('app.error')}</p>}
+        {project && (
+          <>
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h1 className="text-2xl font-bold text-slate-900">{project.name}</h1>
             <p className="mt-1 font-mono text-sm text-slate-500">{project.identifier}</p>
@@ -260,8 +261,9 @@ export default function ProjectDetailPage() {
               )}
             </section>
           )}
-        </>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
