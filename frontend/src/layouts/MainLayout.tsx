@@ -64,19 +64,19 @@ export default function MainLayout() {
                   <Link key={l.to} to={l.to} className="px-3 py-1.5 rounded hover:bg-primary-600 text-sm font-medium transition">{l.label}</Link>
                 ))}
                 {adminLinks.length > 0 && (
-                  <div className="relative">
+                  <div
+                    className="relative"
+                    onMouseEnter={() => setAdminMenuOpen(true)}
+                    onMouseLeave={() => setAdminMenuOpen(false)}
+                  >
                     <button 
                       onClick={() => setAdminMenuOpen(!adminMenuOpen)}
-                      onMouseEnter={() => setAdminMenuOpen(true)}
                       className="px-3 py-1.5 rounded hover:bg-primary-600 text-sm font-medium flex items-center gap-1"
                     >
                       {t('nav.admin')} <ChevronDown size={14} />
                     </button>
                     {adminMenuOpen && (
-                      <div 
-                        onMouseLeave={() => setAdminMenuOpen(false)}
-                        className="absolute left-0 top-full bg-white text-gray-800 rounded-lg shadow-xl py-1 min-w-48 z-50"
-                      >
+                      <div className="absolute left-0 top-full bg-white text-gray-800 rounded-lg shadow-xl py-1 min-w-48 z-50">
                         {adminLinks.map(l => (
                           <Link 
                             key={l.to} 
