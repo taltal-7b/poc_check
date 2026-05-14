@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useCreateIssue, useUploadAttachments, useEnumerations, useProject, useStatuses, useMembers, useProjectIssues, useIssueCustomFields } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 import AppSelect from '../components/AppSelect';
+import ProjectSubNav from '../components/ProjectSubNav';
 import RichTextEditor from '../components/RichTextEditor';
 import IssueCustomFieldInputs from '../components/IssueCustomFieldInputs';
 import type { Issue } from '../types';
@@ -193,8 +194,15 @@ export default function IssueNewPage() {
 
   if (projectQuery.isLoading || !currentUser?.id || !project) {
     return (
-      <div className="px-4 py-8">
-        <p className="text-slate-500">{t('app.loading')}</p>
+      <div className="space-y-6">
+        {id && (
+          <div className="mx-auto max-w-3xl px-4">
+            <ProjectSubNav identifier={id} />
+          </div>
+        )}
+        <div className="px-4 py-8">
+          <p className="text-slate-500">{t('app.loading')}</p>
+        </div>
       </div>
     );
   }
@@ -204,12 +212,16 @@ export default function IssueNewPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-2 text-2xl font-bold text-slate-900">{t('issues.new')}</h1>
-      <p className="mb-6 text-sm text-slate-500">
-        {project.name} <span className="font-mono">({project.identifier})</span>
-      </p>
-      <form onSubmit={handleSubmit} className="space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="space-y-6">
+      <div className="mx-auto max-w-3xl px-4">
+        <ProjectSubNav identifier={project.identifier} />
+      </div>
+      <div className="mx-auto max-w-3xl px-4 py-2">
+        <h1 className="mb-2 text-2xl font-bold text-slate-900">{t('issues.new')}</h1>
+        <p className="mb-6 text-sm text-slate-500">
+          {project.name} <span className="font-mono">({project.identifier})</span>
+        </p>
+        <form onSubmit={handleSubmit} className="space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">
             {t('issues.tracker')}<RequiredMark />
@@ -371,7 +383,8 @@ export default function IssueNewPage() {
         >
           {isPending ? t('app.loading') : t('app.create')}
         </button>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }
