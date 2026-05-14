@@ -167,9 +167,10 @@ export default function IssuesPage() {
   const newIssueTo = identifier ? `/projects/${identifier}/issues/new` : '/projects';
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="space-y-6">
       {identifier && <ProjectSubNav identifier={identifier} />}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-slate-900">{t('issues.title')}</h1>
         {(canShowProjectCreateButton || (!identifier && isAuthenticated)) && (
           <Link
@@ -179,9 +180,9 @@ export default function IssuesPage() {
             {identifier ? t('issues.new') : t('projects.title')}
           </Link>
         )}
-      </div>
+        </div>
 
-      <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 lg:grid-cols-5">
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-500">{t('issues.tracker')}</label>
           <AppSelect
@@ -222,12 +223,12 @@ export default function IssuesPage() {
             className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
           />
         </div>
-      </div>
+        </div>
 
-      {isLoading && <p className="text-slate-500">{t('app.loading')}</p>}
-      {isError && <p className="text-red-600">{t('app.error')}</p>}
+        {isLoading && <p className="text-slate-500">{t('app.loading')}</p>}
+        {isError && <p className="text-red-600">{t('app.error')}</p>}
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto overflow-y-hidden">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50">
@@ -289,10 +290,10 @@ export default function IssuesPage() {
         {issues.length === 0 && !isLoading && (
           <p className="p-6 text-center text-slate-500">{t('app.noData')}</p>
         )}
-      </div>
+        </div>
 
-      {pagination && pagination.totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
+        {pagination && pagination.totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2">
           <button
             type="button"
             disabled={page <= 1}
@@ -312,18 +313,19 @@ export default function IssuesPage() {
           >
             {t('forums.next')}
           </button>
-        </div>
-      )}
+          </div>
+        )}
 
-      <div className="flex justify-end pt-2">
-        <a
-          href={atomUrl}
-          onClick={openAtom}
-          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-        >
-          <Rss className="h-4 w-4" />
-          Atom
-        </a>
+        <div className="flex justify-end pt-2">
+          <a
+            href={atomUrl}
+            onClick={openAtom}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            <Rss className="h-4 w-4" />
+            Atom
+          </a>
+        </div>
       </div>
     </div>
   );
