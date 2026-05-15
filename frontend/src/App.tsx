@@ -34,6 +34,7 @@ import {
   ForumTopicShow,
 } from './pages/forums/ForumViews';
 import DocumentsPage from './pages/DocumentsPage';
+import FilesPage from './pages/FilesPage';
 import GanttPage from './pages/GanttPage';
 import CalendarPage from './pages/CalendarPage';
 import MembersPage from './pages/MembersPage';
@@ -166,6 +167,7 @@ export default function App() {
         </Route>
         <Route path="projects/:identifier/documents" element={<ProjectModuleRoute moduleKey="documents"><DocumentsPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/documents/:documentId" element={<ProjectModuleRoute moduleKey="documents"><DocumentsPage /></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/files" element={<ProjectModuleRoute moduleKey="files"><FilesPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/gantt" element={<ProjectModuleRoute moduleKey="gantt"><GanttPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/calendar" element={<ProjectModuleRoute moduleKey="calendar"><CalendarPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/members" element={<MembersPage />} />

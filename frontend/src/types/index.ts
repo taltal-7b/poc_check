@@ -183,6 +183,26 @@ export interface Version {
   sharing: string;
 }
 
+export interface ProjectFile {
+  id: string;
+  projectId: string;
+  filename: string;
+  filesize: number;
+  contentType: string | null;
+  description: string | null;
+  versionId: string | null;
+  authorId: string;
+  createdAt: string;
+  author?: Pick<User, 'id' | 'login' | 'firstname' | 'lastname'> | null;
+  version?: Pick<Version, 'id' | 'name' | 'status' | 'dueDate'> | null;
+}
+
+export interface ProjectFilesPayload {
+  files: ProjectFile[];
+  versions: Array<Pick<Version, 'id' | 'name' | 'status' | 'dueDate'>>;
+  canManage: boolean;
+}
+
 export interface WikiPage {
   id: string;
   title: string;

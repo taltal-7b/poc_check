@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from './client';
 import { useAuthStore } from '../stores/auth';
-import type { ApiResponse, Project, ProjectAiBottleneckDetection, ProjectAiProgressSummary, ProjectAiTaskInstruction, ProjectAiWeeklyReport, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, IssueStatusUsage, MailNotificationPreference, TotpSetup, TotpStatus, SearchResponse } from '../types';
+import type { ApiResponse, Project, ProjectAiBottleneckDetection, ProjectAiProgressSummary, ProjectAiTaskInstruction, ProjectAiWeeklyReport, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, IssueStatusUsage, MailNotificationPreference, TotpSetup, TotpStatus, SearchResponse, ProjectFile, ProjectFilesPayload } from '../types';
 
 function get<T>(url: string, params?: Record<string, unknown>) {
   return api.get<ApiResponse<T>>(url, { params }).then(r => r.data);
@@ -496,6 +496,37 @@ export const useDocument = (projectId: string, id: string) =>
     queryFn: () => get<Document>(`/projects/${projectId}/documents/${id}`),
     enabled: !!projectId && !!id,
   });
+
+// ========== Project Files ==========
+export const useProjectFiles = (projectId: string) =>
+  useQuery({
+    queryKey: ['projectFiles', projectId],
+    queryFn: () => get<ProjectFilesPayload>(`/projects/${projectId}/files`),
+    enabled: !!projectId,
+  });
+
+export const useUploadProjectFiles = (projectId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ files, descriptions, versionId }: { files: File[]; descriptions?: string[]; versionId?: string }) => {
+      const fd = new FormData();
+      files.forEach((file) => fd.append('files', file));
+      fd.append('meta', JSON.stringify({ descriptions, versionId: versionId || null }));
+      return api.post<ApiResponse<{ files: ProjectFile[] }>>(`/projects/${projectId}/files`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }).then((r) => r.data);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['projectFiles', projectId] }),
+  });
+};
+
+export const useDeleteProjectFile = (projectId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/projects/${projectId}/files/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['projectFiles', projectId] }),
+  });
+};
 
 // ========== Members ==========
 export const useMembers = (projectId: string) => useQuery({ queryKey: ['members', projectId], queryFn: () => get<Member[]>(`/projects/${projectId}/members`), enabled: !!projectId });

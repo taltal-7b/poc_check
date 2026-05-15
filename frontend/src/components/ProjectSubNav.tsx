@@ -10,6 +10,7 @@ const tabs = [
   { key: 'news', suffix: 'news', labelKey: 'nav.news', moduleKey: 'news' },
   { key: 'forums', suffix: 'forums', labelKey: 'nav.forums', moduleKey: 'boards' },
   { key: 'documents', suffix: 'documents', labelKey: 'nav.documents', moduleKey: 'documents' },
+  { key: 'files', suffix: 'files', labelKey: 'nav.files', moduleKey: 'files' },
   { key: 'gantt', suffix: 'gantt', labelKey: 'nav.gantt', moduleKey: 'gantt' },
   { key: 'calendar', suffix: 'calendar', labelKey: 'nav.calendar', moduleKey: 'calendar' },
   { key: 'members', suffix: 'members', labelKey: 'nav.members', moduleKey: null },
