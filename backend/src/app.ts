@@ -23,6 +23,7 @@ import groupRoutes from './routes/groups';
 import searchRoutes from './routes/search';
 import activityRoutes from './routes/activities';
 import attachmentRoutes from './routes/attachments';
+import projectFileRoutes from './routes/project-files';
 import queryRoutes from './routes/queries';
 import settingRoutes from './routes/settings';
 import memberRoutes from './routes/members';
@@ -71,7 +72,7 @@ api.use('/projects/:projectId/news', requireProjectModule('news'), newsRoutes);
 api.use('/projects/:projectId/boards', requireProjectModule('boards'), boardRoutes);
 api.use('/projects/:projectId/members', memberRoutes);
 api.use('/projects/:projectId/time_entries', requireProjectModule('time_tracking'), timeEntryRoutes);
-api.use('/projects/:projectId/files', attachmentRoutes);
+api.use('/projects/:projectId/files', requireProjectModule('files'), projectFileRoutes);
 
 app.get('/up', (_req, res) => res.json({ status: 'ok' }));
 app.get('/robots.txt', (_req, res) => {
