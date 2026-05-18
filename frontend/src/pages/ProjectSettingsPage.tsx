@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import ProjectSubNav from '../components/ProjectSubNav';
 import AppSelect from '../components/AppSelect';
 import { useDeleteProject, useProject, useProjectCustomFields, useProjects, useTrackers, useUpdateProject } from '../api/hooks';
@@ -388,10 +389,11 @@ export default function ProjectSettingsPage() {
       </form>
       </div>
 
-      {confirmAction && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setConfirmAction(null)}>
-          <div className="mx-4 w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-900">{t('app.confirm')}</h3>
+      <Dialog open={confirmAction != null} onClose={() => setConfirmAction(null)} className="relative z-[100]">
+        <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="mx-4 w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+            <DialogTitle className="text-lg font-semibold text-slate-900">{t('app.confirm')}</DialogTitle>
             <p className="mt-2 text-sm text-slate-600">
               {confirmAction === 'save' && '変更内容を保存します。よろしいですか？'}
               {confirmAction === 'archive' && 'このプロジェクトをアーカイブします。よろしいですか？'}
@@ -420,9 +422,9 @@ export default function ProjectSettingsPage() {
                 {t('app.cancel')}
               </button>
             </div>
-          </div>
+          </DialogPanel>
         </div>
-      )}
+      </Dialog>
     </div>
   );
 }
