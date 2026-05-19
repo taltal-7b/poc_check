@@ -29,6 +29,7 @@ export interface Project {
   permissions?: {
     canCreateIssue: boolean;
     canEditIssue: boolean;
+    canDeleteIssue?: boolean;
     canAddIssueNotes: boolean;
     canManageProject: boolean;
     canUseAiActions?: boolean;

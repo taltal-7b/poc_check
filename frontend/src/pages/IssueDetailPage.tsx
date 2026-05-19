@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type MouseEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { renderMarkdown } from '../components/RichTextEditor';
 import { format } from 'date-fns';
@@ -8,7 +8,7 @@ import { Pencil, FileIcon, Download, Trash2, Check, X, Rss } from 'lucide-react'
 import RichTextEditor from '../components/RichTextEditor';
 import AppSelect from '../components/AppSelect';
 import IssueCustomFieldInputs from '../components/IssueCustomFieldInputs';
-import { useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useUpdateJournal, useDeleteJournal, useTrackers, useStatuses, useMembers, useProjectIssues, useIssueCustomFields } from '../api/hooks';
+import { useDeleteIssue, useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useUpdateJournal, useDeleteJournal, useTrackers, useStatuses, useMembers, useProjectIssues, useIssueCustomFields } from '../api/hooks';
 import { AttachmentLink, AttachmentPreview } from '../components/AttachmentLink';
 import { useAuthStore } from '../stores/auth';
 import { openAuthenticatedAtom } from '../utils/atom';
@@ -158,6 +158,7 @@ function parsePermissions(raw: unknown): string[] {
 
 export default function IssueDetailPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const params = useParams<{ identifier?: string; issueId?: string }>();
   const { identifier, issueId } = params;
   const id = issueId ?? '';
@@ -169,6 +170,7 @@ export default function IssueDetailPage() {
 
   const { data, isLoading, isError, error } = useIssue(id);
   const updateMutation = useUpdateIssue();
+  const issueDeleteMutation = useDeleteIssue();
   const uploadMutation = useUploadAttachments();
   const deleteMutation = useDeleteAttachment();
   const journalUpdateMutation = useUpdateJournal();
@@ -196,6 +198,7 @@ export default function IssueDetailPage() {
   const [editingJournalId, setEditingJournalId] = useState<string | null>(null);
   const [editingJournalNote, setEditingJournalNote] = useState('');
   const [deleteJournalTarget, setDeleteJournalTarget] = useState<{ id: string; userName: string } | null>(null);
+  const [deleteIssueConfirmOpen, setDeleteIssueConfirmOpen] = useState(false);
   const [editError, setEditError] = useState('');
   const [customFieldAttachments, setCustomFieldAttachments] = useState<Array<{ value: string; label: string }>>([]);
 
@@ -474,6 +477,16 @@ export default function IssueDetailPage() {
     if (!deleteTarget) return;
     deleteMutation.mutate(deleteTarget.id, {
       onSuccess: () => setDeleteTarget(null),
+    });
+  };
+
+  const confirmDeleteIssue = () => {
+    if (!issue || !canEditIssue) return;
+    issueDeleteMutation.mutate(issue.id, {
+      onSuccess: () => {
+        setDeleteIssueConfirmOpen(false);
+        navigate(projectSlug ? `/projects/${projectSlug}/issues` : '/issues');
+      },
     });
   };
 
@@ -961,14 +974,20 @@ export default function IssueDetailPage() {
               {editError || dateValidationError}
             </div>
           )}
-          <div className="flex items-center gap-3">
-            <button type="button" onClick={saveEdit} disabled={updateMutation.isPending || !form.subject.trim() || !!dateValidationError}
-              className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50">
-              {updateMutation.isPending ? t('app.loading') : t('app.save')}
-            </button>
-            <button type="button" onClick={cancelEdit}
-              className="rounded-lg border border-slate-300 px-5 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
-              {t('app.cancel')}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={saveEdit} disabled={updateMutation.isPending || !form.subject.trim() || !!dateValidationError}
+                className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50">
+                {updateMutation.isPending ? t('app.loading') : t('app.save')}
+              </button>
+              <button type="button" onClick={cancelEdit}
+                className="rounded-lg border border-slate-300 px-5 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+                {t('app.cancel')}
+              </button>
+            </div>
+            <button type="button" onClick={() => setDeleteIssueConfirmOpen(true)}
+              className="rounded-lg bg-red-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700">
+              {t('app.delete')}
             </button>
           </div>
         </div>
@@ -1259,6 +1278,32 @@ export default function IssueDetailPage() {
               <button type="button" onClick={confirmDelete} disabled={deleteMutation.isPending}
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
                 {deleteMutation.isPending ? t('app.loading') : t('app.delete')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete issue confirmation modal */}
+      {deleteIssueConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setDeleteIssueConfirmOpen(false)}>
+          <div className="mx-4 w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-900">{t('app.confirm')}</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              <span className="font-medium text-slate-800">#{issue.number} {issue.subject}</span>
+              {' '}を削除します。よろしいですか？
+            </p>
+            {issueDeleteMutation.isError && (
+              <p className="mt-3 text-sm text-red-600">{t('app.error')}</p>
+            )}
+            <div className="mt-5 flex justify-end gap-3">
+              <button type="button" onClick={() => setDeleteIssueConfirmOpen(false)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                {t('app.cancel')}
+              </button>
+              <button type="button" onClick={confirmDeleteIssue} disabled={issueDeleteMutation.isPending}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+                {issueDeleteMutation.isPending ? t('app.loading') : t('app.delete')}
               </button>
             </div>
           </div>

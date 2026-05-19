@@ -1565,6 +1565,9 @@ router.get(
       canEditIssue: await hasAnyProjectPermission(req.user?.userId, req.user?.admin, project.id, [
         'edit_issues',
       ]),
+      canDeleteIssue: await hasAnyProjectPermission(req.user?.userId, req.user?.admin, project.id, [
+        'edit_issues',
+      ]),
       canAddIssueNotes: await hasAnyProjectPermission(req.user?.userId, req.user?.admin, project.id, [
         'view_issues',
         'add_issue_notes',

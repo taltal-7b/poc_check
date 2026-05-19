@@ -170,6 +170,8 @@ export const useIssue = (id: string) => useQuery({ queryKey: ['issue', id], quer
 export const useCreateIssue = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (body: Partial<Issue>) => post<Issue>('/issues', body), onSuccess: () => qc.invalidateQueries({ queryKey: ['issues'] }) }); };
 export const useUpdateIssue = () => { const qc = useQueryClient(); return useMutation({ mutationFn: ({ id, ...body }: { id: string } & Record<string, unknown>) => put<Issue>(`/issues/${id}`, body), onSuccess: (_, v) => { qc.invalidateQueries({ queryKey: ['issues'] }); qc.invalidateQueries({ queryKey: ['issue', v.id] }); } }); };
 export const useDeleteIssue = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (id: string) => del(`/issues/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['issues'] }) }); };
+export const useBulkUpdateIssues = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (body: { ids: string[]; changes: Record<string, unknown> }) => post<{ updated: number; issues: Issue[] }>('/issues/bulk_update', body), onSuccess: () => qc.invalidateQueries({ queryKey: ['issues'] }) }); };
+export const useBulkDeleteIssues = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (ids: string[]) => post<{ deleted: number; ids: string[] }>('/issues/bulk_delete', { ids }), onSuccess: () => qc.invalidateQueries({ queryKey: ['issues'] }) }); };
 
 // ========== Journals ==========
 export const useUpdateJournal = () => {

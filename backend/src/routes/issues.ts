@@ -447,8 +447,9 @@ async function userCanDeleteIssue(
   userId: string | undefined,
   isAdmin: boolean | undefined,
   project: { id: string },
+  issueAuthorId: string,
 ): Promise<boolean> {
-  return hasAnyProjectPermission(userId, isAdmin, project.id, ['delete_issues']);
+  return userCanEditIssue(userId, isAdmin, project, issueAuthorId);
 }
 
 async function userCanAddIssueNotes(
@@ -563,6 +564,10 @@ const updateIssueSchema = z.object({
 const bulkUpdateSchema = z.object({
   ids: z.array(z.string().uuid()).min(1),
   changes: updateIssueSchema.omit({ notes: true }).partial(),
+});
+
+const bulkDeleteSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1),
 });
 
 const reactionBodySchema = z.object({
@@ -1226,6 +1231,7 @@ router.post(
       if (changes.dueDate !== undefined) data.dueDate = changes.dueDate;
       if (changes.estimatedHours !== undefined) data.estimatedHours = changes.estimatedHours;
       if (changes.doneRatio !== undefined) data.doneRatio = changes.doneRatio;
+      if (changes.repository !== undefined) data.repository = changes.repository;
       if (changes.statusId !== undefined) {
         data.closedOn = st?.isClosed ? oldIssue.closedOn ?? new Date() : null;
       }
@@ -1292,6 +1298,35 @@ router.post(
     }
 
     return sendSuccess(res, { updated: updated.length, issues: updated });
+  }),
+);
+
+router.post(
+  '/bulk_delete',
+  authenticate,
+  catchAsync(async (req, res) => {
+    const parsed = bulkDeleteSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw AppError.badRequest(parsed.error.flatten().formErrors.join('; ') || '入力が不正です');
+    }
+
+    const deletedIds: string[] = [];
+    for (const id of parsed.data.ids) {
+      const issue = await prisma.issue.findUnique({ where: { id } });
+      if (!issue) continue;
+
+      const project = await prisma.project.findUnique({ where: { id: issue.projectId } });
+      if (!project) continue;
+      const can = await userCanAccessProject(req.user?.userId, req.user?.admin, project);
+      if (!can) throw AppError.forbidden();
+      const canDelete = await userCanDeleteIssue(req.user?.userId, req.user?.admin, project, issue.authorId);
+      if (!canDelete) throw AppError.forbidden('チケットを削除する権限がありません');
+
+      await prisma.issue.delete({ where: { id } });
+      deletedIds.push(id);
+    }
+
+    return sendSuccess(res, { deleted: deletedIds.length, ids: deletedIds });
   }),
 );
 
@@ -1956,7 +1991,7 @@ router.delete(
     if (!proj) throw AppError.notFound();
     const can = await userCanAccessProject(req.user?.userId, req.user?.admin, proj);
     if (!can) throw AppError.forbidden();
-    const canDelete = await userCanDeleteIssue(req.user?.userId, req.user?.admin, proj);
+    const canDelete = await userCanDeleteIssue(req.user?.userId, req.user?.admin, proj, issue.authorId);
     if (!canDelete) throw AppError.forbidden('チケットを削除する権限がありません');
 
     await prisma.issue.delete({ where: { id: issue.id } });
