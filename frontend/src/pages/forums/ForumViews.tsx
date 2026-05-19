@@ -8,6 +8,7 @@ import { useAuthStore } from '../../stores/auth';
 import { useBoards, useBoardMessage, useBoardTopicsPage, useMembers, useProject } from '../../api/hooks';
 import api from '../../api/client';
 import { renderMarkdown } from '../../components/RichTextEditor';
+import WatchButton from '../../components/WatchButton';
 import type { Board, Message } from '../../types';
 
 function unwrapList<T>(raw: unknown): T[] {
@@ -402,14 +403,17 @@ export function ForumTopicList() {
       </button>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-gray-900">{board?.name ?? t('forums.title')}</h1>
-        {canAddMessages && (
-          <Link
-            to={`/projects/${identifier}/forums/${boardId}/topics/new`}
-            className="rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
-          >
-            {t('forums.newTopic')}
-          </Link>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <WatchButton watchableType="Board" watchableId={boardId} />
+          {canAddMessages && (
+            <Link
+              to={`/projects/${identifier}/forums/${boardId}/topics/new`}
+              className="rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
+            >
+              {t('forums.newTopic')}
+            </Link>
+          )}
+        </div>
       </div>
       {board?.description?.trim() ? (
         <aside className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm">
@@ -958,19 +962,22 @@ export function ForumTopicShow() {
             <div className="p-5">
               <div className="flex items-start justify-between gap-3">
                 <h1 className="text-xl font-bold text-gray-900">{root.subject}</h1>
-                {canEditTopic && (
-                  <Link
-                    to={buildTopicEditHref(
-                      `/projects/${identifier}/forums/${boardId}/topics/${topicId}/edit`,
-                      new URLSearchParams(),
-                      'detail',
-                    )}
-                    className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    <Pencil className="h-3.5 w-3.5" aria-hidden />
-                    {t('app.edit')}
-                  </Link>
-                )}
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  <WatchButton watchableType="Message" watchableId={root.id} className="px-2.5 py-1 text-xs" />
+                  {canEditTopic && (
+                    <Link
+                      to={buildTopicEditHref(
+                        `/projects/${identifier}/forums/${boardId}/topics/${topicId}/edit`,
+                        new URLSearchParams(),
+                        'detail',
+                      )}
+                      className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      <Pencil className="h-3.5 w-3.5" aria-hidden />
+                      {t('app.edit')}
+                    </Link>
+                  )}
+                </div>
               </div>
               <p className="text-xs text-gray-500 mt-1">
                 {authorLabel(root)} · {root.createdAt ? format(parseISO(root.createdAt), 'yyyy-MM-dd HH:mm') : ''}

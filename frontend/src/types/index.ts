@@ -348,6 +348,17 @@ export interface MailNotificationPreference {
   mailNotificationsEnabled: boolean;
 }
 
+export interface MyWatcherItem {
+  id: string;
+  watchableType: 'Issue' | 'Board' | 'Message' | 'WikiPage';
+  watchableId: string;
+  title: string;
+  subtitle: string | null;
+  updatedAt: string;
+  url: string;
+  project: Pick<Project, 'id' | 'name' | 'identifier'>;
+}
+
 export interface TotpStatus {
   totpEnabled: boolean;
   delivery: 'email';

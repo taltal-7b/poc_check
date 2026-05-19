@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { format, parseISO } from 'date-fns';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { useMe, useIssues } from '../api/hooks';
-import type { Issue, User } from '../types';
+import { useMe, useIssues, useMyWatchers } from '../api/hooks';
+import type { Issue, MyWatcherItem, User } from '../types';
 
 function unwrap<T>(raw: unknown): T | undefined {
   if (raw == null) return undefined;
@@ -34,6 +34,16 @@ function priorityClass(p: number): string {
   return map[p] ?? '';
 }
 
+function watcherTypeLabel(type: MyWatcherItem['watchableType']): string {
+  const labels: Record<MyWatcherItem['watchableType'], string> = {
+    Issue: 'チケット',
+    Board: 'フォーラム',
+    Message: 'トピック',
+    WikiPage: 'Wiki',
+  };
+  return labels[type];
+}
+
 export default function MyPagePage() {
   const { t } = useTranslation();
   const { data: meRaw } = useMe();
@@ -47,12 +57,15 @@ export default function MyPagePage() {
     me ? { author: me.id, closed: 'true', per_page: 50 } : undefined,
     { enabled: !!me },
   );
+  const watchersQ = useMyWatchers();
 
   const assigned = useMemo(() => unwrapList<Issue>(assignedQ.data), [assignedQ.data]);
   const reported = useMemo(() => unwrapList<Issue>(reportedQ.data), [reportedQ.data]);
+  const watchers = useMemo(() => unwrapList<MyWatcherItem>(watchersQ.data), [watchersQ.data]);
 
   const [collAssigned, setCollAssigned] = useState(false);
   const [collReported, setCollReported] = useState(false);
+  const [collWatchers, setCollWatchers] = useState(false);
 
   const projectLink = (i: Issue) =>
     i.project?.identifier ? `/projects/${i.project.identifier}/issues/${i.id}` : `/issues/${i.id}`;
@@ -107,6 +120,48 @@ export default function MyPagePage() {
     </div>
   );
 
+  const WatcherTable = ({ items }: { items: MyWatcherItem[] }) => (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-sm">
+        <thead>
+          <tr className="bg-slate-100 text-left text-xs text-slate-600">
+            <th className="px-3 py-1.5 font-medium w-28">種類</th>
+            <th className="px-3 py-1.5 font-medium">{t('nav.projects')}</th>
+            <th className="px-3 py-1.5 font-medium">タイトル</th>
+            <th className="px-3 py-1.5 font-medium">内容</th>
+            <th className="px-3 py-1.5 font-medium whitespace-nowrap">更新日</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {items.map((item, idx) => (
+            <tr key={item.id} className={`${idx % 2 === 1 ? 'bg-slate-50/50' : ''} hover:bg-slate-100/60`}>
+              <td className="px-3 py-1.5 text-slate-600">{watcherTypeLabel(item.watchableType)}</td>
+              <td className="px-3 py-1.5 text-slate-600">
+                <Link to={`/projects/${item.project.identifier}`} className="hover:underline">
+                  {item.project.name ?? item.project.identifier}
+                </Link>
+              </td>
+              <td className="px-3 py-1.5">
+                <Link to={item.url} className="text-primary-600 hover:underline">
+                  {item.title}
+                </Link>
+              </td>
+              <td className="max-w-md truncate px-3 py-1.5 text-slate-500">
+                {item.subtitle?.trim() || '-'}
+              </td>
+              <td className="px-3 py-1.5 text-xs text-slate-500 whitespace-nowrap">
+                {item.updatedAt ? format(parseISO(item.updatedAt), 'yyyy-MM-dd HH:mm') : ''}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {items.length === 0 && (
+        <p className="px-3 py-4 text-center text-sm text-slate-400">{t('app.noData')}</p>
+      )}
+    </div>
+  );
+
   const SectionHeader = ({
     label,
     count,
@@ -145,6 +200,23 @@ export default function MyPagePage() {
           onToggle={() => setCollAssigned((v) => !v)}
         />
         {!collAssigned && <IssueTable issues={assigned} />}
+      </section>
+
+      {/* Watched content */}
+      <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <SectionHeader
+          label="ウォッチしているコンテンツ"
+          count={watchers.length}
+          collapsed={collWatchers}
+          onToggle={() => setCollWatchers((v) => !v)}
+        />
+        {!collWatchers && (
+          watchersQ.isLoading ? (
+            <p className="px-3 py-4 text-center text-sm text-slate-400">{t('app.loading')}</p>
+          ) : (
+            <WatcherTable items={watchers} />
+          )
+        )}
       </section>
 
       {/* Reported by me */}

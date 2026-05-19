@@ -9,6 +9,7 @@ import { useBulkDeleteIssues, useBulkUpdateIssues, useIssues, useProjectIssues, 
 import { useAuthStore } from '../stores/auth';
 import ProjectSubNav from '../components/ProjectSubNav';
 import AppSelect from '../components/AppSelect';
+import ProgressRangeInput from '../components/ProgressRangeInput';
 import { openAuthenticatedAtom } from '../utils/atom';
 import type { Issue } from '../types';
 
@@ -230,8 +231,8 @@ export default function IssuesPage() {
     if (bulkForm.priority) changes.priority = Number(bulkForm.priority);
     if (bulkForm.doneRatio) {
       const doneRatio = Number(bulkForm.doneRatio);
-      if (!Number.isInteger(doneRatio) || doneRatio < 0 || doneRatio > 100) {
-        setBulkError('進捗率は0から100の整数で入力してください。');
+      if (!Number.isInteger(doneRatio) || doneRatio < 0 || doneRatio > 100 || doneRatio % 10 !== 0) {
+        setBulkError('進捗率は0から100の10%刻みで指定してください。');
         return;
       }
       changes.doneRatio = doneRatio;
@@ -525,15 +526,19 @@ export default function IssuesPage() {
                 </div>
               )}
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-500">{t('issues.doneRatio')}</label>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
+                <label className="mb-2 flex items-center gap-2 text-xs font-medium text-slate-500">
+                  <input
+                    type="checkbox"
+                    checked={bulkForm.doneRatio !== ''}
+                    onChange={(event) => setBulkForm((form) => ({ ...form, doneRatio: event.target.checked ? '0' : '' }))}
+                    className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  {t('issues.doneRatio')}
+                </label>
+                <ProgressRangeInput
                   value={bulkForm.doneRatio}
-                  onChange={(event) => setBulkForm((form) => ({ ...form, doneRatio: event.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  placeholder={EMPTY_MARK}
+                  onChange={(value) => setBulkForm((form) => ({ ...form, doneRatio: value }))}
+                  disabled={bulkForm.doneRatio === ''}
                 />
               </div>
             </div>

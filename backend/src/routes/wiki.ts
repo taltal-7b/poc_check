@@ -23,6 +23,33 @@ function dispatchWikiNotification(pageId: string, actorId: string, action: 'crea
   });
 }
 
+async function createWikiActivity(
+  page: { id: string; title: string },
+  projectId: string,
+  userId: string,
+  action: 'created' | 'updated' | 'deleted',
+  description?: string | null,
+) {
+  try {
+    await prisma.activity.create({
+      data: {
+        projectId,
+        userId,
+        actType: action === 'created' ? 'wiki_create' : action === 'updated' ? 'wiki_edit' : 'wiki_delete',
+        actId: page.id,
+        title: page.title,
+        description: description ? description.slice(0, 500) : null,
+      },
+    });
+  } catch (error) {
+    logger.warn('Wikiアクティビティの作成に失敗しました', {
+      pageId: page.id,
+      action,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 function param(req: Request, key: string): string | undefined {
   const v = req.params[key];
   if (typeof v === 'string' && v.length > 0) return v;
@@ -554,6 +581,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
       },
     });
     dispatchWikiNotification(page.id, userId, 'created');
+    await createWikiActivity(page, projectId, userId, 'created', parsed.data.text);
     return sendSuccess(res, await withWikiAttachments(full), 201);
   } catch (e) {
     next(e);
@@ -951,6 +979,13 @@ router.put('/:title', authenticate, async (req: Request, res: Response, next: Ne
       },
     });
     dispatchWikiNotification(page.id, userId, 'updated');
+    await createWikiActivity(
+      { id: page.id, title: full?.title ?? nextTitle },
+      projectId,
+      userId,
+      'updated',
+      nextComments ?? parsed.data.text,
+    );
     return sendSuccess(res, await withWikiAttachments(full));
   } catch (e) {
     next(e);
@@ -974,8 +1009,16 @@ router.delete('/:title', authenticate, async (req: Request, res: Response, next:
     const page = await findPageByTitle(wiki.id, title);
     if (!page) return next(AppError.notFound('ページが見つかりません'));
 
-    const del = await prisma.wikiPage.deleteMany({
-      where: { id: page.id, protected: false },
+    const del = await prisma.$transaction(async (tx: any) => {
+      const result = await tx.wikiPage.deleteMany({
+        where: { id: page.id, protected: false },
+      });
+      if (result.count > 0) {
+        await tx.watcher.deleteMany({
+          where: { watchableType: 'WikiPage', watchableId: page.id },
+        });
+      }
+      return result;
     });
     if (del.count === 0) {
       const still = await prisma.wikiPage.findUnique({
@@ -985,6 +1028,7 @@ router.delete('/:title', authenticate, async (req: Request, res: Response, next:
       if (!still) return next(AppError.notFound('ページが見つかりません'));
       return next(AppError.forbidden('保護されたWikiページは削除できません'));
     }
+    await createWikiActivity(page, projectId, req.user!.userId, 'deleted', page.content?.comments ?? null);
     return sendSuccess(res, { deleted: true, id: page.id });
   } catch (e) {
     next(e);

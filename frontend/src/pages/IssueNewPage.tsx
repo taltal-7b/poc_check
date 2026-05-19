@@ -7,6 +7,7 @@ import AppSelect from '../components/AppSelect';
 import ProjectSubNav from '../components/ProjectSubNav';
 import RichTextEditor from '../components/RichTextEditor';
 import IssueCustomFieldInputs from '../components/IssueCustomFieldInputs';
+import ProgressRangeInput from '../components/ProgressRangeInput';
 import type { Issue } from '../types';
 
 function RequiredMark() {
@@ -341,16 +342,10 @@ export default function IssueNewPage() {
         <div>
           <label className="mb-1 block flex justify-between text-sm font-medium text-slate-700">
             <span>{t('issues.doneRatio')}</span>
-            <span>{doneRatio}%</span>
           </label>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={10}
+          <ProgressRangeInput
             value={doneRatio}
-            onChange={(e) => setDoneRatio(Number(e.target.value))}
-            className="w-full accent-primary-600"
+            onChange={(value) => setDoneRatio(Number(value))}
           />
         </div>
         <div>

@@ -1,4 +1,5 @@
 ﻿import AppSelect from './AppSelect';
+import ProgressRangeInput from './ProgressRangeInput';
 import type { CustomField, IssueCustomFieldValue } from '../types';
 
 type Field = CustomField | IssueCustomFieldValue;
@@ -214,23 +215,14 @@ export default function IssueCustomFieldInputs({
 
         if (field.fieldFormat === 'progress') {
           const currentText = stringValue(current);
-          const progress = /^\d+$/.test(currentText) ? Math.min(100, Math.max(0, Number(currentText))) : 0;
           return (
             <div key={field.id}>
               <label className={labelClassName}>{field.name}{requiredMark}</label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={10}
-                  value={progress}
-                  onChange={(e) => onChange(field.id, e.target.value)}
-                  required={field.isRequired}
-                  className="flex-1 accent-primary-600"
-                />
-                <span className="w-12 text-right text-sm font-semibold text-slate-900">{progress}%</span>
-              </div>
+              <ProgressRangeInput
+                value={currentText}
+                onChange={(value) => onChange(field.id, value)}
+                required={field.isRequired}
+              />
             </div>
           );
         }

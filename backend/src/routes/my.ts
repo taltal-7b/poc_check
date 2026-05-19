@@ -7,6 +7,7 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
 import { authenticate } from '../middleware/auth';
+import { userCanViewProject } from '../utils/project-access';
 
 const router = Router();
 
@@ -172,6 +173,171 @@ router.get('/mail_notifications', async (req: Request, res: Response, next: Next
     return sendSuccess(res, {
       mailNotificationsEnabled: others.mailNotificationsEnabled !== false,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+async function rootMessageId(boardId: string, messageId: string): Promise<string | null> {
+  let currentId: string | null = messageId;
+  while (currentId) {
+    const row: { id: string; parentId: string | null } | null = await prisma.message.findFirst({
+      where: { id: currentId, boardId },
+      select: { id: true, parentId: true },
+    });
+    if (!row) return null;
+    if (!row.parentId) return row.id;
+    currentId = row.parentId;
+  }
+  return null;
+}
+
+router.get('/watchers', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const watchers = await prisma.watcher.findMany({
+      where: { userId: req.user!.userId },
+      orderBy: [{ watchableType: 'asc' }, { watchableId: 'asc' }],
+      select: { id: true, watchableType: true, watchableId: true },
+    });
+
+    const watchersByType = new Map<string, typeof watchers>();
+    for (const watcher of watchers) {
+      const rows = watchersByType.get(watcher.watchableType) ?? [];
+      rows.push(watcher);
+      watchersByType.set(watcher.watchableType, rows);
+    }
+    const idsByType = (type: string) => (watchersByType.get(type) ?? []).map((watcher) => watcher.watchableId);
+    const watcherByKey = new Map(watchers.map((watcher) => [`${watcher.watchableType}:${watcher.watchableId}`, watcher]));
+
+    const [issues, boards, messages, pages] = await Promise.all([
+      prisma.issue.findMany({
+        where: { id: { in: idsByType('Issue') } },
+        select: {
+          id: true,
+          number: true,
+          subject: true,
+          updatedAt: true,
+          project: { select: { id: true, name: true, identifier: true, isPublic: true } },
+          status: { select: { name: true, isClosed: true } },
+        },
+      }),
+      prisma.board.findMany({
+        where: { id: { in: idsByType('Board') } },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          updatedAt: true,
+          project: { select: { id: true, name: true, identifier: true, isPublic: true } },
+        },
+      }),
+      prisma.message.findMany({
+        where: { id: { in: idsByType('Message') } },
+        select: {
+          id: true,
+          boardId: true,
+          parentId: true,
+          subject: true,
+          content: true,
+          updatedAt: true,
+          board: { select: { project: { select: { id: true, name: true, identifier: true, isPublic: true } } } },
+        },
+      }),
+      prisma.wikiPage.findMany({
+        where: { id: { in: idsByType('WikiPage') } },
+        select: {
+          id: true,
+          title: true,
+          updatedAt: true,
+          content: { select: { comments: true } },
+          wiki: { select: { project: { select: { id: true, name: true, identifier: true, isPublic: true } } } },
+        },
+      }),
+    ]);
+
+    const canViewCache = new Map<string, Promise<boolean>>();
+    const canView = (project: { id: string; isPublic: boolean }, permissions: string[]) => {
+      const key = `${project.id}:${permissions.join(',')}`;
+      const cached = canViewCache.get(key);
+      if (cached) return cached;
+      const result = userCanViewProject(req.user, project, permissions);
+      canViewCache.set(key, result);
+      return result;
+    };
+
+    const items = [];
+
+    for (const issue of issues) {
+      if (!(await canView(issue.project, ['view_issues']))) continue;
+      const watcher = watcherByKey.get(`Issue:${issue.id}`);
+      if (!watcher) continue;
+      items.push({
+        id: watcher.id,
+        watchableType: watcher.watchableType,
+        watchableId: watcher.watchableId,
+        title: `#${issue.number} ${issue.subject}`,
+        subtitle: issue.status.name,
+        updatedAt: issue.updatedAt,
+        url: `/projects/${issue.project.identifier}/issues/${issue.id}`,
+        project: { id: issue.project.id, name: issue.project.name, identifier: issue.project.identifier },
+      });
+    }
+
+    for (const board of boards) {
+      if (!(await canView(board.project, ['view_messages']))) continue;
+      const watcher = watcherByKey.get(`Board:${board.id}`);
+      if (!watcher) continue;
+      items.push({
+        id: watcher.id,
+        watchableType: watcher.watchableType,
+        watchableId: watcher.watchableId,
+        title: board.name,
+        subtitle: board.description,
+        updatedAt: board.updatedAt,
+        url: `/projects/${board.project.identifier}/forums/${board.id}`,
+        project: { id: board.project.id, name: board.project.name, identifier: board.project.identifier },
+      });
+    }
+
+    for (const message of messages) {
+      if (!(await canView(message.board.project, ['view_messages']))) continue;
+      const watcher = watcherByKey.get(`Message:${message.id}`);
+      if (!watcher) continue;
+      const topicId = await rootMessageId(message.boardId, message.id);
+      items.push({
+        id: watcher.id,
+        watchableType: watcher.watchableType,
+        watchableId: watcher.watchableId,
+        title: message.subject,
+        subtitle: message.content,
+        updatedAt: message.updatedAt,
+        url: `/projects/${message.board.project.identifier}/forums/${message.boardId}/topics/${topicId ?? message.id}`,
+        project: {
+          id: message.board.project.id,
+          name: message.board.project.name,
+          identifier: message.board.project.identifier,
+        },
+      });
+    }
+
+    for (const page of pages) {
+      if (!(await canView(page.wiki.project, ['view_wiki_pages']))) continue;
+      const watcher = watcherByKey.get(`WikiPage:${page.id}`);
+      if (!watcher) continue;
+      items.push({
+        id: watcher.id,
+        watchableType: watcher.watchableType,
+        watchableId: watcher.watchableId,
+        title: page.title,
+        subtitle: page.content?.comments ?? null,
+        updatedAt: page.updatedAt,
+        url: `/projects/${page.wiki.project.identifier}/wiki/${encodeURIComponent(page.title)}`,
+        project: { id: page.wiki.project.id, name: page.wiki.project.name, identifier: page.wiki.project.identifier },
+      });
+    }
+
+    items.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    return sendSuccess(res, items);
   } catch (err) {
     next(err);
   }
