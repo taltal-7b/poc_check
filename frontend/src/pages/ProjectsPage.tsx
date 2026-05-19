@@ -123,15 +123,18 @@ export default function ProjectsPage() {
     const children = projectChildren.get(project.id) ?? [];
     const canManage = canManageProject(project);
     return (
-      <li key={project.id} className={depth > 0 ? 'ml-5 border-l border-slate-200 pl-4' : ''}>
-        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <li key={project.id} className={depth > 0 ? 'rounded-md border-l-2 border-slate-300 bg-slate-50 py-2 pl-3 pr-2' : 'mb-4 min-w-0 break-inside-avoid'}>
+        <div className={depth > 0 ? '' : 'rounded-lg border border-slate-200 bg-white p-4 shadow-sm'}>
           <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <Link to={`/projects/${project.identifier}`} className="text-base font-semibold text-slate-900 hover:text-primary-600">
+            <div className="min-w-0 flex-1" style={depth > 1 ? { paddingLeft: `${(depth - 1) * 16}px` } : undefined}>
+              <Link
+                to={`/projects/${project.identifier}`}
+                className={depth > 0 ? 'block truncate text-sm font-medium text-slate-800 hover:text-primary-600' : 'text-base font-semibold text-slate-900 hover:text-primary-600'}
+              >
                 {project.name}
               </Link>
-              <p className="mt-1 font-mono text-xs text-slate-500">{project.identifier}</p>
-              {project.description && <p className="mt-2 text-sm text-slate-600">{project.description}</p>}
+              <p className={depth > 0 ? 'mt-0.5 truncate font-mono text-xs text-slate-400' : 'mt-1 font-mono text-xs text-slate-500'}>{project.identifier}</p>
+              {depth === 0 && project.description && <p className="mt-2 line-clamp-3 text-sm text-slate-600">{project.description}</p>}
             </div>
             <span
               className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${statusBadgeClass(project.status)}`}
@@ -141,10 +144,10 @@ export default function ProjectsPage() {
           </div>
 
           {canManage && (
-            <div className="mt-3 flex gap-2 border-t border-slate-200 pt-3">
+            <div className={depth > 0 ? 'mt-2 flex items-center gap-2' : 'mt-3 flex items-center gap-2 border-t border-slate-200 pt-3'} style={depth > 1 ? { paddingLeft: `${(depth - 1) * 16}px` } : undefined}>
               <Link
                 to={`/projects/${project.identifier}/edit`}
-                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className="inline-flex h-8 w-auto items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 <Pencil className="h-4 w-4" />
                 {t('app.edit')}
@@ -158,7 +161,7 @@ export default function ProjectsPage() {
                     setDeleteConfirm(project.id);
                   }
                 }}
-                className={`inline-flex items-center justify-center rounded-lg px-2 py-1.5 text-sm font-medium transition ${
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-sm font-medium transition ${
                   deleteConfirm === project.id
                     ? 'bg-red-600 text-white hover:bg-red-700'
                     : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
@@ -179,31 +182,31 @@ export default function ProjectsPage() {
                   disabled={deleteMutation.isPending}
                   className="flex-1 rounded bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
                 >
-                  {deleteMutation.isPending ? '削除中...' : '削除'}
+                  {deleteMutation.isPending ? '削除中...' : t('app.delete')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setDeleteConfirm(null)}
                   className="flex-1 rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
                 >
-                  キャンセル
+                  {t('app.cancel')}
                 </button>
               </div>
             </div>
           )}
-        </div>
 
-        {children.length > 0 && (
-          <ul className="mt-3 space-y-3">
-            {children.map((child) => renderProjectNode(child, depth + 1))}
-          </ul>
-        )}
+          {children.length > 0 && (
+            <ul className={depth > 0 ? '-mx-2 mt-2 space-y-1.5 border-t border-slate-200 pt-2' : 'mt-3 space-y-1.5 border-t border-slate-200 pt-3'}>
+              {children.map((child) => renderProjectNode(child, depth + 1))}
+            </ul>
+          )}
+        </div>
       </li>
     );
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
+    <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-slate-900">{t('projects.title')}</h1>
         {isAuthenticated && isAdmin && (
@@ -240,7 +243,7 @@ export default function ProjectsPage() {
         <p className="rounded-xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-sm">{t('app.noData')}</p>
       )}
 
-      <ul className="space-y-3">
+      <ul className="columns-1 gap-4 md:columns-2 xl:columns-3">
         {rootProjects.map((p) => renderProjectNode(p))}
       </ul>
 
