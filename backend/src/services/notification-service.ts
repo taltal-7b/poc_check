@@ -214,6 +214,20 @@ async function messageAncestorAuthorIds(boardId: string, messageId: string): Pro
   return ids;
 }
 
+async function messageRootId(boardId: string, messageId: string): Promise<string | null> {
+  let currentId: string | null = messageId;
+  while (currentId) {
+    const row: { id: string; parentId: string | null } | null = await prisma.message.findFirst({
+      where: { id: currentId, boardId },
+      select: { id: true, parentId: true },
+    });
+    if (!row) return null;
+    if (!row.parentId) return row.id;
+    currentId = row.parentId;
+  }
+  return null;
+}
+
 export async function notifyMessageEvent(
   messageId: string,
   actorId: string,
@@ -238,16 +252,18 @@ export async function notifyMessageEvent(
   const ancestorAuthorIds = message.parentId
     ? await messageAncestorAuthorIds(message.boardId, message.parentId)
     : [];
+  const rootId = message.parentId ? await messageRootId(message.boardId, message.parentId) : message.id;
   const userIds = new Set<string>([
     message.authorId,
     ...(message.board.createdByUserId ? [message.board.createdByUserId] : []),
     ...ancestorAuthorIds,
     ...(await watcherUserIds('Board', message.boardId)),
     ...(await watcherUserIds('Message', message.id)),
+    ...(rootId && rootId !== message.id ? await watcherUserIds('Message', rootId) : []),
   ]);
   const projectName = message.board.project?.name ?? 'プロジェクト';
   const url = absoluteUrl(
-    `/projects/${message.board.project?.identifier ?? message.board.projectId}/forums/${message.boardId}/topics/${message.parentId ?? message.id}`,
+    `/projects/${message.board.project?.identifier ?? message.board.projectId}/forums/${message.boardId}/topics/${rootId ?? message.parentId ?? message.id}`,
   );
 
   await sendNotification({

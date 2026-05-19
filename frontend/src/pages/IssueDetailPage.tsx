@@ -8,6 +8,8 @@ import { Pencil, FileIcon, Download, Trash2, Check, X, Rss } from 'lucide-react'
 import RichTextEditor from '../components/RichTextEditor';
 import AppSelect from '../components/AppSelect';
 import IssueCustomFieldInputs from '../components/IssueCustomFieldInputs';
+import WatchButton from '../components/WatchButton';
+import ProgressRangeInput from '../components/ProgressRangeInput';
 import { useDeleteIssue, useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useUpdateJournal, useDeleteJournal, useTrackers, useStatuses, useMembers, useProjectIssues, useIssueCustomFields } from '../api/hooks';
 import { AttachmentLink, AttachmentPreview } from '../components/AttachmentLink';
 import { useAuthStore } from '../stores/auth';
@@ -808,12 +810,17 @@ export default function IssueDetailPage() {
             {issue.subject}
           </h1>
         )}
-        {canEditIssue && !isEditing && (
-          <button type="button" onClick={enterEdit}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
-            <Pencil className="h-4 w-4" />
-            {t('app.edit')}
-          </button>
+        {!isEditing && (
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <WatchButton watchableType="Issue" watchableId={issue.id} />
+            {canEditIssue && (
+              <button type="button" onClick={enterEdit}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+                <Pencil className="h-4 w-4" />
+                {t('app.edit')}
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -876,11 +883,7 @@ export default function IssueDetailPage() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.doneRatio')}</label>
-              <div className="flex items-center gap-3">
-                <input type="range" min="0" max="100" step="10" value={form.doneRatio}
-                  onChange={(e) => setField('doneRatio', e.target.value)} className="flex-1" />
-                <span className="w-12 text-right text-sm font-semibold text-slate-900">{form.doneRatio}%</span>
-              </div>
+              <ProgressRangeInput value={form.doneRatio} onChange={(value) => setField('doneRatio', value)} />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.parent')}</label>

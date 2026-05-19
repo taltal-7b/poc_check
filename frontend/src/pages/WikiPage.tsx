@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { renderMarkdown } from '../components/RichTextEditor';
 import { AttachmentLink } from '../components/AttachmentLink';
+import WatchButton from '../components/WatchButton';
 import { Book, Download, History, Lock, LockOpen, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { useProject, useWikiPage, useWikiPages, useMembers } from '../api/hooks';
 import api from '../api/client';
@@ -300,6 +301,9 @@ export default function WikiPage() {
                 {decodedTitle}
               </h1>
               <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+                {wikiPage && (
+                  <WatchButton watchableType="WikiPage" watchableId={wikiPage.id} className="h-[34px] px-3 py-1.5" />
+                )}
                 {canEditWiki && wikiPage && !wikiPage.protected && (
                   <button
                     type="button"

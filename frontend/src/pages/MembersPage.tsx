@@ -40,6 +40,44 @@ function memberAddErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+function parseRolePermissions(raw: unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return raw
+        .split(/[,\s]+/)
+        .map((value) => value.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+}
+
+function rolePermissionTone(role: Role | null | undefined) {
+  const permissions = parseRolePermissions(role?.permissions);
+  const canEdit = permissions.some((permission) => (
+    permission.startsWith('manage_') ||
+    permission.startsWith('add_') ||
+    permission.startsWith('edit_') ||
+    permission.startsWith('delete_') ||
+    permission === 'log_time' ||
+    permission === 'comment_news'
+  ));
+  if (canEdit) return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+
+  const canView = permissions.some((permission) => (
+    permission.startsWith('view_') ||
+    permission === 'browse_repository'
+  ));
+  if (canView) return 'border-blue-200 bg-blue-50 text-blue-700';
+
+  return 'border-slate-200 bg-slate-50 text-slate-600';
+}
+
 export default function MembersPage() {
   const { t } = useTranslation();
   const { identifier } = useParams<{ identifier: string }>();
@@ -182,7 +220,10 @@ export default function MembersPage() {
                 <td className="px-4 py-2">
                   <div className="flex flex-wrap gap-1">
                     {(m.memberRoles ?? []).map((mr) => (
-                      <span key={mr.role?.id ?? mr.role?.name} className="rounded-full bg-primary-100 text-primary-800 px-2 py-0.5 text-xs">
+                      <span
+                        key={mr.role?.id ?? mr.role?.name}
+                        className={`rounded-full border px-2 py-0.5 text-xs font-medium ${rolePermissionTone(mr.role)}`}
+                      >
                         {mr.role?.name ?? '—'}
                       </span>
                     ))}

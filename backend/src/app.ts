@@ -31,6 +31,7 @@ import enumerationRoutes from './routes/enumerations';
 import importExportRoutes from './routes/import-export';
 import myRoutes from './routes/my';
 import journalRoutes from './routes/journals';
+import watcherRoutes from './routes/watchers';
 
 const app = express();
 
@@ -61,6 +62,7 @@ api.use('/import', importExportRoutes);
 api.use('/my', myRoutes);
 api.use('/news', newsRoutes);
 api.use('/journals', journalRoutes);
+api.use('/watchers', watcherRoutes);
 
 app.use('/api/v1', api);
 

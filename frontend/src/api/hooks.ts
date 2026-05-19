@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from './client';
 import { useAuthStore } from '../stores/auth';
-import type { ApiResponse, Project, ProjectAiBottleneckDetection, ProjectAiProgressSummary, ProjectAiTaskInstruction, ProjectAiWeeklyReport, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, IssueStatusUsage, MailNotificationPreference, TotpSetup, TotpStatus, SearchResponse, ProjectFile, ProjectFilesPayload } from '../types';
+import type { ApiResponse, Project, ProjectAiBottleneckDetection, ProjectAiProgressSummary, ProjectAiTaskInstruction, ProjectAiWeeklyReport, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, IssueStatusUsage, MailNotificationPreference, MyWatcherItem, TotpSetup, TotpStatus, SearchResponse, ProjectFile, ProjectFilesPayload } from '../types';
 
 function get<T>(url: string, params?: Record<string, unknown>) {
   return api.get<ApiResponse<T>>(url, { params }).then(r => r.data);
@@ -36,6 +36,14 @@ export const useUpdateMe = () => {
   return useMutation({
     mutationFn: (body: Pick<User, 'firstname' | 'lastname' | 'mail' | 'language'>) => put<User>('/my', body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+  });
+};
+export const useMyWatchers = () => {
+  const accessToken = useAuthStore((s) => s.accessToken);
+  return useQuery({
+    queryKey: ['myWatchers', accessToken],
+    queryFn: () => get<MyWatcherItem[]>('/my/watchers'),
+    enabled: !!accessToken,
   });
 };
 export const useLogin = () =>
@@ -172,6 +180,39 @@ export const useUpdateIssue = () => { const qc = useQueryClient(); return useMut
 export const useDeleteIssue = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (id: string) => del(`/issues/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['issues'] }) }); };
 export const useBulkUpdateIssues = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (body: { ids: string[]; changes: Record<string, unknown> }) => post<{ updated: number; issues: Issue[] }>('/issues/bulk_update', body), onSuccess: () => qc.invalidateQueries({ queryKey: ['issues'] }) }); };
 export const useBulkDeleteIssues = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (ids: string[]) => post<{ deleted: number; ids: string[] }>('/issues/bulk_delete', { ids }), onSuccess: () => qc.invalidateQueries({ queryKey: ['issues'] }) }); };
+
+export type WatchableType = 'Issue' | 'Board' | 'Message' | 'WikiPage';
+export type WatcherPayload = {
+  watching: boolean;
+  watchers: Array<{ user: Pick<User, 'id' | 'login' | 'firstname' | 'lastname'> }>;
+};
+
+export const useWatcher = (watchableType: WatchableType, watchableId: string, options?: { enabled?: boolean }) =>
+  useQuery({
+    queryKey: ['watcher', watchableType, watchableId],
+    queryFn: () => get<WatcherPayload>('/watchers', { watchableType, watchableId }),
+    enabled: (options?.enabled ?? true) && !!watchableType && !!watchableId,
+  });
+
+export const useToggleWatcher = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ watchableType, watchableId, watching }: { watchableType: WatchableType; watchableId: string; watching: boolean }) => {
+      const body = { watchableType, watchableId };
+      return watching
+        ? api.delete<ApiResponse<{ watching: boolean }>>('/watchers', { data: body }).then((r) => r.data)
+        : post<{ watching: boolean; watcher: { id: string } }>('/watchers', body);
+    },
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ['watcher', vars.watchableType, vars.watchableId] });
+      qc.invalidateQueries({ queryKey: ['myWatchers'] });
+      if (vars.watchableType === 'Issue') qc.invalidateQueries({ queryKey: ['issue', vars.watchableId] });
+      if (vars.watchableType === 'Board') qc.invalidateQueries({ queryKey: ['boards'] });
+      if (vars.watchableType === 'Message') qc.invalidateQueries({ queryKey: ['boardMessage'] });
+      if (vars.watchableType === 'WikiPage') qc.invalidateQueries({ queryKey: ['wiki'] });
+    },
+  });
+};
 
 // ========== Journals ==========
 export const useUpdateJournal = () => {

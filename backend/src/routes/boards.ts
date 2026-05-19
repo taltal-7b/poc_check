@@ -68,6 +68,65 @@ function dispatchMessageNotification(
   });
 }
 
+async function createBoardActivity(
+  board: { id: string; projectId: string; name: string; description: string | null },
+  userId: string,
+  action: 'created' | 'updated' | 'deleted',
+) {
+  try {
+    await prisma.activity.create({
+      data: {
+        projectId: board.projectId,
+        userId,
+        actType: action === 'created' ? 'board_create' : action === 'updated' ? 'board_update' : 'board_delete',
+        actId: board.id,
+        title: board.name,
+        description: board.description ? board.description.slice(0, 500) : null,
+      },
+    });
+  } catch (error) {
+    logger.warn('フォーラムアクティビティの作成に失敗しました', {
+      boardId: board.id,
+      action,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+async function createMessageActivity(
+  message: { id: string; boardId: string; subject: string; content: string | null; parentId: string | null },
+  projectId: string,
+  userId: string,
+  action: 'created' | 'updated' | 'commented' | 'deleted',
+) {
+  const actType =
+    action === 'created'
+      ? 'message_create'
+      : action === 'updated'
+        ? 'message_update'
+        : action === 'commented'
+          ? 'message_comment'
+          : 'message_delete';
+  try {
+    await prisma.activity.create({
+      data: {
+        projectId,
+        userId,
+        actType,
+        actId: message.parentId ?? message.id,
+        title: message.subject,
+        description: message.content ? message.content.slice(0, 500) : null,
+      },
+    });
+  } catch (error) {
+    logger.warn('フォーラムメッセージアクティビティの作成に失敗しました', {
+      messageId: message.id,
+      action,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 async function loadMessageReplyTree(boardId: string, rootId: string): Promise<MessageTree | null> {
   const root = await prisma.message.findFirst({
     where: { id: rootId, boardId },
@@ -239,6 +298,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next: NextFun
       },
     });
     dispatchBoardNotification(board.id, req.user!.userId, 'created');
+    await createBoardActivity(board, req.user!.userId, 'created');
     return sendSuccess(res, board, 201);
   } catch (e) {
     next(e);
@@ -326,6 +386,7 @@ router.post('/:id/messages', authenticate, async (req: Request, res: Response, n
       },
     });
     dispatchMessageNotification(message.id, req.user!.userId, 'created');
+    await createMessageActivity(message, project.id, req.user!.userId, 'created');
     return sendSuccess(res, message, 201);
   } catch (e) {
     next(e);
@@ -403,6 +464,7 @@ router.post('/:boardId/messages/:id/reply', authenticate, async (req: Request, r
       });
     }
     dispatchMessageNotification(message.id, req.user!.userId, 'commented');
+    await createMessageActivity(message, projectId, req.user!.userId, 'commented');
     return sendSuccess(res, message, 201);
   } catch (e) {
     next(e);
@@ -458,6 +520,7 @@ router.put('/:boardId/messages/:messageId', authenticate, async (req: Request, r
       }
     }
     dispatchMessageNotification(message.id, req.user!.userId, isComment ? 'commented' : 'updated');
+    await createMessageActivity(message, projectId, req.user!.userId, isComment ? 'commented' : 'updated');
     return sendSuccess(res, message);
   } catch (e) {
     next(e);
@@ -492,7 +555,13 @@ router.delete('/:boardId/messages/:messageId', authenticate, async (req: Request
       return next(AppError.forbidden('このメッセージを削除する権限がありません'));
     }
 
-    await prisma.message.delete({ where: { id: messageId } });
+    await prisma.$transaction([
+      prisma.watcher.deleteMany({
+        where: { watchableType: 'Message', watchableId: messageId },
+      }),
+      prisma.message.delete({ where: { id: messageId } }),
+    ]);
+    await createMessageActivity(existing, projectId, req.user!.userId, 'deleted');
     if (rootTopicIdForTouch && rootTopicIdForTouch !== existing.id) {
       await prisma.message.update({
         where: { id: rootTopicIdForTouch },
@@ -573,6 +642,7 @@ router.put('/:id', authenticate, async (req: Request, res: Response, next: NextF
       },
     });
     dispatchBoardNotification(board.id, req.user!.userId, 'updated');
+    await createBoardActivity(board, req.user!.userId, 'updated');
     return sendSuccess(res, board);
   } catch (e) {
     next(e);
@@ -594,7 +664,22 @@ router.delete('/:id', authenticate, async (req: Request, res: Response, next: Ne
     });
     if (!canDelete) return next(AppError.forbidden('この掲示板を削除する権限がありません'));
 
-    await prisma.board.delete({ where: { id } });
+    const messages = await prisma.message.findMany({
+      where: { boardId: id },
+      select: { id: true },
+    });
+    await prisma.$transaction([
+      prisma.watcher.deleteMany({
+        where: {
+          OR: [
+            { watchableType: 'Board', watchableId: id },
+            { watchableType: 'Message', watchableId: { in: messages.map((message) => message.id) } },
+          ],
+        },
+      }),
+      prisma.board.delete({ where: { id } }),
+    ]);
+    await createBoardActivity(existing, req.user!.userId, 'deleted');
     return sendSuccess(res, { deleted: true, id });
   } catch (e) {
     next(e);

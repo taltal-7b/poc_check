@@ -536,7 +536,7 @@ const createIssueSchema = z.object({
   startDate: z.coerce.date().nullable().optional(),
   dueDate: z.coerce.date().nullable().optional(),
   estimatedHours: z.number().nullable().optional(),
-  doneRatio: z.number().int().min(0).max(100).optional(),
+  doneRatio: z.number().int().min(0).max(100).refine((value) => value % 10 === 0).optional(),
   repository: z.string().nullable().optional(),
   customFields: z.record(z.unknown()).optional(),
 });
@@ -555,7 +555,7 @@ const updateIssueSchema = z.object({
   startDate: z.coerce.date().nullable().optional(),
   dueDate: z.coerce.date().nullable().optional(),
   estimatedHours: z.number().nullable().optional(),
-  doneRatio: z.number().int().min(0).max(100).optional(),
+  doneRatio: z.number().int().min(0).max(100).refine((value) => value % 10 === 0).optional(),
   repository: z.string().nullable().optional(),
   customFields: z.record(z.unknown()).optional(),
   notes: z.string().optional(),
