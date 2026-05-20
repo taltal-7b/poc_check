@@ -253,7 +253,8 @@ export default function IssueDetailPage() {
 
   const assigneeOptions = useMemo(() => {
     const seen = new Set<string>();
-    return members.flatMap((member) => {
+    const currentUserValue = currentUser?.id ? `user:${currentUser.id}` : '';
+    const options = members.flatMap((member) => {
       if (member.user) {
         const value = `user:${member.user.id}`;
         if (seen.has(value)) return [];
@@ -269,7 +270,9 @@ export default function IssueDetailPage() {
       }
       return [];
     });
-  }, [members]);
+    if (!currentUserValue || !seen.has(currentUserValue)) return options;
+    return [{ value: currentUserValue, label: '<<自分>>' }, ...options.filter((option) => option.value !== currentUserValue)];
+  }, [members, currentUser?.id]);
 
   const issueNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -286,19 +289,25 @@ export default function IssueDetailPage() {
     () => new Map((issue?.attachments ?? []).map((attachment) => [attachment.id, attachment.filename])),
     [issue?.attachments],
   );
-  const customFieldReferenceOptions = useMemo(() => ({
-    users: members
+  const customFieldUserOptions = useMemo(() => {
+    const options = members
       .filter((member) => member.user)
       .map((member) => ({
         value: member.user!.id,
         label: `${`${member.user!.lastname} ${member.user!.firstname}`.trim() || member.user!.login} (${member.user!.login})`,
-      })),
+      }));
+    if (!currentUser?.id || !options.some((option) => option.value === currentUser.id)) return options;
+    return [{ value: currentUser.id, label: '<<自分>>' }, ...options.filter((option) => option.value !== currentUser.id)];
+  }, [members, currentUser?.id]);
+
+  const customFieldReferenceOptions = useMemo(() => ({
+    users: customFieldUserOptions,
     issues: projectIssues.map((iss) => ({ value: iss.id, label: `#${iss.number} ${iss.subject}` })),
     attachments: [
       ...(issue?.attachments ?? []).map((attachment) => ({ value: attachment.id, label: attachment.filename })),
       ...customFieldAttachments,
     ],
-  }), [members, projectIssues, issue?.attachments, customFieldAttachments]);
+  }), [customFieldUserOptions, projectIssues, issue?.attachments, customFieldAttachments]);
 
   const dateValidationError = useMemo(() => {
     if (!form.startDate || !form.dueDate) return '';

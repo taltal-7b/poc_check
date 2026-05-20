@@ -18,24 +18,7 @@ import {
 } from '../api/hooks';
 import type { Issue, TimeEntry } from '../types';
 import { useAuthStore } from '../stores/auth';
-
-function parseHmToHours(value: string): number | null {
-  const trimmed = value.trim();
-  const match = /^(\d+):([0-5]\d)$/.exec(trimmed);
-  if (!match) return null;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  const total = hours + minutes / 60;
-  if (!Number.isFinite(total) || total <= 0) return null;
-  return total;
-}
-
-function formatHoursToHm(hours: number): string {
-  const totalMinutes = Math.round(hours * 60);
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return `${h}:${String(m).padStart(2, '0')}`;
-}
+import { formatEstimatedEffort, parseEstimatedEffort } from '../utils/estimatedEffort';
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -88,7 +71,6 @@ export default function TimeEntriesPage() {
   const [spentOnFrom, setSpentOnFrom] = useState('');
   const [spentOnTo, setSpentOnTo] = useState('');
   const [filterUserId, setFilterUserId] = useState('');
-  const [filterUserQuery, setFilterUserQuery] = useState('');
   const [filterActivityId, setFilterActivityId] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [sortKey, setSortKey] = useState<TimeEntrySortKey>('spentOn');
@@ -199,26 +181,18 @@ export default function TimeEntriesPage() {
     () => (membersQuery.data?.data ?? []).map((m) => m.user).filter((u): u is NonNullable<typeof u> => !!u),
     [membersQuery.data],
   );
+  const memberUserOptions = useMemo(() => {
+    const options = memberUsers.map((u) => ({
+      value: u.id,
+      label: `${u.lastname} ${u.firstname}`.trim() || u.login,
+    }));
+    if (!currentUser?.id || !options.some((option) => option.value === currentUser.id)) return options;
+    return [{ value: currentUser.id, label: '<<自分>>' }, ...options.filter((option) => option.value !== currentUser.id)];
+  }, [memberUsers, currentUser?.id]);
   const currentUserLabel = useMemo(() => {
     if (!currentUser) return '-';
     return `${currentUser.lastname ?? ''} ${currentUser.firstname ?? ''}`.trim() || currentUser.login;
   }, [currentUser]);
-  const selectedFilterUser = useMemo(
-    () => memberUsers.find((u) => u.id === filterUserId) ?? null,
-    [memberUsers, filterUserId],
-  );
-  const filteredFilterUsers = useMemo(() => {
-    const q = filterUserQuery.trim().toLowerCase();
-    if (!q || filterUserId) return [];
-    return memberUsers
-      .filter((u) => {
-        const name = `${u.lastname ?? ''} ${u.firstname ?? ''}`.trim().toLowerCase();
-        const login = (u.login ?? '').toLowerCase();
-        return name.includes(q) || login.includes(q);
-      })
-      .slice(0, 8);
-  }, [filterUserQuery, filterUserId, memberUsers]);
-
   const createEntry = useCreateTimeEntry();
   const updateEntry = useUpdateTimeEntry();
   const deleteEntry = useDeleteTimeEntry();
@@ -282,7 +256,7 @@ export default function TimeEntriesPage() {
       setFormError('プロジェクトIDが不正です。ページを再読み込みしてください');
       return;
     }
-    const hours = parseHmToHours(form.hours);
+    const hours = parseEstimatedEffort(form.hours, 'hours');
     if (!form.activityId) {
       setFormError(`${t('timeEntries.activity')} を選択してください`);
       return;
@@ -308,8 +282,8 @@ export default function TimeEntriesPage() {
       setFormError('チケットIDが不正です。候補から再選択してください');
       return;
     }
-    if (hours == null) {
-      setFormError(`${t('timeEntries.hours')} は h:mm 形式で入力してください（例: 1:30）`);
+    if (!form.hours.trim() || hours == null || hours <= 0) {
+      setFormError(`${t('timeEntries.hours')} は h:mm または数値で入力してください`);
       return;
     }
     if (form.comments.length > 255) {
@@ -347,7 +321,7 @@ export default function TimeEntriesPage() {
     setEditError('');
     setEditIssueQuery(row.issue ? `#${row.issue.number ?? ''} ${row.issue.subject ?? ''}`.trim() : '');
     setEditForm({
-      hours: formatHoursToHm(Number(row.hours) || 0),
+      hours: formatEstimatedEffort(Number(row.hours) || 0, 'hours'),
       activityId: row.activityId,
       spentOn: row.spentOn ? format(parseISO(row.spentOn), 'yyyy-MM-dd') : today,
       comments: row.comments ?? '',
@@ -358,7 +332,7 @@ export default function TimeEntriesPage() {
   const submitEdit = async () => {
     if (!editTarget) return;
     setEditError('');
-    const parsedHours = parseHmToHours(editForm.hours);
+    const parsedHours = parseEstimatedEffort(editForm.hours, 'hours');
     if (!editForm.activityId) {
       setEditError(`${t('timeEntries.activity')} を選択してください`);
       return;
@@ -371,8 +345,8 @@ export default function TimeEntriesPage() {
       setEditError('チケットIDが不正です。候補から再選択してください');
       return;
     }
-    if (parsedHours == null) {
-      setEditError(`${t('timeEntries.hours')} は h:mm 形式で入力してください（例: 1:30）`);
+    if (!editForm.hours.trim() || parsedHours == null || parsedHours <= 0) {
+      setEditError(`${t('timeEntries.hours')} は h:mm または数値で入力してください`);
       return;
     }
     if (editForm.comments.length > 255) {
@@ -431,7 +405,7 @@ export default function TimeEntriesPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{t('timeEntries.title')}</h1>
           <p className="mt-1 text-sm text-gray-600">
-            {t('timeEntries.report')}: <span className="font-semibold text-primary-700">{formatHoursToHm(totalHours)}</span>{' '}
+            {t('timeEntries.report')}: <span className="font-semibold text-primary-700">{formatEstimatedEffort(totalHours, 'hours')}</span>{' '}
             {t('timeEntries.hours')}
           </p>
         </div>
@@ -453,7 +427,7 @@ export default function TimeEntriesPage() {
       )}
 
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-        <label className="text-sm">
+        <label className="min-w-[9rem] text-sm">
           <span className="mb-1 block text-gray-600">{t('timeEntries.spentOn')}</span>
           <AppSelect
             value={spentOnOperator}
@@ -494,38 +468,15 @@ export default function TimeEntriesPage() {
             </label>
           </>
         )}
-        <label className="text-sm relative min-w-[14rem]">
+        <label className="text-sm min-w-[14rem]">
           <span className="mb-1 block text-gray-600">{t('issues.author')}</span>
-          <input
-            value={
-              selectedFilterUser
-                ? `${selectedFilterUser.lastname ?? ''} ${selectedFilterUser.firstname ?? ''}`.trim() || selectedFilterUser.login
-                : filterUserQuery
-            }
-            onChange={(e) => {
-              setFilterUserQuery(e.target.value);
-              setFilterUserId('');
-            }}
-            placeholder="－"
+          <AppSelect
+            value={filterUserId}
+            onChange={setFilterUserId}
+            options={[{ value: '', label: '－' }, ...memberUserOptions]}
+            ariaLabel={t('issues.author')}
             className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
           />
-          {filteredFilterUsers.length > 0 && (
-            <div className="absolute z-10 mt-1 max-h-44 w-full overflow-auto rounded border border-gray-200 bg-white shadow">
-              {filteredFilterUsers.map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() => {
-                    setFilterUserId(u.id);
-                    setFilterUserQuery(`${u.lastname ?? ''} ${u.firstname ?? ''}`.trim() || u.login);
-                  }}
-                  className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
-                >
-                  {`${u.lastname ?? ''} ${u.firstname ?? ''}`.trim() || u.login}
-                </button>
-              ))}
-            </div>
-          )}
         </label>
         <label className="text-sm min-w-[12rem]">
           <span className="mb-1 block text-gray-600">{t('timeEntries.activity')}</span>
@@ -617,7 +568,7 @@ export default function TimeEntriesPage() {
                       )
                       : '—'}
                   </td>
-                  <td className="px-4 py-2">{formatHoursToHm(Number(row.hours))}</td>
+                  <td className="px-4 py-2">{formatEstimatedEffort(Number(row.hours), 'hours')}</td>
                   <td className="px-4 py-2 text-gray-600 max-w-xs truncate" title={row.comments ?? ''}>
                     {row.comments ?? '—'}
                   </td>
@@ -696,7 +647,7 @@ export default function TimeEntriesPage() {
                   <AppSelect
                     value={form.userId}
                     onChange={(value) => setForm((f) => ({ ...f, userId: value }))}
-                    options={[{ value: '', label: '-' }, ...memberUsers.map((u) => ({ value: u.id, label: `${u.lastname} ${u.firstname}`.trim() || u.login }))]}
+                    options={[{ value: '', label: '-' }, ...memberUserOptions]}
                     ariaLabel="ユーザー"
                     className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
                   />
@@ -709,7 +660,7 @@ export default function TimeEntriesPage() {
                   </div>
                 </div>
               )}
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3">
                 <label className="block text-sm">
                   <span className="text-gray-700">{t('timeEntries.spentOn')} *</span>
                   <input
@@ -724,6 +675,8 @@ export default function TimeEntriesPage() {
                   <span className="text-gray-700">{t('timeEntries.hours')} *</span>
                   <input
                     required
+                    type="text"
+                    inputMode="text"
                     value={form.hours}
                     onChange={(e) => setForm((f) => ({ ...f, hours: e.target.value }))}
                     placeholder="h:mm"
@@ -814,7 +767,7 @@ export default function TimeEntriesPage() {
                   </div>
                 )}
               </label>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3">
                 <label className="block text-sm">
                   <span className="text-gray-700">{t('timeEntries.spentOn')} *</span>
                   <input
@@ -829,6 +782,8 @@ export default function TimeEntriesPage() {
                   <span className="text-gray-700">{t('timeEntries.hours')} *</span>
                   <input
                     required
+                    type="text"
+                    inputMode="text"
                     value={editForm.hours}
                     onChange={(e) => setEditForm((f) => ({ ...f, hours: e.target.value }))}
                     placeholder="h:mm"
