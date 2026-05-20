@@ -107,8 +107,9 @@ export interface Issue {
   author?: User;
   assignee?: User | null;
   assigneeGroup?: Group | null;
-  parent?: { id: string; subject: string };
+  parent?: { id: string; number?: number; subject: string };
   children?: { id: string; number: number; subject: string }[];
+  treeDepth?: number;
   journals?: Journal[];
   customFields?: IssueCustomFieldValue[];
 }

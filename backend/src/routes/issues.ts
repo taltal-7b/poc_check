@@ -204,6 +204,77 @@ async function buildIssueWhere(
   return { where, earlyEmpty: false };
 }
 
+type IssueTreeSeed = {
+  id: string;
+  parentId: string | null;
+  number: number;
+};
+
+function sortIssuesByHierarchy(rows: IssueTreeSeed[]): { orderedIds: string[]; depthById: Map<string, number> } {
+  const byParent = new Map<string | null, IssueTreeSeed[]>();
+  const rowIds = new Set(rows.map((row) => row.id));
+
+  for (const row of rows) {
+    const parentKey = row.parentId && rowIds.has(row.parentId) ? row.parentId : null;
+    const siblings = byParent.get(parentKey) ?? [];
+    siblings.push(row);
+    byParent.set(parentKey, siblings);
+  }
+
+  for (const siblings of byParent.values()) {
+    siblings.sort((a, b) => a.number - b.number);
+  }
+
+  const ordered: string[] = [];
+  const depthById = new Map<string, number>();
+  const visited = new Set<string>();
+  const visit = (row: IssueTreeSeed, depth: number) => {
+    if (visited.has(row.id)) return;
+    visited.add(row.id);
+    ordered.push(row.id);
+    depthById.set(row.id, depth);
+    for (const child of byParent.get(row.id) ?? []) visit(child, depth + 1);
+  };
+
+  for (const root of byParent.get(null) ?? []) visit(root, 0);
+  for (const row of rows) visit(row, 0);
+  return { orderedIds: ordered, depthById };
+}
+
+async function assertValidIssueParent(issueId: string, projectId: string, parentId: string | null | undefined) {
+  if (!parentId) return;
+  if (parentId === issueId) {
+    throw AppError.badRequest('親チケットに自分自身は指定できません');
+  }
+
+  const parent = await prisma.issue.findUnique({
+    where: { id: parentId },
+    select: { id: true, projectId: true, parentId: true },
+  });
+  if (!parent || parent.projectId !== projectId) {
+    throw AppError.badRequest('親チケットが見つからないか、同じプロジェクトに属していません');
+  }
+
+  let current: typeof parent | null = parent;
+  const seen = new Set<string>();
+  while (current?.parentId) {
+    if (current.parentId === issueId) {
+      throw AppError.badRequest('親チケットに子孫チケットは指定できません');
+    }
+    if (seen.has(current.parentId)) {
+      throw AppError.badRequest('親子関係が循環しています');
+    }
+    seen.add(current.parentId);
+    current = await prisma.issue.findUnique({
+      where: { id: current.parentId },
+      select: { id: true, projectId: true, parentId: true },
+    });
+    if (current && current.projectId !== projectId) {
+      throw AppError.badRequest('親チケットが同じプロジェクトに属していません');
+    }
+  }
+}
+
 async function createIssueCreationJournal(
   db: Tx,
   issue: {
@@ -878,6 +949,45 @@ router.get(
     if (earlyEmpty) {
       return sendPaginated(res, [], { total: 0, page, perPage, totalPages: 1 });
     }
+    const sort = String(req.query.sort ?? '');
+
+    if (sort === 'parent') {
+      const [total, treeRows] = await Promise.all([
+        prisma.issue.count({ where }),
+        prisma.issue.findMany({
+          where,
+          orderBy: [{ number: 'asc' }],
+          select: { id: true, parentId: true, number: true },
+        }),
+      ]);
+      const { orderedIds, depthById } = sortIssuesByHierarchy(treeRows);
+      const pageIds = orderedIds.slice(skip, skip + perPage);
+      const rows = pageIds.length
+        ? await prisma.issue.findMany({
+            where: { id: { in: pageIds } },
+            include: {
+              project: { select: { id: true, name: true, identifier: true } },
+              tracker: true,
+              status: true,
+              author: { select: { id: true, login: true, firstname: true, lastname: true } },
+              assignee: { select: { id: true, login: true, firstname: true, lastname: true } },
+              assigneeGroup: { select: { id: true, name: true } },
+              parent: { select: { id: true, number: true, subject: true } },
+            },
+          })
+        : [];
+      const rowMap = new Map(rows.map((row) => [row.id, row]));
+
+      return sendPaginated(res, pageIds.flatMap((id) => {
+        const row = rowMap.get(id);
+        return row ? [{ ...row, treeDepth: depthById.get(id) ?? 0 }] : [];
+      }), {
+        total,
+        page,
+        perPage,
+        totalPages: Math.ceil(total / perPage) || 1,
+      });
+    }
 
     const [total, rows] = await Promise.all([
       prisma.issue.count({ where }),
@@ -893,6 +1003,7 @@ router.get(
           author: { select: { id: true, login: true, firstname: true, lastname: true } },
           assignee: { select: { id: true, login: true, firstname: true, lastname: true } },
           assigneeGroup: { select: { id: true, name: true } },
+          parent: { select: { id: true, number: true, subject: true } },
         },
       }),
     ]);
@@ -1187,6 +1298,10 @@ router.post(
       if (!canEdit) throw AppError.forbidden('チケットを編集する権限がありません');
 
       const effectiveProjectId = changes.projectId ?? oldIssue.projectId;
+      if (changes.parentId !== undefined || changes.projectId !== undefined) {
+        const effectiveParentId = changes.parentId !== undefined ? changes.parentId : oldIssue.parentId;
+        await assertValidIssueParent(id, effectiveProjectId, effectiveParentId);
+      }
       if (changes.assigneeId !== undefined || changes.assigneeGroupId !== undefined || changes.projectId !== undefined) {
         let nextAssigneeId = oldIssue.assigneeId;
         let nextAssigneeGroupId = oldIssue.assigneeGroupId;
@@ -1808,6 +1923,10 @@ router.put(
     const st = await prisma.issueStatus.findUnique({ where: { id: nextStatusId } });
     const effectiveProjectId = body.projectId ?? oldIssue.projectId;
     const effectiveTrackerId = body.trackerId ?? oldIssue.trackerId;
+    if (body.parentId !== undefined || body.projectId !== undefined) {
+      const effectiveParentId = body.parentId !== undefined ? body.parentId : oldIssue.parentId;
+      await assertValidIssueParent(oldIssue.id, effectiveProjectId, effectiveParentId);
+    }
     if (body.assigneeId !== undefined || body.assigneeGroupId !== undefined || body.projectId !== undefined) {
       let nextAssigneeId = oldIssue.assigneeId;
       let nextAssigneeGroupId = oldIssue.assigneeGroupId;
@@ -2021,6 +2140,15 @@ router.post(
     if (!canCreate) throw AppError.forbidden('チケットを作成する権限がありません');
 
     await assertAssignableToProject(body.assigneeId, body.assigneeGroupId, projectId);
+    if (body.parentId) {
+      const parent = await prisma.issue.findUnique({
+        where: { id: body.parentId },
+        select: { projectId: true },
+      });
+      if (!parent || parent.projectId !== projectId) {
+        throw AppError.badRequest('親チケットが見つからないか、同じプロジェクトに属していません');
+      }
+    }
 
     const st = await prisma.issueStatus.findUnique({ where: { id: body.statusId } });
     if (!st) throw AppError.badRequest('ステータスが存在しません');

@@ -2,9 +2,8 @@ import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Clock, Edit3, Rss, Trash2 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { ja } from 'date-fns/locale';
+import { Edit3, Rss, Trash2 } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
 import { useBulkDeleteIssues, useBulkUpdateIssues, useIssues, useProjectIssues, useStatuses, useTrackers, useMembers, useProject } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 import ProjectSubNav from '../components/ProjectSubNav';
@@ -27,6 +26,15 @@ function priorityBadge(p: number) {
   return map[p] ?? 'bg-slate-100 text-slate-700 ring-slate-500/20';
 }
 
+function shortDate(value: string | null | undefined) {
+  if (!value) return EMPTY_MARK;
+  try {
+    return format(parseISO(value), 'M/d');
+  } catch {
+    return EMPTY_MARK;
+  }
+}
+
 
 export default function IssuesPage() {
   const { t } = useTranslation();
@@ -44,13 +52,13 @@ export default function IssuesPage() {
   });
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentUser = useAuthStore((s) => s.user);
-  const locale = ja;
 
   const page = Math.max(1, Number(searchParams.get('page') || '1') || 1);
   const trackerId = searchParams.get('trackerId') || '';
   const statusId = searchParams.get('statusId') || '';
   const priority = searchParams.get('priority') || '';
   const assignee = searchParams.get('assignee') || '';
+  const sort = searchParams.get('sort') || '';
 
   const queryParams = useMemo(
     () => {
@@ -61,6 +69,7 @@ export default function IssuesPage() {
         ...(trackerId ? { tracker: trackerId } : {}),
         ...(statusId ? { status: statusId } : {}),
         ...(priority ? { priority: Number(priority) } : {}),
+        ...(sort ? { sort } : {}),
         ...(trimmedAssignee.startsWith('group:')
           ? { assignee_group: trimmedAssignee.slice(6) }
           : trimmedAssignee.startsWith('user:')
@@ -68,7 +77,7 @@ export default function IssuesPage() {
             : trimmedAssignee ? { assignee: trimmedAssignee } : {}),
       };
     },
-    [page, trackerId, statusId, priority, assignee],
+    [page, trackerId, statusId, priority, assignee, sort],
   );
 
   const atomUrl = useMemo(() => {
@@ -199,6 +208,16 @@ export default function IssuesPage() {
     });
   };
 
+  const setSort = (value: string) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value) next.set('sort', value);
+      else next.delete('sort');
+      next.set('page', '1');
+      return next;
+    });
+  };
+
   const newIssueTo = identifier ? `/projects/${identifier}/issues/new` : '/projects';
   const toggleIssueSelection = (id: string, checked: boolean) => {
     setSelectedIds((prev) => {
@@ -219,6 +238,35 @@ export default function IssuesPage() {
       return next;
     });
   };
+
+  const issueDepthById = useMemo(() => {
+    if (sort !== 'parent') return new Map<string, number>();
+    const byId = new Map(issues.map((issue) => [issue.id, issue]));
+    const depths = new Map<string, number>();
+    const depthOf = (issue: Issue, seen = new Set<string>()): number => {
+      if (typeof issue.treeDepth === 'number') {
+        depths.set(issue.id, issue.treeDepth);
+        return issue.treeDepth;
+      }
+      const cached = depths.get(issue.id);
+      if (cached !== undefined) return cached;
+      if (!issue.parentId || seen.has(issue.id)) {
+        depths.set(issue.id, 0);
+        return 0;
+      }
+      const parent = byId.get(issue.parentId);
+      if (!parent) {
+        depths.set(issue.id, 0);
+        return 0;
+      }
+      seen.add(issue.id);
+      const depth = Math.min(depthOf(parent, seen) + 1, 6);
+      depths.set(issue.id, depth);
+      return depth;
+    };
+    for (const issue of issues) depthOf(issue);
+    return depths;
+  }, [issues, sort]);
 
   const resetBulkForm = () => {
     setBulkForm({ statusId: '', priority: '', assignee: '', doneRatio: '' });
@@ -287,7 +335,7 @@ export default function IssuesPage() {
         )}
         </div>
 
-        <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 lg:grid-cols-6">
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-500">{t('issues.tracker')}</label>
           <AppSelect
@@ -325,6 +373,19 @@ export default function IssuesPage() {
             onChange={(value) => setFilter('assignee', value)}
             options={assigneeOptions}
             ariaLabel={t('issues.assignee')}
+            className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-500">表示順</label>
+          <AppSelect
+            value={sort}
+            onChange={setSort}
+            options={[
+              { value: '', label: '更新順' },
+              { value: 'parent', label: '親子順' },
+            ]}
+            ariaLabel="表示順"
             className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
           />
         </div>
@@ -380,15 +441,16 @@ export default function IssuesPage() {
                     />
                   </th>
                 )}
-                <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.number')}</th>
-                <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.tracker')}</th>
-                <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.subjectColumn')}</th>
-                <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.status')}</th>
-                <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.priority')}</th>
-                <th className="px-3 py-3 text-left font-semibold text-slate-700">{t('issues.assignee')}</th>
-                <th className="px-3 py-3 text-left font-semibold text-slate-700" title="updatedAt">
-                  <Clock className="h-4 w-4 text-slate-500" aria-hidden />
-                </th>
+                <th className="w-16 px-2 py-3 text-left font-semibold text-slate-700">No</th>
+                <th className="w-24 px-2 py-3 text-left font-semibold text-slate-700">{t('issues.tracker')}</th>
+                <th className="min-w-64 px-2 py-3 text-left font-semibold text-slate-700">{t('issues.subjectColumn')}</th>
+                <th className="w-28 px-2 py-3 text-left font-semibold text-slate-700">{t('issues.parent')}</th>
+                <th className="w-24 px-2 py-3 text-left font-semibold text-slate-700">{t('issues.status')}</th>
+                <th className="w-32 px-2 py-3 text-left font-semibold text-slate-700">{t('issues.assignee')}</th>
+                <th className="w-24 px-2 py-3 text-left font-semibold text-slate-700">{t('issues.priority')}</th>
+                <th className="w-20 px-2 py-3 text-left font-semibold text-slate-700">登録日</th>
+                <th className="w-20 px-2 py-3 text-left font-semibold text-slate-700">{t('issues.dueDate')}</th>
+                <th className="w-20 px-2 py-3 text-left font-semibold text-slate-700">更新日</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -397,6 +459,10 @@ export default function IssuesPage() {
                   identifier && issue.id
                     ? `/projects/${identifier}/issues/${issue.id}`
                     : `/issues/${issue.id}`;
+                const depth = issueDepthById.get(issue.id) ?? 0;
+                const parentLabel = issue.parent
+                  ? `${issue.parent.number ? `#${issue.parent.number} ` : ''}${issue.parent.subject}`.trim()
+                  : EMPTY_MARK;
                 return (
                   <tr key={issue.id} className="hover:bg-slate-50/80">
                     {isAuthenticated && (
@@ -410,35 +476,47 @@ export default function IssuesPage() {
                         />
                       </td>
                     )}
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-sm text-slate-600">
+                    <td className="w-16 whitespace-nowrap px-2 py-2 font-mono text-xs text-slate-600">
                       <Link to={to} className="text-primary-600 hover:underline">
                         #{issue.number || EMPTY_MARK}
                       </Link>
                     </td>
-                    <td className="px-3 py-2 text-slate-700">{issue.tracker?.name ?? EMPTY_MARK}</td>
-                    <td className="max-w-xs px-3 py-2">
-                      <Link to={to} className="font-medium text-slate-900 hover:text-primary-700">
+                    <td className="max-w-28 truncate px-2 py-2 text-slate-700" title={issue.tracker?.name ?? undefined}>{issue.tracker?.name ?? EMPTY_MARK}</td>
+                    <td className="min-w-64 px-2 py-2">
+                      <Link
+                        to={to}
+                        className="flex items-center font-medium text-slate-900 hover:text-primary-700"
+                        style={{ paddingLeft: sort === 'parent' ? depth * 18 : 0 }}
+                      >
+                        {sort === 'parent' && depth > 0 && <span className="mr-1 text-slate-400">&gt;</span>}
                         {issue.subject}
                       </Link>
                     </td>
-                    <td className="px-3 py-2 text-slate-700">{issue.status?.name ?? EMPTY_MARK}</td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${priorityBadge(issue.priority)}`}
-                      >
-                        {t(`issues.priorities.${issue.priority}` as 'issues.priorities.1')}
-                      </span>
+                    <td className="max-w-32 truncate px-2 py-2 text-xs text-slate-600" title={parentLabel !== EMPTY_MARK ? parentLabel : undefined}>
+                      {issue.parent ? (
+                        <Link to={identifier ? `/projects/${identifier}/issues/${issue.parent.id}` : `/issues/${issue.parent.id}`} className="hover:text-primary-700 hover:underline">
+                          {parentLabel}
+                        </Link>
+                      ) : EMPTY_MARK}
                     </td>
-                    <td className="px-3 py-2 text-slate-700">
+                    <td className="max-w-28 truncate px-2 py-2 text-slate-700" title={issue.status?.name ?? undefined}>{issue.status?.name ?? EMPTY_MARK}</td>
+                    <td className="max-w-36 truncate px-2 py-2 text-slate-700">
                       {issue.assignee
                         ? `${issue.assignee.lastname} ${issue.assignee.firstname}`.trim() || issue.assignee.login
                         : issue.assigneeGroup
                           ? `[グループ] ${issue.assigneeGroup.name}`
                         : EMPTY_MARK}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">
-                      {formatDistanceToNow(new Date(issue.updatedAt), { addSuffix: true, locale })}
+                    <td className="whitespace-nowrap px-2 py-2">
+                      <span
+                        className={`inline-flex rounded-full px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${priorityBadge(issue.priority)}`}
+                      >
+                        {t(`issues.priorities.${issue.priority}` as 'issues.priorities.1')}
+                      </span>
                     </td>
+                    <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">{shortDate(issue.createdAt)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">{shortDate(issue.dueDate)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">{shortDate(issue.updatedAt)}</td>
                   </tr>
                 );
               })}
