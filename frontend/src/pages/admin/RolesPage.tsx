@@ -54,6 +54,12 @@ const FEATURES: FeaturePermission[] = [
     editPerms: ['manage_calendar'], // カレンダーの編集権限を追加
   },
   {
+    key: 'time_tracking',
+    label: '工数',
+    viewPerms: ['view_time_entries'],
+    editPerms: ['log_time', 'edit_time_entries', 'delete_time_entries'],
+  },
+  {
     key: 'files',
     label: 'ファイル',
     viewPerms: ['view_files'],

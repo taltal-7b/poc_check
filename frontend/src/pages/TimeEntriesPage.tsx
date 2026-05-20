@@ -77,6 +77,11 @@ export default function TimeEntriesPage() {
   const currentUser = useAuthStore((s) => s.user);
   const { data: projectRaw } = useProject(identifier ?? '');
   const project = projectRaw?.data;
+  const canViewTimeEntries = Boolean(project?.permissions?.canViewTimeEntries);
+  const canLogTime = Boolean(project?.permissions?.canLogTime);
+  const canEditTimeEntries = Boolean(project?.permissions?.canEditTimeEntries);
+  const canDeleteTimeEntries = Boolean(project?.permissions?.canDeleteTimeEntries);
+  const canCreateTimeEntry = canLogTime || canEditTimeEntries;
 
   const today = format(new Date(), 'yyyy-MM-dd');
   const [spentOnOperator, setSpentOnOperator] = useState<SpentOnOperator>('><');
@@ -140,7 +145,7 @@ export default function TimeEntriesPage() {
     [project, spentOnRange.from, spentOnRange.to, filterUserId, filterActivityId],
   );
 
-  const { data: entriesRaw, isLoading } = useTimeEntries(params);
+  const { data: entriesRaw, isLoading } = useTimeEntries(params, { enabled: canViewTimeEntries && !!params });
   const entries = useMemo<TimeEntry[]>(() => entriesRaw?.data ?? [], [entriesRaw]);
   const sortedEntries = useMemo<TimeEntry[]>(() => {
     const direction = sortDirection === 'asc' ? 1 : -1;
@@ -194,6 +199,10 @@ export default function TimeEntriesPage() {
     () => (membersQuery.data?.data ?? []).map((m) => m.user).filter((u): u is NonNullable<typeof u> => !!u),
     [membersQuery.data],
   );
+  const currentUserLabel = useMemo(() => {
+    if (!currentUser) return '-';
+    return `${currentUser.lastname ?? ''} ${currentUser.firstname ?? ''}`.trim() || currentUser.login;
+  }, [currentUser]);
   const selectedFilterUser = useMemo(
     () => memberUsers.find((u) => u.id === filterUserId) ?? null,
     [memberUsers, filterUserId],
@@ -262,9 +271,9 @@ export default function TimeEntriesPage() {
   }, [editIssueQuery, projectIssues, editForm.issueId]);
 
   useEffect(() => {
-    if (!memberUsers.length || !currentUser?.id) return;
+    if (!currentUser?.id) return;
     setForm((prev) => (prev.userId ? prev : { ...prev, userId: currentUser.id }));
-  }, [memberUsers, currentUser?.id]);
+  }, [currentUser?.id]);
 
   const submitLog = async (continuous: boolean) => {
     setFormError('');
@@ -393,6 +402,14 @@ export default function TimeEntriesPage() {
     await deleteEntry.mutateAsync(row.id);
   };
 
+  const canEditRow = (row: TimeEntry): boolean => {
+    return canEditTimeEntries || (row.userId === currentUser?.id && canLogTime);
+  };
+
+  const canDeleteRow = (row: TimeEntry): boolean => {
+    return canDeleteTimeEntries || (row.userId === currentUser?.id && canLogTime);
+  };
+
   const toggleSort = (key: TimeEntrySortKey) => {
     if (sortKey === key) {
       setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
@@ -418,14 +435,22 @@ export default function TimeEntriesPage() {
             {t('timeEntries.hours')}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setModalOpen(true)}
-          className="inline-flex justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
-        >
-          {t('timeEntries.new')}
-        </button>
+        {canCreateTimeEntry && (
+          <button
+            type="button"
+            onClick={() => setModalOpen(true)}
+            className="inline-flex justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+          >
+            {t('timeEntries.new')}
+          </button>
+        )}
       </div>
+
+      {!canViewTimeEntries && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          アクセス権限がありません
+        </p>
+      )}
 
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         <label className="text-sm">
@@ -598,24 +623,29 @@ export default function TimeEntriesPage() {
                   </td>
                   <td className="px-4 py-2">
                     <div className="flex items-center justify-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openEdit(row)}
-                        className="rounded p-1 text-blue-600 hover:bg-blue-50"
-                        title={t('app.edit')}
-                        aria-label={t('app.edit')}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDelete(row)}
-                        className="rounded p-1 text-red-600 hover:bg-red-50"
-                        title={t('app.delete')}
-                        aria-label={t('app.delete')}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      {canEditRow(row) && (
+                        <button
+                          type="button"
+                          onClick={() => openEdit(row)}
+                          className="rounded p-1 text-blue-600 hover:bg-blue-50"
+                          title={t('app.edit')}
+                          aria-label={t('app.edit')}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                      )}
+                      {canDeleteRow(row) && (
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(row)}
+                          className="rounded p-1 text-red-600 hover:bg-red-50"
+                          title={t('app.delete')}
+                          aria-label={t('app.delete')}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                      {!canEditRow(row) && !canDeleteRow(row) && <span className="text-gray-400">-</span>}
                     </div>
                   </td>
                 </tr>
@@ -660,16 +690,25 @@ export default function TimeEntriesPage() {
                   </div>
                 )}
               </label>
-              <label className="block text-sm">
-                <span className="text-gray-700">ユーザー *</span>
-                <AppSelect
-                  value={form.userId}
-                  onChange={(value) => setForm((f) => ({ ...f, userId: value }))}
-                  options={[{ value: '', label: '-' }, ...memberUsers.map((u) => ({ value: u.id, label: `${u.lastname} ${u.firstname}`.trim() || u.login }))]}
-                  ariaLabel="ユーザー"
-                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                />
-              </label>
+              {canEditTimeEntries ? (
+                <label className="block text-sm">
+                  <span className="text-gray-700">ユーザー *</span>
+                  <AppSelect
+                    value={form.userId}
+                    onChange={(value) => setForm((f) => ({ ...f, userId: value }))}
+                    options={[{ value: '', label: '-' }, ...memberUsers.map((u) => ({ value: u.id, label: `${u.lastname} ${u.firstname}`.trim() || u.login }))]}
+                    ariaLabel="ユーザー"
+                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+              ) : (
+                <div className="block text-sm">
+                  <span className="text-gray-700">ユーザー</span>
+                  <div className="mt-1 w-full rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                    {currentUserLabel}
+                  </div>
+                </div>
+              )}
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block text-sm">
                   <span className="text-gray-700">{t('timeEntries.spentOn')} *</span>

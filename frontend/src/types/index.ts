@@ -32,6 +32,10 @@ export interface Project {
     canDeleteIssue?: boolean;
     canAddIssueNotes: boolean;
     canManageProject: boolean;
+    canViewTimeEntries?: boolean;
+    canLogTime?: boolean;
+    canEditTimeEntries?: boolean;
+    canDeleteTimeEntries?: boolean;
     canUseAiActions?: boolean;
   };
   _count?: { issues?: number; members?: number };
