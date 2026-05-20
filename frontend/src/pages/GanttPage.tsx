@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import ProjectSubNav from '../components/ProjectSubNav';
@@ -153,6 +153,7 @@ export default function GanttPage() {
   const issues = useMemo(() => unwrapList<Issue>(issuesQuery.data), [issuesQuery.data]);
 
   const [zoom, setZoom] = useState<Zoom>('day');
+  const [rangeStartMonth, setRangeStartMonth] = useState(() => startOfMonth(new Date()));
   const scrollRef = useRef<HTMLDivElement>(null);
   const today = startOfDay(new Date());
   const isJa = (i18n.resolvedLanguage ?? i18n.language).startsWith('ja');
@@ -163,38 +164,25 @@ export default function GanttPage() {
   }, [issues]);
 
   const chartBounds = useMemo(() => {
-    const ranges: { start: Date; end: Date }[] = [];
-    for (const { issue } of issueRows) {
-      ranges.push(issueEffectiveRange(issue));
-    }
-    const today = startOfDay(new Date());
-
-    if (ranges.length === 0) {
-      return { chartStart: addDays(today, -14), chartEnd: addDays(today, 45) };
-    }
-
-    const starts = ranges.map((r) => r.start);
-    const ends = ranges.map((r) => r.end);
-    const minD = min(starts);
-    const maxD = max(ends);
+    const baseMonth = startOfMonth(rangeStartMonth);
 
     if (zoom === 'month') {
       return {
-        chartStart: startOfMonth(subMonths(today, 1)),
-        chartEnd: endOfMonth(addMonths(today, 3)),
+        chartStart: baseMonth,
+        chartEnd: endOfMonth(addMonths(baseMonth, 5)),
       };
     }
     if (zoom === 'week') {
       return {
-        chartStart: startOfWeek(addDays(minD, -7), { weekStartsOn: 1 }),
-        chartEnd: endOfWeek(addDays(maxD, 7), { weekStartsOn: 1 }),
+        chartStart: startOfWeek(subMonths(baseMonth, 1), { weekStartsOn: 1 }),
+        chartEnd: endOfWeek(addMonths(baseMonth, 3), { weekStartsOn: 1 }),
       };
     }
     return {
-      chartStart: addDays(minD, -3),
-      chartEnd: addDays(maxD, 3),
+      chartStart: baseMonth,
+      chartEnd: endOfMonth(addMonths(baseMonth, 1)),
     };
-  }, [issueRows, zoom]);
+  }, [rangeStartMonth, zoom]);
 
   const { chartStart, chartEnd } = chartBounds;
   const totalDays = Math.max(1, differenceInCalendarDays(startOfDay(chartEnd), startOfDay(chartStart)) + 1);
@@ -212,7 +200,7 @@ export default function GanttPage() {
     const left = differenceInCalendarDays(s, startOfDay(chartStart)) * dayWidth;
     const span = differenceInCalendarDays(e, s) + 1;
     const width = Math.max(dayWidth * 0.5, span * dayWidth);
-    return { left: Math.max(0, left), width };
+    return { left, width };
   };
 
   const todayOffset = useMemo(() => {
@@ -222,6 +210,19 @@ export default function GanttPage() {
     if (today < cs || today > ce) return null;
     return differenceInCalendarDays(today, cs) * dayWidth + dayWidth / 2;
   }, [chartStart, chartEnd, dayWidth]);
+
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    if (todayOffset == null) {
+      scroller.scrollLeft = 0;
+      return;
+    }
+    if (differenceInCalendarDays(startOfMonth(rangeStartMonth), startOfMonth(new Date())) !== 0) return;
+
+    const targetLeft = Math.max(0, todayOffset - scroller.clientWidth * 0.28);
+    scroller.scrollLeft = targetLeft;
+  }, [rangeStartMonth, todayOffset, timelinePx]);
 
   if (!identifier) return <p className="text-gray-500">{t('app.noData')}</p>;
 
@@ -247,6 +248,23 @@ export default function GanttPage() {
                 {t(`gantt.zoom${z.charAt(0).toUpperCase() + z.slice(1)}` as 'gantt.zoomMonth')}
               </button>
             ))}
+          </div>
+          <div className="flex items-center gap-1 text-sm text-primary-700">
+            <button
+              type="button"
+              onClick={() => setRangeStartMonth((current) => addMonths(current, -1))}
+              className="rounded px-1.5 py-1 hover:bg-primary-50 hover:underline"
+            >
+              &laquo; {format(addMonths(rangeStartMonth, -1), isJa ? 'yyyy年M月' : 'MMM yyyy', { locale: ja })}
+            </button>
+            <span className="text-gray-300">|</span>
+            <button
+              type="button"
+              onClick={() => setRangeStartMonth((current) => addMonths(current, 1))}
+              className="rounded px-1.5 py-1 hover:bg-primary-50 hover:underline"
+            >
+              {format(addMonths(rangeStartMonth, 1), isJa ? 'yyyy年M月' : 'MMM yyyy', { locale: ja })} &raquo;
+            </button>
           </div>
         </div>
       </div>
