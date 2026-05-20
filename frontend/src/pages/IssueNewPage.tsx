@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useCreateIssue, useUploadAttachments, useEnumerations, useProject, useStatuses, useMembers, useProjectIssues, useIssueCustomFields } from '../api/hooks';
@@ -77,12 +77,14 @@ export default function IssueNewPage() {
   const [attachFiles, setAttachFiles] = useState<File[]>([]);
   const [customFieldAttachments, setCustomFieldAttachments] = useState<Array<{ value: string; label: string }>>([]);
   const [formError, setFormError] = useState('');
+  const didDefaultAssignee = useRef(false);
   const canCreateIssue = Boolean(project?.permissions?.canCreateIssue);
   const customFieldsQuery = useIssueCustomFields(project?.id ?? '', trackerId);
 
   const assigneeOptions = useMemo(() => {
     const seen = new Set<string>();
-    return members.flatMap((member) => {
+    const currentUserValue = currentUser?.id ? `user:${currentUser.id}` : '';
+    const options = members.flatMap((member) => {
       if (member.user) {
         const value = `user:${member.user.id}`;
         if (seen.has(value)) return [];
@@ -98,18 +100,26 @@ export default function IssueNewPage() {
       }
       return [];
     });
-  }, [members]);
+    if (!currentUserValue || !seen.has(currentUserValue)) return options;
+    return [{ value: currentUserValue, label: '<<自分>>' }, ...options.filter((option) => option.value !== currentUserValue)];
+  }, [members, currentUser?.id]);
 
-  const customFieldReferenceOptions = useMemo(() => ({
-    users: members
+  const customFieldUserOptions = useMemo(() => {
+    const options = members
       .filter((member) => member.user)
       .map((member) => ({
         value: member.user!.id,
         label: `${`${member.user!.lastname} ${member.user!.firstname}`.trim() || member.user!.login} (${member.user!.login})`,
-      })),
+      }));
+    if (!currentUser?.id || !options.some((option) => option.value === currentUser.id)) return options;
+    return [{ value: currentUser.id, label: '<<自分>>' }, ...options.filter((option) => option.value !== currentUser.id)];
+  }, [members, currentUser?.id]);
+
+  const customFieldReferenceOptions = useMemo(() => ({
+    users: customFieldUserOptions,
     issues: projectIssues.map((iss) => ({ value: iss.id, label: `#${iss.number} ${iss.subject}` })),
     attachments: customFieldAttachments,
-  }), [members, projectIssues, customFieldAttachments]);
+  }), [customFieldUserOptions, projectIssues, customFieldAttachments]);
 
   const uploadCustomFieldFiles = async (files: File[], fieldId: string) => {
     const res = await uploadMutation.mutateAsync({ files, description: `custom-field:${fieldId}` });
@@ -142,6 +152,15 @@ export default function IssueNewPage() {
   useEffect(() => {
     if (statuses.length && !statusId) setStatusId(statuses[0].id);
   }, [statuses, statusId]);
+
+  useEffect(() => {
+    if (didDefaultAssignee.current || assigneeValue || !currentUser?.id) return;
+    const selfValue = `user:${currentUser.id}`;
+    if (assigneeOptions.some((option) => option.value === selfValue)) {
+      didDefaultAssignee.current = true;
+      setAssigneeValue(selfValue);
+    }
+  }, [assigneeOptions, assigneeValue, currentUser?.id]);
 
   useEffect(() => {
     const fields = customFieldsQuery.data?.data ?? [];

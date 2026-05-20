@@ -153,6 +153,7 @@ export default function IssuesPage() {
   );
   const assigneeOptions = useMemo(() => {
     const seen = new Set<string>();
+    const currentUserValue = currentUser?.id ? `user:${currentUser.id}` : '';
     const options = members.flatMap((member) => {
       if (member.user) {
         const value = `user:${member.user.id}`;
@@ -171,8 +172,11 @@ export default function IssuesPage() {
       }
       return [];
     });
-    return [{ value: '', label: EMPTY_MARK }, ...options];
-  }, [members]);
+    const orderedOptions = currentUserValue && seen.has(currentUserValue)
+      ? [{ value: currentUserValue, label: '<<自分>>' }, ...options.filter((option) => option.value !== currentUserValue)]
+      : options;
+    return [{ value: '', label: EMPTY_MARK }, ...orderedOptions];
+  }, [members, currentUser?.id]);
   const bulkAssigneeOptions = useMemo(
     () => [
       { value: '', label: EMPTY_MARK },
