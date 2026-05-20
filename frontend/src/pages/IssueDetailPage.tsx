@@ -15,6 +15,13 @@ import { AttachmentLink, AttachmentPreview } from '../components/AttachmentLink'
 import { useAuthStore } from '../stores/auth';
 import { openAuthenticatedAtom } from '../utils/atom';
 import type { CustomField, Issue, IssueCustomFieldValue, Journal, JournalDetail, User, Attachment } from '../types';
+import {
+  convertEstimatedEffortInput,
+  estimatedEffortUnitLabel,
+  formatEstimatedEffort,
+  parseEstimatedEffort,
+  type EstimatedEffortUnit,
+} from '../utils/estimatedEffort';
 
 type IssueWithExtras = Issue & {
   watchers?: { user: User }[];
@@ -203,6 +210,7 @@ export default function IssueDetailPage() {
   const [deleteIssueConfirmOpen, setDeleteIssueConfirmOpen] = useState(false);
   const [editError, setEditError] = useState('');
   const [customFieldAttachments, setCustomFieldAttachments] = useState<Array<{ value: string; label: string }>>([]);
+  const [estimatedHoursUnit, setEstimatedHoursUnit] = useState<EstimatedEffortUnit>('hours');
 
   const locale = ja;
   const projectSlug = identifier ?? issue?.project?.identifier ?? '';
@@ -387,7 +395,7 @@ export default function IssueDetailPage() {
       parentId: issue.parentId ?? '',
       startDate: toDateStr(issue.startDate),
       dueDate: toDateStr(issue.dueDate),
-      estimatedHours: issue.estimatedHours != null ? String(issue.estimatedHours) : '',
+      estimatedHours: issue.estimatedHours != null ? formatEstimatedEffort(issue.estimatedHours, 'hours') : '',
       doneRatio: String(issue.doneRatio),
       repository: (issue as Issue & { repository?: string }).repository ?? '',
       customFields: Object.fromEntries((issue.customFields ?? []).map((field) => [
@@ -395,6 +403,7 @@ export default function IssueDetailPage() {
         customFieldFormValue(field),
       ])),
     });
+    setEstimatedHoursUnit('hours');
     setIsEditing(true);
   };
 
@@ -416,6 +425,11 @@ export default function IssueDetailPage() {
       setEditError(customFieldValidationError);
       return;
     }
+    const parsedEstimatedHours = parseEstimatedEffort(form.estimatedHours, estimatedHoursUnit);
+    if (form.estimatedHours.trim() && parsedEstimatedHours == null) {
+      setEditError(`${t('issues.estimatedHours')} は h:mm または数値で入力してください`);
+      return;
+    }
     const assignee = parseAssigneeValue(form.assigneeValue);
     updateMutation.mutate(
       {
@@ -430,7 +444,7 @@ export default function IssueDetailPage() {
         parentId: form.parentId || null,
         startDate: form.startDate || null,
         dueDate: form.dueDate || null,
-        estimatedHours: form.estimatedHours ? Number(form.estimatedHours) : null,
+        estimatedHours: parsedEstimatedHours,
         doneRatio: Number(form.doneRatio),
         repository: form.repository.trim() || null,
         customFields: form.customFields,
@@ -878,8 +892,36 @@ export default function IssueDetailPage() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.estimatedHours')}</label>
-              <input type="number" step="0.5" min="0" value={form.estimatedHours}
-                onChange={(e) => setField('estimatedHours', e.target.value)} className={inputCls} />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  inputMode={estimatedHoursUnit === 'hours' ? 'text' : 'decimal'}
+                  value={form.estimatedHours}
+                  onChange={(e) => setField('estimatedHours', e.target.value)}
+                  placeholder={estimatedHoursUnit === 'hours' ? 'h:mm' : '日数'}
+                  className={`${inputCls} min-w-0 flex-1`}
+                />
+                <div className="w-28 shrink-0">
+                  <AppSelect
+                    value={estimatedHoursUnit}
+                    onChange={(value) => {
+                      const nextUnit = value as EstimatedEffortUnit;
+                      setForm((prev) => ({
+                        ...prev,
+                        estimatedHours: convertEstimatedEffortInput(prev.estimatedHours, estimatedHoursUnit, nextUnit),
+                      }));
+                      setEstimatedHoursUnit(nextUnit);
+                      setEditError('');
+                    }}
+                    options={[
+                      { value: 'hours', label: estimatedEffortUnitLabel('hours') },
+                      { value: 'days', label: estimatedEffortUnitLabel('days') },
+                    ]}
+                    ariaLabel={`${t('issues.estimatedHours')}の単位`}
+                    className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm shadow-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                  />
+                </div>
+              </div>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.doneRatio')}</label>

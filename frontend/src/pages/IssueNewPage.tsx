@@ -9,6 +9,12 @@ import RichTextEditor from '../components/RichTextEditor';
 import IssueCustomFieldInputs from '../components/IssueCustomFieldInputs';
 import ProgressRangeInput from '../components/ProgressRangeInput';
 import type { Issue } from '../types';
+import {
+  convertEstimatedEffortInput,
+  estimatedEffortUnitLabel,
+  parseEstimatedEffort,
+  type EstimatedEffortUnit,
+} from '../utils/estimatedEffort';
 
 function RequiredMark() {
   return <span className="ml-0.5 text-red-500">*</span>;
@@ -63,12 +69,14 @@ export default function IssueNewPage() {
   const [startDate, setStartDate] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [estimatedHours, setEstimatedHours] = useState('');
+  const [estimatedHoursUnit, setEstimatedHoursUnit] = useState<EstimatedEffortUnit>('hours');
   const [doneRatio, setDoneRatio] = useState(0);
   const [repository, setRepository] = useState('');
   const [parentId, setParentId] = useState('');
   const [customFields, setCustomFields] = useState<Record<string, string | string[]>>({});
   const [attachFiles, setAttachFiles] = useState<File[]>([]);
   const [customFieldAttachments, setCustomFieldAttachments] = useState<Array<{ value: string; label: string }>>([]);
+  const [formError, setFormError] = useState('');
   const canCreateIssue = Boolean(project?.permissions?.canCreateIssue);
   const customFieldsQuery = useIssueCustomFields(project?.id ?? '', trackerId);
 
@@ -150,11 +158,17 @@ export default function IssueNewPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError('');
     if (!project) return;
     const latest = await projectQuery.refetch();
     const latestCanCreate = Boolean(latest.data?.data?.permissions?.canCreateIssue);
     if (!latestCanCreate) return;
     if (dateValidationError) return;
+    const parsedEstimatedHours = parseEstimatedEffort(estimatedHours, estimatedHoursUnit);
+    if (estimatedHours.trim() && parsedEstimatedHours == null) {
+      setFormError(`${t('issues.estimatedHours')} は h:mm または数値で入力してください`);
+      return;
+    }
     const assignee = parseAssigneeValue(assigneeValue);
     createMutation.mutate(
       {
@@ -170,7 +184,7 @@ export default function IssueNewPage() {
         parentId: parentId || null,
         startDate: startDate || null,
         dueDate: dueDate || null,
-        estimatedHours: estimatedHours === '' ? null : Number(estimatedHours),
+        estimatedHours: parsedEstimatedHours,
         doneRatio,
         repository: repository.trim() || null,
         customFields,
@@ -217,6 +231,7 @@ export default function IssueNewPage() {
           {project.name} <span className="font-mono">({project.identifier})</span>
         </p>
         <form onSubmit={handleSubmit} className="space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        {formError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>}
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">
             {t('issues.tracker')}<RequiredMark />
@@ -330,14 +345,35 @@ export default function IssueNewPage() {
         {dateValidationError && <p className="text-sm text-red-600">{dateValidationError}</p>}
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.estimatedHours')}</label>
-          <input
-            type="number"
-            step="0.25"
-            min={0}
-            value={estimatedHours}
-            onChange={(e) => setEstimatedHours(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
+          <div className="flex gap-2">
+            <input
+              type="text"
+              inputMode={estimatedHoursUnit === 'hours' ? 'text' : 'decimal'}
+              value={estimatedHours}
+              onChange={(e) => {
+                setFormError('');
+                setEstimatedHours(e.target.value);
+              }}
+              placeholder={estimatedHoursUnit === 'hours' ? 'h:mm' : '日数'}
+              className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+            <div className="w-32 shrink-0">
+              <AppSelect
+                value={estimatedHoursUnit}
+                onChange={(value) => {
+                  const nextUnit = value as EstimatedEffortUnit;
+                  setEstimatedHours((current) => convertEstimatedEffortInput(current, estimatedHoursUnit, nextUnit));
+                  setEstimatedHoursUnit(nextUnit);
+                }}
+                options={[
+                  { value: 'hours', label: estimatedEffortUnitLabel('hours') },
+                  { value: 'days', label: estimatedEffortUnitLabel('days') },
+                ]}
+                ariaLabel={`${t('issues.estimatedHours')}の単位`}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
         </div>
         <div>
           <label className="mb-1 block flex justify-between text-sm font-medium text-slate-700">
