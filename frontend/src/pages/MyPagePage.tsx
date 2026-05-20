@@ -54,7 +54,7 @@ export default function MyPagePage() {
     { enabled: !!me },
   );
   const reportedQ = useIssues(
-    me ? { author: me.id, closed: 'true', per_page: 50 } : undefined,
+    me ? { author: me.id, closed: 'false', per_page: 50 } : undefined,
     { enabled: !!me },
   );
   const watchersQ = useMyWatchers();

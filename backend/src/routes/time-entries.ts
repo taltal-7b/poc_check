@@ -381,15 +381,22 @@ router.post(
       }
 
       const targetUserId = body.userId ?? req.user!.userId;
-      if (targetUserId !== req.user!.userId && !req.user!.admin) {
-        throw AppError.forbidden('他ユーザーの工数は記録できません');
-      }
 
       const project = await prisma.project.findUnique({ where: { id: projectId } });
       if (!project) throw AppError.notFound('プロジェクトが見つかりません');
 
-      const canLogTime = await hasAnyProjectPermission(req.user?.userId, req.user?.admin, project.id, ['log_time']);
-      if (!canLogTime) throw AppError.forbidden();
+      const isOwnEntry = targetUserId === req.user!.userId;
+      const canCreateTimeEntry = await hasAnyProjectPermission(
+        req.user?.userId,
+        req.user?.admin,
+        project.id,
+        isOwnEntry ? ['log_time', 'edit_time_entries'] : ['edit_time_entries'],
+      );
+      if (!canCreateTimeEntry) {
+        throw AppError.forbidden(
+          isOwnEntry ? '工数を記録する権限がありません' : '他ユーザーの工数を記録する権限がありません',
+        );
+      }
 
       const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
       if (!targetUser) throw AppError.badRequest('ユーザーが存在しません');

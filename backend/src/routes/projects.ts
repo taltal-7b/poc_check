@@ -1576,6 +1576,18 @@ router.get(
         'edit_issues',
       ]),
       canManageProject: await userCanManageProject(req.user?.userId, req.user?.admin, project),
+      canViewTimeEntries: await hasAnyProjectPermission(req.user?.userId, req.user?.admin, project.id, [
+        'view_time_entries',
+      ]),
+      canLogTime: await hasAnyProjectPermission(req.user?.userId, req.user?.admin, project.id, [
+        'log_time',
+      ]),
+      canEditTimeEntries: await hasAnyProjectPermission(req.user?.userId, req.user?.admin, project.id, [
+        'edit_time_entries',
+      ]),
+      canDeleteTimeEntries: await hasAnyProjectPermission(req.user?.userId, req.user?.admin, project.id, [
+        'delete_time_entries',
+      ]),
       canUseAiActions,
     };
 
