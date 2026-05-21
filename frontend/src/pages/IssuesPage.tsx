@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Edit3, Rss, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Edit3, Rss, Search, Trash2, X } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { useBulkDeleteIssues, useBulkUpdateIssues, useIssues, useProjectIssues, useStatuses, useTrackers, useMembers, useProject } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
@@ -14,6 +14,32 @@ import type { Issue } from '../types';
 
 const PER_PAGE = 10;
 const EMPTY_MARK = '\uFF0D';
+type IssueSortKey =
+  | 'number'
+  | 'tracker'
+  | 'subject'
+  | 'parent'
+  | 'parentNumber'
+  | 'status'
+  | 'assignee'
+  | 'priority'
+  | 'createdAt'
+  | 'dueDate'
+  | 'updatedAt';
+
+function isIssueSortKey(value: string | null): value is IssueSortKey {
+  return value === 'number'
+    || value === 'tracker'
+    || value === 'subject'
+    || value === 'parent'
+    || value === 'parentNumber'
+    || value === 'status'
+    || value === 'assignee'
+    || value === 'priority'
+    || value === 'createdAt'
+    || value === 'dueDate'
+    || value === 'updatedAt';
+}
 
 function priorityBadge(p: number) {
   const map: Record<number, string> = {
@@ -44,6 +70,8 @@ export default function IssuesPage() {
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkError, setBulkError] = useState('');
+  const [parentSearch, setParentSearch] = useState('');
+  const [parentPickerOpen, setParentPickerOpen] = useState(false);
   const [bulkForm, setBulkForm] = useState({
     statusId: '',
     priority: '',
@@ -58,7 +86,10 @@ export default function IssuesPage() {
   const statusId = searchParams.get('statusId') || '';
   const priority = searchParams.get('priority') || '';
   const assignee = searchParams.get('assignee') || '';
-  const sort = searchParams.get('sort') || '';
+  const parentNumber = searchParams.get('parent') || '';
+  const sortParam = searchParams.get('sort');
+  const sort: IssueSortKey = isIssueSortKey(sortParam) ? sortParam : 'updatedAt';
+  const order = searchParams.get('order') === 'asc' ? 'asc' : 'desc';
 
   const queryParams = useMemo(
     () => {
@@ -69,7 +100,9 @@ export default function IssuesPage() {
         ...(trackerId ? { tracker: trackerId } : {}),
         ...(statusId ? { status: statusId } : {}),
         ...(priority ? { priority: Number(priority) } : {}),
-        ...(sort ? { sort } : {}),
+        ...(parentNumber ? { parent: parentNumber } : {}),
+        sort,
+        order,
         ...(trimmedAssignee.startsWith('group:')
           ? { assignee_group: trimmedAssignee.slice(6) }
           : trimmedAssignee.startsWith('user:')
@@ -77,7 +110,7 @@ export default function IssuesPage() {
             : trimmedAssignee ? { assignee: trimmedAssignee } : {}),
       };
     },
-    [page, trackerId, statusId, priority, assignee, sort],
+    [page, trackerId, statusId, priority, assignee, parentNumber, sort, order],
   );
 
   const atomUrl = useMemo(() => {
@@ -85,6 +118,7 @@ export default function IssuesPage() {
     if (trackerId) params.set('tracker', trackerId);
     if (statusId) params.set('status', statusId);
     if (priority) params.set('priority', priority);
+    if (parentNumber) params.set('parent', parentNumber);
     if (assignee.trim().startsWith('group:')) params.set('assignee_group', assignee.trim().slice(6));
     else if (assignee.trim().startsWith('user:')) params.set('assignee', assignee.trim().slice(5));
     else if (assignee.trim()) params.set('assignee', assignee.trim());
@@ -94,7 +128,7 @@ export default function IssuesPage() {
       ? `/api/v1/projects/${identifier}/issues/atom`
       : '/api/v1/issues/atom';
     return `${base}${qs ? `?${qs}` : ''}`;
-  }, [identifier, trackerId, statusId, priority, assignee]);
+  }, [identifier, trackerId, statusId, priority, assignee, parentNumber]);
 
   const openAtom = async (event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
@@ -103,6 +137,20 @@ export default function IssuesPage() {
 
   const globalQuery = useIssues(queryParams, { enabled: !identifier });
   const projectQuery = useProjectIssues(identifier ?? '', queryParams, { enabled: !!identifier });
+  const parentCandidateParams = useMemo(() => {
+    const q = parentSearch.trim().replace(/^#/, '');
+    return {
+      page: 1,
+      per_page: 20,
+      sort: 'updatedAt',
+      order: 'desc',
+      ...(q ? { q } : {}),
+    };
+  }, [parentSearch]);
+  const globalParentCandidates = useIssues(parentCandidateParams, { enabled: parentPickerOpen && !identifier });
+  const projectParentCandidates = useProjectIssues(identifier ?? '', parentCandidateParams, {
+    enabled: parentPickerOpen && !!identifier,
+  });
 
   const active = identifier ? projectQuery : globalQuery;
   const { data, isLoading, isError } = active;
@@ -122,6 +170,7 @@ export default function IssuesPage() {
     canCreateIssue;
 
   const issues: Issue[] = data?.data ?? [];
+  const parentCandidates = (identifier ? projectParentCandidates.data : globalParentCandidates.data)?.data ?? [];
   const pagination = data?.pagination;
   const selectedCount = selectedIds.size;
   const selectedVisibleCount = issues.filter((issue) => selectedIds.has(issue.id)).length;
@@ -173,7 +222,7 @@ export default function IssuesPage() {
       return [];
     });
     const orderedOptions = currentUserValue && seen.has(currentUserValue)
-      ? [{ value: currentUserValue, label: '<<自分>>' }, ...options.filter((option) => option.value !== currentUserValue)]
+      ? [{ value: currentUserValue, label: '自分' }, ...options.filter((option) => option.value !== currentUserValue)]
       : options;
     return [{ value: '', label: EMPTY_MARK }, ...orderedOptions];
   }, [members, currentUser?.id]);
@@ -194,6 +243,11 @@ export default function IssuesPage() {
     });
   }, [issues]);
 
+  useEffect(() => {
+    if (!parentNumber) return;
+    setParentSearch((current) => current || `#${parentNumber}`);
+  }, [parentNumber]);
+
   const setFilter = (key: string, value: string) => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -212,35 +266,21 @@ export default function IssuesPage() {
     });
   };
 
-  const setSort = (value: string) => {
+  const toggleSort = (key: IssueSortKey) => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
-      if (value) next.set('sort', value);
-      else next.delete('sort');
+      const nextOrder = sort === key && order === 'asc' ? 'desc' : 'asc';
+      next.set('sort', key);
+      next.set('order', nextOrder);
       next.set('page', '1');
       return next;
     });
   };
 
-  const newIssueTo = identifier ? `/projects/${identifier}/issues/new` : '/projects';
-  const toggleIssueSelection = (id: string, checked: boolean) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  };
-
-  const toggleVisibleSelection = (checked: boolean) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      for (const issue of issues) {
-        if (checked) next.add(issue.id);
-        else next.delete(issue.id);
-      }
-      return next;
-    });
+  const selectParentIssue = (issue: Issue) => {
+    setFilter('parent', String(issue.number));
+    setParentSearch(`#${issue.number} ${issue.subject}`);
+    setParentPickerOpen(false);
   };
 
   const issueDepthById = useMemo(() => {
@@ -271,6 +311,51 @@ export default function IssuesPage() {
     for (const issue of issues) depthOf(issue);
     return depths;
   }, [issues, sort]);
+
+  const clearParentIssue = () => {
+    setFilter('parent', '');
+    setParentSearch('');
+    setParentPickerOpen(false);
+  };
+
+  const sortIndicator = (key: IssueSortKey) => {
+    if (sort !== key) return null;
+    return order === 'asc'
+      ? <ArrowUp className="h-3.5 w-3.5" aria-hidden />
+      : <ArrowDown className="h-3.5 w-3.5" aria-hidden />;
+  };
+
+  const sortableHeader = (key: IssueSortKey, label: React.ReactNode) => (
+    <button
+      type="button"
+      onClick={() => toggleSort(key)}
+      className="inline-flex items-center gap-1 hover:text-primary-700"
+    >
+      {label}
+      {sortIndicator(key)}
+    </button>
+  );
+
+  const newIssueTo = identifier ? `/projects/${identifier}/issues/new` : '/projects';
+  const toggleIssueSelection = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleVisibleSelection = (checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const issue of issues) {
+        if (checked) next.add(issue.id);
+        else next.delete(issue.id);
+      }
+      return next;
+    });
+  };
 
   const resetBulkForm = () => {
     setBulkForm({ statusId: '', priority: '', assignee: '', doneRatio: '' });
@@ -381,17 +466,52 @@ export default function IssuesPage() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-500">表示順</label>
-          <AppSelect
-            value={sort}
-            onChange={setSort}
-            options={[
-              { value: '', label: '更新順' },
-              { value: 'parent', label: '親子順' },
-            ]}
-            ariaLabel="表示順"
-            className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
-          />
+          <label className="mb-1 block text-xs font-medium text-slate-500">{t('issues.parent')}</label>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" aria-hidden />
+            <input
+              value={parentSearch}
+              onFocus={() => setParentPickerOpen(true)}
+              onBlur={() => window.setTimeout(() => setParentPickerOpen(false), 120)}
+              onChange={(event) => {
+                setParentSearch(event.target.value);
+                if (parentNumber) setFilter('parent', '');
+                setParentPickerOpen(true);
+              }}
+              placeholder="No・題名で検索"
+              aria-label={`${t('issues.parent')}を検索`}
+              className="w-full rounded-lg border border-slate-300 py-2 pl-8 pr-9 text-sm"
+            />
+            {(parentSearch || parentNumber) && (
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={clearParentIssue}
+                aria-label={`${t('issues.parent')}を解除`}
+                className="absolute right-2 top-2 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            )}
+            {parentPickerOpen && (
+              <div className="absolute left-0 right-0 z-40 mt-1 max-h-64 overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                {parentCandidates.length > 0 ? parentCandidates.map((issue) => (
+                  <button
+                    key={issue.id}
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => selectParentIssue(issue)}
+                    className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <span className="font-mono text-xs text-slate-500">#{issue.number}</span>{' '}
+                    <span>{issue.subject}</span>
+                  </button>
+                )) : (
+                  <p className="px-3 py-2 text-sm text-slate-500">候補がありません</p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         </div>
 
@@ -445,16 +565,16 @@ export default function IssuesPage() {
                     />
                   </th>
                 )}
-                <th className="w-16 px-2 py-3 text-left font-semibold text-slate-700">No</th>
-                <th className="w-24 px-2 py-3 text-left font-semibold text-slate-700">{t('issues.tracker')}</th>
-                <th className="min-w-64 px-2 py-3 text-left font-semibold text-slate-700">{t('issues.subjectColumn')}</th>
-                <th className="w-28 px-2 py-3 text-left font-semibold text-slate-700">{t('issues.parent')}</th>
-                <th className="w-24 px-2 py-3 text-left font-semibold text-slate-700">{t('issues.status')}</th>
-                <th className="w-32 px-2 py-3 text-left font-semibold text-slate-700">{t('issues.assignee')}</th>
-                <th className="w-24 px-2 py-3 text-left font-semibold text-slate-700">{t('issues.priority')}</th>
-                <th className="w-20 px-2 py-3 text-left font-semibold text-slate-700">登録日</th>
-                <th className="w-20 px-2 py-3 text-left font-semibold text-slate-700">{t('issues.dueDate')}</th>
-                <th className="w-20 px-2 py-3 text-left font-semibold text-slate-700">更新日</th>
+                <th className="w-16 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('number', 'No')}</th>
+                <th className="w-24 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('tracker', t('issues.tracker'))}</th>
+                <th className="min-w-64 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('subject', t('issues.subjectColumn'))}</th>
+                <th className="w-28 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('parentNumber', t('issues.parent'))}</th>
+                <th className="w-24 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('status', t('issues.status'))}</th>
+                <th className="w-32 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('assignee', t('issues.assignee'))}</th>
+                <th className="w-24 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('priority', t('issues.priority'))}</th>
+                <th className="w-20 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('createdAt', '登録日')}</th>
+                <th className="w-20 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('dueDate', t('issues.dueDate'))}</th>
+                <th className="w-20 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('updatedAt', '更新日')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -463,10 +583,10 @@ export default function IssuesPage() {
                   identifier && issue.id
                     ? `/projects/${identifier}/issues/${issue.id}`
                     : `/issues/${issue.id}`;
-                const depth = issueDepthById.get(issue.id) ?? 0;
                 const parentLabel = issue.parent
                   ? `${issue.parent.number ? `#${issue.parent.number} ` : ''}${issue.parent.subject}`.trim()
                   : EMPTY_MARK;
+                const depth = issueDepthById.get(issue.id) ?? 0;
                 return (
                   <tr key={issue.id} className="hover:bg-slate-50/80">
                     {isAuthenticated && (

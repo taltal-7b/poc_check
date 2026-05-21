@@ -1,61 +1,65 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout';
 import { useAuthStore } from './stores/auth';
 import { useProject } from './api/hooks';
 
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import ForgotPasswordPage from './pages/ForgotPasswordPage';
-import ResetPasswordPage from './pages/ResetPasswordPage';
-import HomePage from './pages/HomePage';
-import ProjectsPage from './pages/ProjectsPage';
-import ProjectNewPage from './pages/ProjectNewPage';
-import ProjectDetailPage from './pages/ProjectDetailPage';
-import ProjectSettingsPage from './pages/ProjectSettingsPage';
-import IssuesPage from './pages/IssuesPage';
-import IssueNewPage from './pages/IssueNewPage';
-import IssueDetailPage from './pages/IssueDetailPage';
-import TimeEntriesPage from './pages/TimeEntriesPage';
-import WikiPage from './pages/WikiPage';
-import WikiEditPage from './pages/WikiEditPage';
-import WikiHistoryPage from './pages/WikiHistoryPage';
-import WikiDiffPage from './pages/WikiDiffPage';
-import NewsPage from './pages/NewsPage';
-import NewsNewPage from './pages/NewsNewPage';
-import NewsEditPage from './pages/NewsEditPage';
-import ForumsLayout from './pages/forums/ForumsLayout';
-import {
-  ForumBoardIndex,
-  ForumEditBoard,
-  ForumEditTopic,
-  ForumNewBoard,
-  ForumNewTopic,
-  ForumTopicList,
-  ForumTopicShow,
-} from './pages/forums/ForumViews';
-import DocumentsPage from './pages/DocumentsPage';
-import FilesPage from './pages/FilesPage';
-import GanttPage from './pages/GanttPage';
-import CalendarPage from './pages/CalendarPage';
-import MembersPage from './pages/MembersPage';
-import ActivityPage from './pages/ActivityPage';
-import SearchPage from './pages/SearchPage';
-import MyPagePage from './pages/MyPagePage';
-import MyAccountPage from './pages/MyAccountPage';
-import UserProfilePage from './pages/UserProfilePage';
-
-import AdminUsersPage from './pages/admin/UsersPage';
-import AdminUserDetailPage from './pages/admin/UserDetailPage';
-import AdminRolesPage from './pages/admin/RolesPage';
-import AdminGroupsPage from './pages/admin/GroupsPage';
-import AdminGroupNewPage from './pages/admin/GroupNewPage';
-import AdminGroupDetailPage from './pages/admin/GroupDetailPage';
-import AdminTrackersPage from './pages/admin/TrackersPage';
-import AdminStatusesPage from './pages/admin/StatusesPage';
-import AdminCustomFieldsPage from './pages/admin/CustomFieldsPage';
-import AdminEnumerationsPage from './pages/admin/EnumerationsPage';
-import AdminSettingsPage from './pages/admin/SettingsPage';
 import { buildLoginNavigateTo } from './utils/return-path';
+
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const RegisterPage = lazy(() => import('./pages/RegisterPage'));
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
+const HomePage = lazy(() => import('./pages/HomePage'));
+const ProjectsPage = lazy(() => import('./pages/ProjectsPage'));
+const ProjectNewPage = lazy(() => import('./pages/ProjectNewPage'));
+const ProjectDetailPage = lazy(() => import('./pages/ProjectDetailPage'));
+const ProjectSettingsPage = lazy(() => import('./pages/ProjectSettingsPage'));
+const IssuesPage = lazy(() => import('./pages/IssuesPage'));
+const IssueNewPage = lazy(() => import('./pages/IssueNewPage'));
+const IssueDetailPage = lazy(() => import('./pages/IssueDetailPage'));
+const TimeEntriesPage = lazy(() => import('./pages/TimeEntriesPage'));
+const WikiPage = lazy(() => import('./pages/WikiPage'));
+const WikiEditPage = lazy(() => import('./pages/WikiEditPage'));
+const WikiHistoryPage = lazy(() => import('./pages/WikiHistoryPage'));
+const WikiDiffPage = lazy(() => import('./pages/WikiDiffPage'));
+const NewsPage = lazy(() => import('./pages/NewsPage'));
+const NewsNewPage = lazy(() => import('./pages/NewsNewPage'));
+const NewsEditPage = lazy(() => import('./pages/NewsEditPage'));
+const ForumsLayout = lazy(() => import('./pages/forums/ForumsLayout'));
+const ForumBoardIndex = lazy(() => import('./pages/forums/ForumViews').then((module) => ({ default: module.ForumBoardIndex })));
+const ForumEditBoard = lazy(() => import('./pages/forums/ForumViews').then((module) => ({ default: module.ForumEditBoard })));
+const ForumEditTopic = lazy(() => import('./pages/forums/ForumViews').then((module) => ({ default: module.ForumEditTopic })));
+const ForumNewBoard = lazy(() => import('./pages/forums/ForumViews').then((module) => ({ default: module.ForumNewBoard })));
+const ForumNewTopic = lazy(() => import('./pages/forums/ForumViews').then((module) => ({ default: module.ForumNewTopic })));
+const ForumTopicList = lazy(() => import('./pages/forums/ForumViews').then((module) => ({ default: module.ForumTopicList })));
+const ForumTopicShow = lazy(() => import('./pages/forums/ForumViews').then((module) => ({ default: module.ForumTopicShow })));
+const DocumentsPage = lazy(() => import('./pages/DocumentsPage'));
+const FilesPage = lazy(() => import('./pages/FilesPage'));
+const GanttPage = lazy(() => import('./pages/GanttPage'));
+const CalendarPage = lazy(() => import('./pages/CalendarPage'));
+const MembersPage = lazy(() => import('./pages/MembersPage'));
+const ActivityPage = lazy(() => import('./pages/ActivityPage'));
+const SearchPage = lazy(() => import('./pages/SearchPage'));
+const MyPagePage = lazy(() => import('./pages/MyPagePage'));
+const MyAccountPage = lazy(() => import('./pages/MyAccountPage'));
+const UserProfilePage = lazy(() => import('./pages/UserProfilePage'));
+
+const AdminUsersPage = lazy(() => import('./pages/admin/UsersPage'));
+const AdminUserDetailPage = lazy(() => import('./pages/admin/UserDetailPage'));
+const AdminRolesPage = lazy(() => import('./pages/admin/RolesPage'));
+const AdminGroupsPage = lazy(() => import('./pages/admin/GroupsPage'));
+const AdminGroupNewPage = lazy(() => import('./pages/admin/GroupNewPage'));
+const AdminGroupDetailPage = lazy(() => import('./pages/admin/GroupDetailPage'));
+const AdminTrackersPage = lazy(() => import('./pages/admin/TrackersPage'));
+const AdminStatusesPage = lazy(() => import('./pages/admin/StatusesPage'));
+const AdminCustomFieldsPage = lazy(() => import('./pages/admin/CustomFieldsPage'));
+const AdminEnumerationsPage = lazy(() => import('./pages/admin/EnumerationsPage'));
+const AdminSettingsPage = lazy(() => import('./pages/admin/SettingsPage'));
+
+function RouteLoading() {
+  return <div className="flex min-h-screen items-center justify-center">読み込み中...</div>;
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
@@ -130,7 +134,8 @@ function IssueCreateRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <Routes>
+    <Suspense fallback={<RouteLoading />}>
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/password/forgot" element={<ForgotPasswordPage />} />
@@ -195,6 +200,7 @@ export default function App() {
         <Route path="admin/enumerations" element={<AdminRoute><AdminEnumerationsPage /></AdminRoute>} />
         <Route path="admin/settings" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />
       </Route>
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }

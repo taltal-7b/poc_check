@@ -5,12 +5,14 @@ import ProjectSubNav from '../components/ProjectSubNav';
 import { format, parseISO } from 'date-fns';
 import {
   Activity as ActivityIcon,
+  CalendarRange,
   FileEdit,
   MessageCircle,
   Newspaper,
+  RotateCcw,
   Ticket,
 } from 'lucide-react';
-import { useProject, useActivities } from '../api/hooks';
+import { useProject, useActivities, useAllProjects } from '../api/hooks';
 import AppSelect from '../components/AppSelect';
 import type { Activity as ActivityRow } from '../types';
 
@@ -49,10 +51,10 @@ function activityTypeLabel(actType: string): string {
     news_update: 'ニュース - 更新',
     news_comment: 'ニュース - 新しいコメント',
     news_delete: 'ニュース - 削除',
-    message: 'メッセージ',
-    message_create: 'メッセージ - 新規投稿',
-    message_update: 'メッセージ - 更新',
-    message_delete: 'メッセージ - 削除',
+    message: 'トピック/コメント',
+    message_create: 'トピック/コメント - 新規投稿',
+    message_update: 'トピック/コメント - 更新',
+    message_delete: 'トピック/コメント - 削除',
     board: 'フォーラム',
     board_create: 'フォーラム - 新規作成',
     board_update: 'フォーラム - 更新',
@@ -79,7 +81,7 @@ function activityTypeLabel(actType: string): string {
   if (key.startsWith('issue_')) return 'チケット関連';
   if (key.startsWith('wiki_')) return 'Wiki関連';
   if (key.startsWith('news_')) return 'ニュース関連';
-  if (key.startsWith('message_')) return 'メッセージ関連';
+  if (key.startsWith('message_')) return 'トピック/コメント関連';
   if (key.startsWith('board_')) return 'フォーラム関連';
   if (key.startsWith('document_')) return '文書関連';
   if (key.startsWith('time_entry_')) return '工数関連';
@@ -89,62 +91,205 @@ function activityTypeLabel(actType: string): string {
   return 'その他';
 }
 
+type ActivityDateOperator = '*' | '><' | 't' | 'w' | 'lw' | 'l2w' | 'm' | 'lm';
+
+const ACTIVITY_TYPE_GROUPS = [
+  { value: '', label: 'すべて' },
+  { value: 'issue', label: 'チケット' },
+  { value: 'wiki', label: 'Wiki' },
+  { value: 'board', label: 'フォーラム' },
+  { value: 'message', label: 'トピック/コメント' },
+  { value: 'news', label: 'ニュース' },
+  { value: 'document', label: '文書' },
+  { value: 'file', label: 'ファイル' },
+  { value: 'version', label: 'バージョン' },
+  { value: 'time_entry', label: '工数' },
+];
+
+function formatDateKey(date: Date): string {
+  return format(date, 'yyyy-MM-dd');
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function startOfWeekMonday(date: Date): Date {
+  const next = new Date(date);
+  const day = next.getDay();
+  return addDays(next, day === 0 ? -6 : 1 - day);
+}
+
 export default function ActivityPage() {
   const { t } = useTranslation();
   const { identifier } = useParams<{ identifier?: string }>();
 
   const { data: projectRaw } = useProject(identifier ?? '');
-  const project =
-    identifier && projectRaw && typeof projectRaw === 'object' && 'id' in projectRaw
-      ? (projectRaw as { id: string })
-      : null;
+  const { data: projectsRaw } = useAllProjects({ enabled: !identifier });
+  const project = identifier ? projectRaw?.data ?? null : null;
+  const projectOptions = useMemo(
+    () => [
+      { value: '', label: 'すべて' },
+      ...(projectsRaw?.data ?? []).map((row) => ({
+        value: row.id,
+        label: `${row.name} (${row.identifier})`,
+      })),
+    ],
+    [projectsRaw?.data],
+  );
 
-  const [actType, setActType] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const today = formatDateKey(new Date());
+  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [actTypeGroup, setActTypeGroup] = useState('');
+  const [dateOperator, setDateOperator] = useState<ActivityDateOperator>('*');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+
+  const createdAtRange = useMemo((): { from?: string; to?: string } => {
+    const now = new Date();
+    switch (dateOperator) {
+      case '*':
+        return {};
+      case '><':
+        return {
+          ...(customFrom ? { from: customFrom } : {}),
+          ...(customTo ? { to: customTo } : {}),
+        };
+      case 't':
+        return { from: today, to: today };
+      case 'w': {
+        const start = startOfWeekMonday(now);
+        return { from: formatDateKey(start), to: formatDateKey(addDays(start, 6)) };
+      }
+      case 'lw': {
+        const thisWeek = startOfWeekMonday(now);
+        return { from: formatDateKey(addDays(thisWeek, -7)), to: formatDateKey(addDays(thisWeek, -1)) };
+      }
+      case 'l2w':
+        return { from: formatDateKey(addDays(now, -13)), to: today };
+      case 'm':
+        return {
+          from: formatDateKey(new Date(now.getFullYear(), now.getMonth(), 1)),
+          to: formatDateKey(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+        };
+      case 'lm':
+        return {
+          from: formatDateKey(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+          to: formatDateKey(new Date(now.getFullYear(), now.getMonth(), 0)),
+        };
+      default:
+        return {};
+    }
+  }, [customFrom, customTo, dateOperator, today]);
 
   const params = useMemo(() => {
     const p: Record<string, unknown> = {};
-    if (project) p.project_id = project.id;
-    if (actType) p.type = actType;
-    if (from) p.from = from;
-    if (to) p.to = to;
+    if (project?.id) p.project_id = project.id;
+    if (!project?.id && selectedProjectId) p.project_id = selectedProjectId;
+    if (actTypeGroup) p.type_group = actTypeGroup;
+    if (createdAtRange.from) p.from = createdAtRange.from;
+    if (createdAtRange.to) p.to = createdAtRange.to;
     return p;
-  }, [project, actType, from, to]);
+  }, [project?.id, selectedProjectId, actTypeGroup, createdAtRange.from, createdAtRange.to]);
 
   const { data: raw, isLoading } = useActivities(params);
   const rows = useMemo(() => unwrapList<ActivityRow>(raw), [raw]);
+  const hasActiveFilters = selectedProjectId !== '' || actTypeGroup !== '' || dateOperator !== '*';
 
-  const types = useMemo(() => {
-    const s = new Set<string>();
-    rows.forEach((r) => s.add(r.actType));
-    return Array.from(s).sort();
-  }, [rows]);
+  const resetFilters = () => {
+    setSelectedProjectId('');
+    setActTypeGroup('');
+    setDateOperator('*');
+    setCustomFrom('');
+    setCustomTo('');
+  };
 
   return (
     <div className="space-y-6">
       {identifier && <ProjectSubNav identifier={identifier} />}
       <h1 className="text-2xl font-bold text-gray-900">{t('activity.title')}</h1>
 
-      <div className="flex flex-wrap gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-        <label className="text-sm">
-          <span className="block text-gray-600 mb-1">Type</span>
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        {!identifier && (
+          <label className="min-w-[16rem] text-sm">
+            <span className="mb-1 block text-gray-600">対象プロジェクト</span>
+            <AppSelect
+              value={selectedProjectId}
+              onChange={setSelectedProjectId}
+              options={projectOptions}
+              ariaLabel="対象プロジェクト"
+              className="rounded border border-gray-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+        )}
+        <label className="min-w-[12rem] text-sm">
+          <span className="mb-1 block text-gray-600">種別</span>
           <AppSelect
-            value={actType}
-            onChange={setActType}
-            options={[{ value: '', label: 'All' }, ...types.map((x) => ({ value: x, label: activityTypeLabel(x) }))]}
-            ariaLabel="Type"
-            className="min-w-[10rem] rounded border border-gray-300 px-2 py-1.5 text-sm"
+            value={actTypeGroup}
+            onChange={setActTypeGroup}
+            options={ACTIVITY_TYPE_GROUPS}
+            ariaLabel="種別"
+            className="rounded border border-gray-300 px-2 py-1.5 text-sm"
           />
         </label>
-        <label className="text-sm">
-          <span className="block text-gray-600 mb-1">{t('issues.startDate')}</span>
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded border border-gray-300 px-2 py-1.5 text-sm" />
+        <label className="min-w-[11rem] text-sm">
+          <span className="mb-1 block text-gray-600">期間</span>
+          <AppSelect
+            value={dateOperator}
+            onChange={(value) => setDateOperator(value as ActivityDateOperator)}
+            options={[
+              { value: '*', label: 'すべて' },
+              { value: 't', label: '今日' },
+              { value: 'w', label: '今週' },
+              { value: 'lw', label: '先週' },
+              { value: 'l2w', label: '直近2週間' },
+              { value: 'm', label: '今月' },
+              { value: 'lm', label: '先月' },
+              { value: '><', label: '日付を指定' },
+            ]}
+            ariaLabel="期間"
+            className="rounded border border-gray-300 px-2 py-1.5 text-sm"
+          />
         </label>
-        <label className="text-sm">
-          <span className="block text-gray-600 mb-1">{t('issues.dueDate')}</span>
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded border border-gray-300 px-2 py-1.5 text-sm" />
-        </label>
+        {dateOperator === '><' && (
+          <>
+            <label className="text-sm">
+              <span className="mb-1 block text-gray-600">開始</span>
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="rounded border border-gray-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+            <label className="text-sm">
+              <span className="mb-1 block text-gray-600">終了</span>
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="rounded border border-gray-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+          </>
+        )}
+        <button
+          type="button"
+          onClick={resetFilters}
+          disabled={!hasActiveFilters}
+          className="inline-flex items-center gap-1.5 rounded border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+        >
+          <RotateCcw size={15} aria-hidden />
+          リセット
+        </button>
+        <p className="inline-flex items-center gap-1.5 pb-1 text-sm text-gray-500">
+          <CalendarRange size={15} aria-hidden />
+          {createdAtRange.from || createdAtRange.to
+            ? `${createdAtRange.from ?? '指定なし'} - ${createdAtRange.to ?? '指定なし'}`
+            : '全期間'}
+        </p>
       </div>
 
       {isLoading ? (

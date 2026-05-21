@@ -109,6 +109,27 @@ export const useUpdateMailNotificationPreference = () => {
 
 // ========== Projects ==========
 export const useProjects = (params?: Record<string, unknown>) => useQuery({ queryKey: ['projects', params], queryFn: () => get<Project[]>('/projects', params) });
+export const useAllProjects = (options?: { enabled?: boolean }) =>
+  useQuery({
+    queryKey: ['projects', 'all'],
+    queryFn: async () => {
+      const firstPage = await get<Project[]>('/projects', { page: 1, per_page: 100 });
+      const totalPages = firstPage.pagination?.totalPages ?? 1;
+      if (totalPages <= 1) return firstPage;
+
+      const rest = await Promise.all(
+        Array.from({ length: totalPages - 1 }, (_, index) =>
+          get<Project[]>('/projects', { page: index + 2, per_page: 100 }),
+        ),
+      );
+
+      return {
+        ...firstPage,
+        data: [...firstPage.data, ...rest.flatMap((page) => page.data)],
+      };
+    },
+    enabled: options?.enabled ?? true,
+  });
 export const useProject = (
   id: string,
   options?: { enabled?: boolean; refetchOnMount?: boolean | 'always'; cacheScope?: string },
@@ -649,11 +670,6 @@ export const useDeleteTracker = () => {
   const qc = useQueryClient();
   return useMutation({ mutationFn: (id: string) => del(`/trackers/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['trackers'] }) });
 };
-export const useReorderTrackers = () => {
-  const qc = useQueryClient();
-  return useMutation({ mutationFn: (body: { ids: string[] }) => put('/trackers/reorder', body), onSuccess: () => qc.invalidateQueries({ queryKey: ['trackers'] }) });
-};
-
 // ========== Issue statuses (admin) ==========
 export const useCreateIssueStatus = () => {
   const qc = useQueryClient();

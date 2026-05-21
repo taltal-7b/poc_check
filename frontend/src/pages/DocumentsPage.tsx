@@ -672,7 +672,7 @@ export default function DocumentsPage() {
       )}
 
       {canModify && categoriesRaw?.success && categories.length === 0 && (
-        <p className="text-sm text-amber-700">DocumentCategory が未設定です。管理画面の列挙値からカテゴリを作成してください。</p>
+        <p className="text-sm text-amber-700">DocumentCategory が未設定です。管理画面の文書カテゴリ・工数分類からカテゴリを作成してください。</p>
       )}
 
       <Dialog open={modalOpen} onClose={closeModal} className="relative z-50">

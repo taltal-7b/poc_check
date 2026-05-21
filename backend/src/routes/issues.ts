@@ -196,9 +196,29 @@ async function buildIssueWhere(
     if (!Number.isNaN(p)) where.priority = p;
   }
 
+  const parentNumberRaw = req.query.parent as string | undefined;
+  if (parentNumberRaw?.trim()) {
+    const normalizedParentNumber = parentNumberRaw.trim().replace(/^#/, '');
+    const parentNumber = Number(normalizedParentNumber);
+    if (Number.isInteger(parentNumber) && parentNumber > 0) {
+      where.parent = { number: parentNumber };
+    }
+  }
+
   const q = req.query.q as string | undefined;
   if (q?.trim()) {
-    where.subject = { contains: q.trim(), mode: 'insensitive' };
+    const search = q.trim();
+    const issueNumber = Number(search.replace(/^#/, ''));
+    if (Number.isInteger(issueNumber) && issueNumber > 0) {
+      where.AND = [{
+        OR: [
+          { subject: { contains: search, mode: 'insensitive' } },
+          { number: issueNumber },
+        ],
+      }];
+    } else {
+      where.subject = { contains: search, mode: 'insensitive' };
+    }
   }
 
   return { where, earlyEmpty: false };
@@ -239,6 +259,37 @@ function sortIssuesByHierarchy(rows: IssueTreeSeed[]): { orderedIds: string[]; d
   for (const root of byParent.get(null) ?? []) visit(root, 0);
   for (const row of rows) visit(row, 0);
   return { orderedIds: ordered, depthById };
+}
+
+function issueOrderBy(sort: string, order: Prisma.SortOrder): Prisma.IssueOrderByWithRelationInput[] {
+  switch (sort) {
+    case 'number':
+      return [{ number: order }];
+    case 'tracker':
+      return [{ tracker: { name: order } }, { number: 'desc' }];
+    case 'subject':
+      return [{ subject: order }, { number: 'desc' }];
+    case 'parentNumber':
+      return [{ parent: { number: order } }, { number: 'desc' }];
+    case 'status':
+      return [{ status: { position: order } }, { number: 'desc' }];
+    case 'assignee':
+      return [
+        { assignee: { lastname: order } },
+        { assignee: { firstname: order } },
+        { assigneeGroup: { name: order } },
+        { number: 'desc' },
+      ];
+    case 'priority':
+      return [{ priority: order }, { number: 'desc' }];
+    case 'createdAt':
+      return [{ createdAt: order }, { number: 'desc' }];
+    case 'dueDate':
+      return [{ dueDate: order }, { number: 'desc' }];
+    case 'updatedAt':
+    default:
+      return [{ updatedAt: order }, { number: 'desc' }];
+  }
 }
 
 async function assertValidIssueParent(issueId: string, projectId: string, parentId: string | null | undefined) {
@@ -950,6 +1001,7 @@ router.get(
       return sendPaginated(res, [], { total: 0, page, perPage, totalPages: 1 });
     }
     const sort = String(req.query.sort ?? '');
+    const order = String(req.query.order ?? '') === 'asc' ? 'asc' : 'desc';
 
     if (sort === 'parent') {
       const [total, treeRows] = await Promise.all([
@@ -993,7 +1045,7 @@ router.get(
       prisma.issue.count({ where }),
       prisma.issue.findMany({
         where,
-        orderBy: [{ updatedAt: 'desc' }],
+        orderBy: issueOrderBy(sort, order),
         skip,
         take: perPage,
         include: {

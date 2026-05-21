@@ -105,6 +105,10 @@ router.get(
       if (typeof type === 'string' && type.length > 0) {
         where.actType = type;
       }
+      const typeGroup = req.query.type_group;
+      if (typeof typeGroup === 'string' && typeGroup.length > 0) {
+        where.actType = { startsWith: typeGroup };
+      }
 
       const from = req.query.from;
       const to = req.query.to;

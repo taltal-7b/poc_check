@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
+import { CircleHelp, Pencil, Trash2 } from 'lucide-react';
 import {
   useCreateCustomField,
   useCustomFields,
@@ -83,9 +84,6 @@ export default function CustomFieldsPage() {
   const [name, setName] = useState('');
   const [fieldFormat, setFieldFormat] = useState<string>('string');
   const [isRequired, setIsRequired] = useState(false);
-  const [isFilter, setIsFilter] = useState(false);
-  const [searchable, setSearchable] = useState(false);
-  const [multiple, setMultiple] = useState(false);
   const [isForAll, setIsForAll] = useState(true);
   const [position, setPosition] = useState(1);
   const [defaultValue, setDefaultValue] = useState('');
@@ -98,9 +96,6 @@ export default function CustomFieldsPage() {
     setName('');
     setFieldFormat('string');
     setIsRequired(false);
-    setIsFilter(false);
-    setSearchable(false);
-    setMultiple(false);
     setIsForAll(true);
     setPosition(sortedFields.length + 1);
     setDefaultValue('');
@@ -115,9 +110,6 @@ export default function CustomFieldsPage() {
     setName(field.name);
     setFieldFormat(field.fieldFormat);
     setIsRequired(field.isRequired);
-    setIsFilter(!!field.isFilter);
-    setSearchable(!!field.searchable);
-    setMultiple(!!field.multiple);
     setIsForAll(field.isForAll ?? true);
     setPosition(field.position);
     setDefaultValue(field.defaultValue ?? '');
@@ -159,9 +151,6 @@ export default function CustomFieldsPage() {
       name,
       fieldFormat,
       isRequired,
-      isFilter,
-      searchable,
-      multiple,
       isForAll,
       position,
       defaultValue: defaultValue || null,
@@ -199,39 +188,53 @@ export default function CustomFieldsPage() {
 
       {!isLoading && !isError && (
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50 text-left text-gray-600">
               <tr>
-                <th className="px-3 py-2 text-left font-medium text-gray-600">カスタムフィールド名</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('customFields.fieldFormat')}</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('customFields.isRequired')}</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('trackers.position')}</th>
-                <th className="px-3 py-2 text-right font-medium text-gray-600">{t('app.actions')}</th>
+                <th className="px-4 py-3 font-medium">{t('customFields.name')}</th>
+                <th className="px-4 py-3 font-medium">{t('customFields.fieldFormat')}</th>
+                <th className="px-4 py-3 font-medium">{t('customFields.isRequired')}</th>
+                <th className="px-4 py-3 font-medium">{t('trackers.position')}</th>
+                <th className="px-4 py-3 text-center font-medium">{t('app.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {sortedFields.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-3 py-8 text-center text-gray-500">
+                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
                     {t('app.noData')}
                   </td>
                 </tr>
               ) : (
                 sortedFields.map((field) => (
                   <tr key={field.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 font-medium text-gray-900">{field.name}</td>
-                    <td className="px-3 py-2 text-gray-700">{fieldFormatLabel(field.fieldFormat)}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-4 py-2 font-medium text-gray-900">{field.name}</td>
+                    <td className="px-4 py-2 text-gray-700">{fieldFormatLabel(field.fieldFormat)}</td>
+                    <td className="px-4 py-2">
                       <input type="checkbox" checked={field.isRequired} readOnly className="pointer-events-none" />
                     </td>
-                    <td className="px-3 py-2 text-gray-600">{field.position}</td>
-                    <td className="px-3 py-2 text-right space-x-2 whitespace-nowrap">
-                      <button type="button" className="text-primary-600 hover:underline" onClick={() => openEdit(field)}>
-                        {t('app.edit')}
-                      </button>
-                      <button type="button" className="text-red-600 hover:underline" onClick={() => confirmDelete(field)}>
-                        {t('app.delete')}
-                      </button>
+                    <td className="px-4 py-2 text-gray-600">{field.position}</td>
+                    <td className="px-4 py-2">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(field)}
+                          className="rounded p-1 text-blue-600 hover:bg-blue-50"
+                          title={t('app.edit')}
+                          aria-label={t('app.edit')}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => confirmDelete(field)}
+                          className="rounded p-1 text-red-600 hover:bg-red-50"
+                          title={t('app.delete')}
+                          aria-label={t('app.delete')}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -248,7 +251,24 @@ export default function CustomFieldsPage() {
             <DialogTitle className="text-lg font-semibold text-gray-900">{editing ? t('app.edit') : t('customFields.new')}</DialogTitle>
             <form className="mt-4 space-y-3" onSubmit={submit}>
               <div>
-                <label className="block text-sm font-medium text-gray-700">カスタムフィールド名</label>
+                <label className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-700">
+                  {t('customFields.name')}
+                  <span
+                    tabIndex={0}
+                    aria-label={t('customFields.helpLabel')}
+                    aria-describedby="custom-field-help"
+                    className="group/help relative inline-flex cursor-help rounded-full text-gray-500 outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+                  >
+                    <CircleHelp aria-hidden="true" className="h-4 w-4" />
+                    <span
+                      id="custom-field-help"
+                      role="tooltip"
+                      className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 w-72 -translate-x-1/2 rounded-md border border-gray-200 bg-gray-900 px-3 py-2 text-left text-xs font-normal leading-5 text-white opacity-0 shadow-lg transition group-hover/help:opacity-100 group-focus/help:opacity-100"
+                    >
+                      {t('customFields.help')}
+                    </span>
+                  </span>
+                </label>
                 <input className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={name} onChange={(e) => setName(e.target.value)} required />
               </div>
               <div>
@@ -264,18 +284,6 @@ export default function CustomFieldsPage() {
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={isRequired} onChange={(e) => setIsRequired(e.target.checked)} />
                 {t('customFields.isRequired')}
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={isFilter} onChange={(e) => setIsFilter(e.target.checked)} />
-                {t('customFields.isFilter')}
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={searchable} onChange={(e) => setSearchable(e.target.checked)} />
-                {t('customFields.searchable')}
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={multiple} onChange={(e) => setMultiple(e.target.checked)} />
-                {t('customFields.multiple')}
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={isForAll} onChange={(e) => setIsForAll(e.target.checked)} />

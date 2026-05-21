@@ -21,6 +21,7 @@ const createBodySchema = z.object({
   name: z.string().min(1).max(255),
   defaultStatusId: z.string().uuid().nullable().optional(),
   description: z.string().nullable().optional(),
+  position: z.number().int().min(0).optional(),
 });
 
 const updateBodySchema = createBodySchema.partial();
@@ -72,7 +73,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response, next: NextFun
     }
 
     const maxPos = await prisma.tracker.aggregate({ _max: { position: true } });
-    const position = (maxPos._max.position ?? -1) + 1;
+    const position = parsed.data.position ?? (maxPos._max.position ?? -1) + 1;
 
     const tracker = await prisma.tracker.create({
       data: {
@@ -121,6 +122,9 @@ router.put('/:id', requireAdmin, async (req: Request, res: Response, next: NextF
           : {}),
         ...(parsed.data.description !== undefined
           ? { description: parsed.data.description }
+          : {}),
+        ...(parsed.data.position !== undefined
+          ? { position: parsed.data.position }
           : {}),
       },
       include: { defaultStatus: true },
