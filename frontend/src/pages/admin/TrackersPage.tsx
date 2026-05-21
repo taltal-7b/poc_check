@@ -1,7 +1,8 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
-import { useTrackers, useStatuses, useCreateTracker, useUpdateTracker, useDeleteTracker, useReorderTrackers } from '../../api/hooks';
+import { Pencil, Trash2 } from 'lucide-react';
+import { useTrackers, useStatuses, useCreateTracker, useUpdateTracker, useDeleteTracker } from '../../api/hooks';
 import AppSelect from '../../components/AppSelect';
 import type { Tracker } from '../../types';
 
@@ -14,14 +15,13 @@ export default function TrackersPage() {
   const createTracker = useCreateTracker();
   const updateTracker = useUpdateTracker();
   const deleteTracker = useDeleteTracker();
-  const reorderTrackers = useReorderTrackers();
 
   const sortedStatuses = useMemo(() => [...statuses].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)), [statuses]);
 
-  const [ordered, setOrdered] = useState<Tracker[]>([]);
-  useEffect(() => {
-    setOrdered([...trackers].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)));
-  }, [trackers]);
+  const ordered = useMemo(
+    () => [...trackers].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)),
+    [trackers],
+  );
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Tracker | null>(null);
@@ -29,7 +29,6 @@ export default function TrackersPage() {
   const [defaultStatusId, setDefaultStatusId] = useState('');
   const [description, setDescription] = useState('');
   const [positionInput, setPositionInput] = useState<number>(1);
-  const [dragId, setDragId] = useState<string | null>(null);
 
   const openCreate = () => {
     setEditing(null);
@@ -75,23 +74,6 @@ export default function TrackersPage() {
     await deleteTracker.mutateAsync(tr.id);
   };
 
-  const applyOrder = async (next: Tracker[]) => {
-    setOrdered(next);
-    await reorderTrackers.mutateAsync({ ids: next.map(x => x.id) });
-  };
-
-  const onDrop = (targetId: string) => {
-    if (!dragId || dragId === targetId) return;
-    const idx = ordered.findIndex(x => x.id === dragId);
-    const tidx = ordered.findIndex(x => x.id === targetId);
-    if (idx < 0 || tidx < 0) return;
-    const copy = [...ordered];
-    const [moved] = copy.splice(idx, 1);
-    copy.splice(tidx, 0, moved);
-    void applyOrder(copy);
-    setDragId(null);
-  };
-
   const statusName = (id: string | null) => sortedStatuses.find(s => s.id === id)?.name ?? '—';
 
   return (
@@ -108,46 +90,49 @@ export default function TrackersPage() {
 
       {!isLoading && !isError && (
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50 text-left text-gray-600">
               <tr>
-                <th className="w-8 px-2 py-2" aria-label="Reorder" />
-                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('projects.name')}</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('trackers.defaultStatus')}</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('trackers.position')}</th>
-                <th className="px-3 py-2 text-right font-medium text-gray-600">{t('app.actions')}</th>
+                <th className="px-4 py-3 font-medium">{t('trackers.name')}</th>
+                <th className="px-4 py-3 font-medium">{t('trackers.defaultStatus')}</th>
+                <th className="px-4 py-3 font-medium">{t('trackers.position')}</th>
+                <th className="px-4 py-3 text-center font-medium">{t('app.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {ordered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-3 py-8 text-center text-gray-500">
+                  <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
                     {t('app.noData')}
                   </td>
                 </tr>
               ) : (
                 ordered.map(tr => (
-                  <tr
-                    key={tr.id}
-                    draggable
-                    onDragStart={() => setDragId(tr.id)}
-                    onDragOver={e => e.preventDefault()}
-                    onDrop={() => onDrop(tr.id)}
-                    className="hover:bg-gray-50"
-                  >
-                    <td className="px-2 py-2 text-gray-400 cursor-grab select-none" title="Drag">
-                      ::
-                    </td>
-                    <td className="px-3 py-2 font-medium text-gray-900">{tr.name}</td>
-                    <td className="px-3 py-2 text-gray-700">{statusName(tr.defaultStatusId)}</td>
-                    <td className="px-3 py-2 text-gray-600">{tr.position}</td>
-                    <td className="px-3 py-2 text-right space-x-2 whitespace-nowrap">
-                      <button type="button" className="text-primary-600 hover:underline" onClick={() => openEdit(tr)}>
-                        {t('app.edit')}
-                      </button>
-                      <button type="button" className="text-red-600 hover:underline" onClick={() => confirmDelete(tr)}>
-                        {t('app.delete')}
-                      </button>
+                  <tr key={tr.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 font-medium text-gray-900">{tr.name}</td>
+                    <td className="px-4 py-2 text-gray-700">{statusName(tr.defaultStatusId)}</td>
+                    <td className="px-4 py-2 text-gray-600">{tr.position}</td>
+                    <td className="px-4 py-2">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(tr)}
+                          className="rounded p-1 text-blue-600 hover:bg-blue-50"
+                          title={t('app.edit')}
+                          aria-label={t('app.edit')}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => confirmDelete(tr)}
+                          className="rounded p-1 text-red-600 hover:bg-red-50"
+                          title={t('app.delete')}
+                          aria-label={t('app.delete')}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -164,7 +149,9 @@ export default function TrackersPage() {
             <DialogTitle className="text-lg font-semibold text-gray-900">{editing ? t('app.edit') : t('trackers.new')}</DialogTitle>
             <form className="mt-4 space-y-3" onSubmit={submit}>
               <div>
-                <label className="block text-sm font-medium text-gray-700">{t('projects.name')}</label>
+                <label className="block text-sm font-medium text-gray-700">
+                  {t('trackers.name')}<span className="ml-1 text-red-500">*</span>
+                </label>
                 <input className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={name} onChange={e => setName(e.target.value)} required />
               </div>
               <div>

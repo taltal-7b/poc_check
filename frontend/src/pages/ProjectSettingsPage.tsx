@@ -2,6 +2,7 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
+import { CircleHelp } from 'lucide-react';
 import ProjectSubNav from '../components/ProjectSubNav';
 import AppSelect from '../components/AppSelect';
 import { useDeleteProject, useProject, useProjectCustomFields, useProjects, useTrackers, useUpdateProject } from '../api/hooks';
@@ -317,7 +318,26 @@ export default function ProjectSettingsPage() {
           </div>
         </fieldset>
         <fieldset>
-          <legend className="mb-2 text-sm font-medium text-slate-700">{t('projects.trackers')}</legend>
+          <legend className="mb-2 text-sm font-medium text-slate-700">
+            <span className="inline-flex items-center gap-1.5">
+              {t('projects.trackers')}
+              <span
+                tabIndex={0}
+                aria-label={t('projects.trackerHelpLabel')}
+                aria-describedby="project-tracker-help"
+                className="group/help relative inline-flex cursor-help rounded-full text-slate-500 outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+              >
+                <CircleHelp aria-hidden="true" className="h-4 w-4" />
+                <span
+                  id="project-tracker-help"
+                  role="tooltip"
+                  className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 w-72 -translate-x-1/2 rounded-md border border-slate-200 bg-slate-900 px-3 py-2 text-left text-xs font-normal leading-5 text-white opacity-0 shadow-lg transition group-hover/help:opacity-100 group-focus/help:opacity-100"
+                >
+                  {t('projects.trackerHelp')}
+                </span>
+              </span>
+            </span>
+          </legend>
           <div className="grid gap-2 sm:grid-cols-2">
             {trackers.map((tr) => (
               <label key={tr.id} className="flex items-center gap-2 text-sm text-slate-700">

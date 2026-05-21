@@ -271,7 +271,7 @@ export default function IssueDetailPage() {
       return [];
     });
     if (!currentUserValue || !seen.has(currentUserValue)) return options;
-    return [{ value: currentUserValue, label: '<<自分>>' }, ...options.filter((option) => option.value !== currentUserValue)];
+    return [{ value: currentUserValue, label: '自分' }, ...options.filter((option) => option.value !== currentUserValue)];
   }, [members, currentUser?.id]);
 
   const issueNameMap = useMemo(() => {
@@ -297,7 +297,7 @@ export default function IssueDetailPage() {
         label: `${`${member.user!.lastname} ${member.user!.firstname}`.trim() || member.user!.login} (${member.user!.login})`,
       }));
     if (!currentUser?.id || !options.some((option) => option.value === currentUser.id)) return options;
-    return [{ value: currentUser.id, label: '<<自分>>' }, ...options.filter((option) => option.value !== currentUser.id)];
+    return [{ value: currentUser.id, label: '自分' }, ...options.filter((option) => option.value !== currentUser.id)];
   }, [members, currentUser?.id]);
 
   const customFieldReferenceOptions = useMemo(() => ({

@@ -187,7 +187,7 @@ export default function TimeEntriesPage() {
       label: `${u.lastname} ${u.firstname}`.trim() || u.login,
     }));
     if (!currentUser?.id || !options.some((option) => option.value === currentUser.id)) return options;
-    return [{ value: currentUser.id, label: '<<自分>>' }, ...options.filter((option) => option.value !== currentUser.id)];
+    return [{ value: currentUser.id, label: '自分' }, ...options.filter((option) => option.value !== currentUser.id)];
   }, [memberUsers, currentUser?.id]);
   const currentUserLabel = useMemo(() => {
     if (!currentUser) return '-';
