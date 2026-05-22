@@ -14,3 +14,6 @@ claude.md
 .cursor/hooks/.chat_logger_pending.json
 .cursor/hooks/__pycache__/
 logs/chat_events/
+docs/
+reports/
+scripts/generate-tasknova-docx.ps1
