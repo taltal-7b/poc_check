@@ -11,7 +11,6 @@ uploads/
 *.tsbuildinfo
 package-lock.json
 claude.md
-.cursor/hooks/chat_timestamp_logger.py
 .cursor/hooks/.chat_logger_pending.json
 .cursor/hooks/__pycache__/
 logs/chat_events/
