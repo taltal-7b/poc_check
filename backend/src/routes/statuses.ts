@@ -124,7 +124,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response, next: Ne
     if (trackerDefaultCount > 0) {
       return next(
         AppError.conflict(
-          'このステータスがトラッカーのデフォルトに設定されているため削除できません',
+          'このステータスが作業分類のデフォルトに設定されているため削除できません',
           'STATUS_DEFAULT_FOR_TRACKER',
         ),
       );

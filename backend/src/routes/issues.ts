@@ -51,7 +51,7 @@ const ISSUE_JOURNAL_KEYS = [
 
 const ISSUE_ACTIVITY_FIELD_LABELS: Record<string, string> = {
   projectId: 'プロジェクト',
-  trackerId: 'トラッカー',
+  trackerId: '作業分類',
   statusId: 'ステータス',
   priority: '優先度',
   subject: '題名',
@@ -1105,7 +1105,7 @@ router.get(
         const title = `#${row.number} ${row.subject}`;
         const content = [
           row.project ? `プロジェクト: ${row.project.name}` : '',
-          row.tracker ? `トラッカー: ${row.tracker.name}` : '',
+          row.tracker ? `作業分類: ${row.tracker.name}` : '',
           row.status ? `ステータス: ${row.status.name}` : '',
           row.description ?? '',
         ]
@@ -1247,7 +1247,7 @@ router.get(
       : '-';
     const content = [
       detail.project ? `プロジェクト: ${detail.project.name}` : '',
-      detail.tracker ? `トラッカー: ${detail.tracker.name}` : '',
+      detail.tracker ? `作業分類: ${detail.tracker.name}` : '',
       detail.status ? `ステータス: ${detail.status.name}` : '',
       `優先度: ${detail.priority}`,
       `作成者: ${authorName}`,

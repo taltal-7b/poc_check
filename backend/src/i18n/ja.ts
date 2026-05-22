@@ -38,7 +38,7 @@ export const ja = {
     bulkUpdated: 'チケットを一括更新しました',
     priorities: { low: '低め', normal: '通常', high: '高め', urgent: '急いで', immediate: '今すぐ' },
   },
-  trackers: { name: 'トラッカー' },
+  trackers: { name: '作業分類' },
   statuses: { name: 'ステータス' },
   customFields: { name: 'カスタムフィールド' },
   timeEntries: {

@@ -176,7 +176,7 @@ function uniqueValues(values: Array<string | null | undefined>): string[] {
 
 const WEEKLY_REPORT_FIELD_LABELS: Record<string, string> = {
   projectId: 'プロジェクト',
-  trackerId: 'トラッカー',
+  trackerId: '作業分類',
   statusId: 'ステータス',
   priority: '優先度',
   subject: '題名',
@@ -315,7 +315,7 @@ async function buildProjectProgressSummaryInput(projectId: string): Promise<{ in
 
       return [
         `## #${issue.number} ${issue.subject}`,
-        `- トラッカー: ${issue.tracker.name}`,
+        `- 作業分類: ${issue.tracker.name}`,
         `- ステータス: ${issue.status.name}`,
         `- 優先度: ${priorityLabel(issue.priority)}`,
         `- 担当者: ${assignee}`,
@@ -666,7 +666,7 @@ async function buildProjectWeeklyReportInput(projectId: string): Promise<{
       return [
         `## #${issue.number} ${issue.subject}`,
         `- 該当カテゴリ: ${categories || 'なし'}`,
-        `- トラッカー: ${issue.tracker.name}`,
+        `- 作業分類: ${issue.tracker.name}`,
         `- ステータス: ${issue.status.name} / 完了扱い: ${issue.status.isClosed ? 'はい' : 'いいえ'}`,
         `- 優先度: ${priorityLabel(issue.priority)}`,
         `- 担当者: ${assignee}`,
@@ -912,7 +912,7 @@ async function buildProjectBottleneckDetectionInput(projectId: string): Promise<
         `## #${issue.number} ${issue.subject}`,
         `- 種別: ${kind === 'open' ? '未完了・期日超過中' : '期日超過後に完了'}`,
         `- 遅延日数: ${delay}`,
-        `- トラッカー: ${issue.tracker.name}`,
+        `- 作業分類: ${issue.tracker.name}`,
         `- ステータス: ${issue.status.name} / 完了扱い: ${issue.status.isClosed ? 'はい' : 'いいえ'}`,
         `- 優先度: ${priorityLabel(issue.priority)}`,
         `- 担当者: ${assigneeName(issue)}`,
@@ -963,7 +963,7 @@ async function buildProjectBottleneckDetectionInput(projectId: string): Promise<
     `- 期日超過後に完了: ${lateClosedIssues.length} / ${lateClosedIssueCount}`,
     omittedClosedCount ? `- 期日超過後に完了の省略件数: ${omittedClosedCount}` : '',
     ...topLines('担当者別の対象件数', summaryMaps.assignee),
-    ...topLines('トラッカー別の対象件数', summaryMaps.tracker),
+    ...topLines('作業分類別の対象件数', summaryMaps.tracker),
     ...topLines('カテゴリ別の対象件数', summaryMaps.category),
     '',
     '# 未完了・期日超過中チケット',
@@ -1134,7 +1134,7 @@ async function buildProjectTaskInstructionInput(projectId: string): Promise<{
       return [
         `## #${issue.number} ${issue.subject}`,
         `- 注目フラグ: ${markers.length ? markers.join(', ') : 'なし'}`,
-        `- トラッカー: ${issue.tracker.name}`,
+        `- 作業分類: ${issue.tracker.name}`,
         `- ステータス: ${issue.status.name}`,
         `- 優先度: ${priorityLabel(issue.priority)}`,
         `- 担当者: ${assigneeName(issue)}`,
@@ -1185,7 +1185,7 @@ async function buildProjectTaskInstructionInput(projectId: string): Promise<{
     `- 14日以上更新なし: ${staleCount}件`,
     ...topLines('担当者別', summaryMaps.assignee),
     ...topLines('ステータス別', summaryMaps.status),
-    ...topLines('トラッカー別', summaryMaps.tracker),
+    ...topLines('作業分類別', summaryMaps.tracker),
     '',
     '# 未完了チケット詳細',
     ...issueLines,

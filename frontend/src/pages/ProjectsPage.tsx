@@ -1,6 +1,7 @@
 import { useMemo, useState, type MouseEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { Pencil, Rss, Trash2 } from 'lucide-react';
 import { useProjects, useDeleteProject } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
@@ -37,7 +38,7 @@ export default function ProjectsPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentTab = searchParams.get('tab');
   const tab: Tab = isTab(currentTab) ? currentTab : 'active';
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<Project | null>(null);
 
   const deleteMutation = useDeleteProject();
 
@@ -96,9 +97,19 @@ export default function ProjectsPage() {
     return project.createdByUserId === user.id;
   };
 
-  const handleDelete = async (projectId: string) => {
+  const handleDelete = async () => {
     if (!deleteConfirm) return;
-    await deleteMutation.mutateAsync(projectId);
+    await deleteMutation.mutateAsync(deleteConfirm.id);
+    closeDeleteConfirm();
+  };
+
+  const openDeleteConfirm = (project: Project) => {
+    deleteMutation.reset();
+    setDeleteConfirm(project);
+  };
+
+  const closeDeleteConfirm = () => {
+    deleteMutation.reset();
     setDeleteConfirm(null);
   };
 
@@ -154,44 +165,11 @@ export default function ProjectsPage() {
               </Link>
               <button
                 type="button"
-                onClick={() => {
-                  if (deleteConfirm === project.id) {
-                    handleDelete(project.id);
-                  } else {
-                    setDeleteConfirm(project.id);
-                  }
-                }}
-                className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-sm font-medium transition ${
-                  deleteConfirm === project.id
-                    ? 'bg-red-600 text-white hover:bg-red-700'
-                    : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
+                onClick={() => openDeleteConfirm(project)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 transition hover:bg-slate-50"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
-            </div>
-          )}
-
-          {deleteConfirm === project.id && (
-            <div className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3 text-sm">
-              <p className="font-medium text-red-900">本当に削除しますか？</p>
-              <div className="mt-2 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleDelete(project.id)}
-                  disabled={deleteMutation.isPending}
-                  className="flex-1 rounded bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
-                >
-                  {deleteMutation.isPending ? '削除中...' : t('app.delete')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDeleteConfirm(null)}
-                  className="flex-1 rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
-                >
-                  {t('app.cancel')}
-                </button>
-              </div>
             </div>
           )}
 
@@ -257,6 +235,37 @@ export default function ProjectsPage() {
           Atom
         </a>
       </div>
+
+      <Dialog open={!!deleteConfirm} onClose={closeDeleteConfirm} className="relative z-50">
+        <div className="fixed inset-0 bg-black/30" aria-hidden />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <DialogTitle className="text-lg font-semibold text-slate-900">確認</DialogTitle>
+            <p className="mt-2 text-sm text-slate-600">
+              <span className="font-semibold text-slate-800">{deleteConfirm?.name}</span>
+              {' '}を削除します。よろしいですか？
+            </p>
+            {deleteMutation.isError && <p className="mt-4 text-sm text-red-600">{t('app.error')}</p>}
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeDeleteConfirm}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                {t('app.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDelete()}
+                disabled={deleteMutation.isPending}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {t('app.delete')}
+              </button>
+            </div>
+          </DialogPanel>
+        </div>
+      </Dialog>
     </div>
   );
 }
