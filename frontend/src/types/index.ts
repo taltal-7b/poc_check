@@ -364,6 +364,15 @@ export interface MyWatcherItem {
   project: Pick<Project, 'id' | 'name' | 'identifier'>;
 }
 
+export interface MyParticipatingProject {
+  projectId: string;
+  projectName: string;
+  projectIdentifier: string;
+  description: string | null;
+  childProjectNames: string[];
+  roles: string[];
+}
+
 export interface TotpStatus {
   totpEnabled: boolean;
   delivery: 'email';

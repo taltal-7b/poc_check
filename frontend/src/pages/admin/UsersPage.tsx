@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { useUsers, useCreateUser, useUpdateUser, useDeleteUser } from '../../api/hooks';
-import AppSelect from '../../components/AppSelect';
 import { type User, UserStatusCode } from '../../types';
 
 function userDisplayName(u: User) {
@@ -26,30 +26,17 @@ function StatusBadge({ status, t }: { status: number; t: (k: string) => string }
   return <span className={`${base} bg-gray-100 text-gray-700`}>{statusLabel(status, t)}</span>;
 }
 
-type StatusFilter = 'all' | 'active' | 'registered' | 'locked';
 const PASSWORD_MIN = 8;
 const PASSWORD_MAX = 128;
 
 export default function UsersPage() {
   const { t } = useTranslation();
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const params = useMemo(() => {
-    if (statusFilter === 'all') return undefined;
-    const map: Record<Exclude<StatusFilter, 'all'>, number> = {
-      active: UserStatusCode.Active,
-      registered: UserStatusCode.Registered,
-      locked: UserStatusCode.Locked,
-    };
-    return { status: map[statusFilter] };
-  }, [statusFilter]);
-
-  const { data: usersRes, isLoading, isError } = useUsers(params);
+  const { data: usersRes, isLoading, isError } = useUsers();
   const users = usersRes?.data ?? [];
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
   const deleteUser = useDeleteUser();
 
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [addOpen, setAddOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
 
@@ -102,20 +89,6 @@ export default function UsersPage() {
       language: u.language || 'ja',
     });
     setPasswordError('');
-  };
-
-  const toggleSelect = (id: string) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleAll = () => {
-    if (selected.size === users.length) setSelected(new Set());
-    else setSelected(new Set(users.map(u => u.id)));
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -173,34 +146,9 @@ export default function UsersPage() {
     }
   };
 
-  const setLocked = async (u: User, locked: boolean) => {
-    await updateUser.mutateAsync({
-      id: u.id,
-      status: locked ? UserStatusCode.Locked : UserStatusCode.Active,
-    });
-  };
-
   const handleDelete = async (id: string) => {
     if (!window.confirm(t('app.confirm'))) return;
     await deleteUser.mutateAsync(id);
-    setSelected(prev => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
-  };
-
-  const bulkLock = async (locked: boolean) => {
-    const ids = [...selected];
-    await Promise.all(ids.map(id => updateUser.mutateAsync({ id, status: locked ? UserStatusCode.Locked : UserStatusCode.Active })));
-    setSelected(new Set());
-  };
-
-  const bulkDelete = async () => {
-    if (!window.confirm(t('app.confirm'))) return;
-    const ids = [...selected];
-    await Promise.all(ids.map(id => deleteUser.mutateAsync(id)));
-    setSelected(new Set());
   };
 
   const formFields = (
@@ -268,38 +216,11 @@ export default function UsersPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-gray-900">{t('users.title')}</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <AppSelect
-            value={statusFilter}
-            onChange={(value) => setStatusFilter(value as StatusFilter)}
-            options={[
-              { value: 'all', label: t('search.scope.all') },
-              { value: 'active', label: t('users.status.active') },
-              { value: 'registered', label: t('users.status.registered') },
-              { value: 'locked', label: t('users.status.locked') },
-            ]}
-            ariaLabel={t('users.status.title')}
-            className="rounded border border-gray-300 px-3 py-2 text-sm"
-          />
           <button type="button" onClick={() => { resetForm(); setPasswordError(''); setAddOpen(true); }} className="rounded bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700">
             {t('users.new')}
           </button>
         </div>
       </div>
-
-      {selected.size > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
-          <span className="text-gray-700">{t('admin.selectedCount', { count: selected.size })}</span>
-          <button type="button" className="rounded bg-gray-800 px-3 py-1 text-white" onClick={() => bulkLock(true)}>
-            {t('users.lock')}
-          </button>
-          <button type="button" className="rounded bg-gray-600 px-3 py-1 text-white" onClick={() => bulkLock(false)}>
-            {t('users.unlock')}
-          </button>
-          <button type="button" className="rounded bg-red-600 px-3 py-1 text-white" onClick={bulkDelete}>
-            {t('app.delete')}
-          </button>
-        </div>
-      )}
 
       {isLoading && <p className="text-gray-500">{t('app.loading')}</p>}
       {isError && <p className="text-red-600">{t('app.error')}</p>}
@@ -309,9 +230,6 @@ export default function UsersPage() {
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50">
               <tr>
-                <th className="w-10 px-3 py-2">
-                  <input type="checkbox" checked={users.length > 0 && selected.size === users.length} onChange={toggleAll} />
-                </th>
                 <th className="px-3 py-2 text-left font-medium text-gray-600">{t('users.login')}</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-600">{t('users.name')}</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-600">{t('users.email')}</th>
@@ -324,16 +242,13 @@ export default function UsersPage() {
             <tbody className="divide-y divide-gray-100">
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-3 py-8 text-center text-gray-500">
                     {t('app.noData')}
                   </td>
                 </tr>
               ) : (
                 users.map(u => (
                   <tr key={u.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-2">
-                      <input type="checkbox" checked={selected.has(u.id)} onChange={() => toggleSelect(u.id)} />
-                    </td>
                     <td className="px-3 py-2 font-mono text-gray-900">
                       <Link to={`/admin/users/${u.id}`} className="text-primary-700 hover:underline">
                         {u.login}
@@ -348,22 +263,27 @@ export default function UsersPage() {
                       <StatusBadge status={u.status} t={t} />
                     </td>
                     <td className="px-3 py-2 text-gray-600">{u.createdAt ? format(new Date(u.createdAt), 'yyyy-MM-dd HH:mm') : '—'}</td>
-                    <td className="px-3 py-2 text-right space-x-2 whitespace-nowrap">
-                      <button type="button" className="text-primary-600 hover:underline" onClick={() => openEdit(u)}>
-                        {t('app.edit')}
-                      </button>
-                      {u.status === UserStatusCode.Locked ? (
-                        <button type="button" className="text-gray-700 hover:underline" onClick={() => setLocked(u, false)}>
-                          {t('users.unlock')}
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          className="rounded p-1 text-primary-600 hover:bg-primary-50"
+                          onClick={() => openEdit(u)}
+                          title={t('app.edit')}
+                          aria-label={`${u.login} ${t('app.edit')}`}
+                        >
+                          <Pencil className="h-4 w-4" aria-hidden />
                         </button>
-                      ) : (
-                        <button type="button" className="text-gray-700 hover:underline" onClick={() => setLocked(u, true)}>
-                          {t('users.lock')}
+                        <button
+                          type="button"
+                          className="rounded p-1 text-red-600 hover:bg-red-50"
+                          onClick={() => handleDelete(u.id)}
+                          title={t('app.delete')}
+                          aria-label={`${u.login} ${t('app.delete')}`}
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden />
                         </button>
-                      )}
-                      <button type="button" className="text-red-600 hover:underline" onClick={() => handleDelete(u.id)}>
-                        {t('app.delete')}
-                      </button>
+                      </div>
                     </td>
                   </tr>
                 ))

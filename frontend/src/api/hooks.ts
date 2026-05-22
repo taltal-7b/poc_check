@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from './client';
 import { useAuthStore } from '../stores/auth';
-import type { ApiResponse, Project, ProjectAiBottleneckDetection, ProjectAiProgressSummary, ProjectAiTaskInstruction, ProjectAiWeeklyReport, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, IssueStatusUsage, MailNotificationPreference, MyWatcherItem, TotpSetup, TotpStatus, SearchResponse, ProjectFile, ProjectFilesPayload } from '../types';
+import type { ApiResponse, Project, ProjectAiBottleneckDetection, ProjectAiProgressSummary, ProjectAiTaskInstruction, ProjectAiWeeklyReport, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, IssueStatusUsage, MailNotificationPreference, MyWatcherItem, MyParticipatingProject, TotpSetup, TotpStatus, SearchResponse, ProjectFile, ProjectFilesPayload } from '../types';
 
 function get<T>(url: string, params?: Record<string, unknown>) {
   return api.get<ApiResponse<T>>(url, { params }).then(r => r.data);
@@ -43,6 +43,14 @@ export const useMyWatchers = () => {
   return useQuery({
     queryKey: ['myWatchers', accessToken],
     queryFn: () => get<MyWatcherItem[]>('/my/watchers'),
+    enabled: !!accessToken,
+  });
+};
+export const useMyProjects = () => {
+  const accessToken = useAuthStore((s) => s.accessToken);
+  return useQuery({
+    queryKey: ['myProjects', accessToken],
+    queryFn: () => get<MyParticipatingProject[]>('/my/projects'),
     enabled: !!accessToken,
   });
 };

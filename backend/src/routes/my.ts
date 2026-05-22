@@ -157,6 +157,95 @@ router.put('/page', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+router.get('/projects', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.userId;
+    const groupRows = await prisma.groupUser.findMany({
+      where: { userId },
+      select: { groupId: true },
+    });
+    const groupIds = groupRows.map((row) => row.groupId);
+
+    const memberRows = await prisma.member.findMany({
+      where: {
+        OR: [
+          { userId },
+          ...(groupIds.length ? [{ groupId: { in: groupIds } }] : []),
+        ],
+      },
+      include: {
+        project: {
+          select: {
+            id: true,
+            name: true,
+            identifier: true,
+            description: true,
+          },
+        },
+        memberRoles: {
+          include: {
+            role: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    const projectMap = new Map<string, {
+      projectId: string;
+      projectName: string;
+      projectIdentifier: string;
+      description: string | null;
+      roles: Set<string>;
+    }>();
+
+    for (const member of memberRows) {
+      const existing = projectMap.get(member.projectId) ?? {
+        projectId: member.project.id,
+        projectName: member.project.name,
+        projectIdentifier: member.project.identifier,
+        description: member.project.description,
+        roles: new Set<string>(),
+      };
+      for (const row of member.memberRoles) {
+        if (row.role?.name) existing.roles.add(row.role.name);
+      }
+      projectMap.set(member.projectId, existing);
+    }
+
+    const projectIds = [...projectMap.keys()];
+    const childRows = projectIds.length
+      ? await prisma.project.findMany({
+          where: { parentId: { in: projectIds } },
+          select: { parentId: true, name: true },
+          orderBy: { name: 'asc' },
+        })
+      : [];
+
+    const childNamesByParent = new Map<string, string[]>();
+    for (const row of childRows) {
+      if (!row.parentId) continue;
+      const list = childNamesByParent.get(row.parentId) ?? [];
+      list.push(row.name);
+      childNamesByParent.set(row.parentId, list);
+    }
+
+    const projects = [...projectMap.values()]
+      .map((project) => ({
+        projectId: project.projectId,
+        projectName: project.projectName,
+        projectIdentifier: project.projectIdentifier,
+        description: project.description,
+        childProjectNames: childNamesByParent.get(project.projectId) ?? [],
+        roles: [...project.roles].sort((a, b) => a.localeCompare(b, 'ja')),
+      }))
+      .sort((a, b) => a.projectName.localeCompare(b.projectName, 'ja'));
+
+    return sendSuccess(res, projects);
+  } catch (err) {
+    next(err);
+  }
+});
+
 function preferenceOthersObject(value: Prisma.JsonValue | null | undefined): Prisma.InputJsonObject {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return value as Prisma.InputJsonObject;

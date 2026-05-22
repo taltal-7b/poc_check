@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { format, parseISO } from 'date-fns';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { useMe, useIssues, useMyWatchers } from '../api/hooks';
-import type { Issue, MyWatcherItem, User } from '../types';
+import { useMe, useIssues, useMyProjects, useMyWatchers } from '../api/hooks';
+import type { Issue, MyParticipatingProject, MyWatcherItem, User } from '../types';
 
 function unwrap<T>(raw: unknown): T | undefined {
   if (raw == null) return undefined;
@@ -58,11 +58,14 @@ export default function MyPagePage() {
     { enabled: !!me },
   );
   const watchersQ = useMyWatchers();
+  const projectsQ = useMyProjects();
 
   const assigned = useMemo(() => unwrapList<Issue>(assignedQ.data), [assignedQ.data]);
   const reported = useMemo(() => unwrapList<Issue>(reportedQ.data), [reportedQ.data]);
   const watchers = useMemo(() => unwrapList<MyWatcherItem>(watchersQ.data), [watchersQ.data]);
+  const projects = useMemo(() => unwrapList<MyParticipatingProject>(projectsQ.data), [projectsQ.data]);
 
+  const [collProjects, setCollProjects] = useState(false);
   const [collAssigned, setCollAssigned] = useState(false);
   const [collReported, setCollReported] = useState(false);
   const [collWatchers, setCollWatchers] = useState(false);
@@ -82,6 +85,7 @@ export default function MyPagePage() {
             <th className="px-3 py-1.5 font-medium">{t('issues.status')}</th>
             <th className="px-3 py-1.5 font-medium">{t('issues.priority')}</th>
             <th className="px-3 py-1.5 font-medium">{t('issues.dueDate')}</th>
+            <th className="px-3 py-1.5 font-medium">{t('issues.estimatedHours')}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -109,6 +113,9 @@ export default function MyPagePage() {
               <td className="px-3 py-1.5">{t(`issues.priorities.${issue.priority}` as const)}</td>
               <td className="px-3 py-1.5 text-slate-500 text-xs">
                 {issue.dueDate ? format(parseISO(issue.dueDate), 'yyyy-MM-dd') : ''}
+              </td>
+              <td className="px-3 py-1.5 text-slate-600">
+                {typeof issue.estimatedHours === 'number' ? issue.estimatedHours : '—'}
               </td>
             </tr>
           ))}
@@ -162,6 +169,38 @@ export default function MyPagePage() {
     </div>
   );
 
+  const ProjectTable = ({ items }: { items: MyParticipatingProject[] }) => (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-sm">
+        <thead>
+          <tr className="bg-slate-100 text-left text-xs text-slate-600">
+            <th className="px-3 py-1.5 font-medium">{t('nav.projects')}</th>
+            <th className="px-3 py-1.5 font-medium">{t('projects.description')}</th>
+            <th className="px-3 py-1.5 font-medium">子プロジェクト</th>
+            <th className="px-3 py-1.5 font-medium">{t('members.roles')}</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {items.map((project, idx) => (
+            <tr key={project.projectId} className={`${idx % 2 === 1 ? 'bg-slate-50/50' : ''} hover:bg-slate-100/60`}>
+              <td className="px-3 py-1.5 text-slate-600">
+                <Link to={`/projects/${project.projectIdentifier}`} className="text-primary-600 hover:underline">
+                  {project.projectName}
+                </Link>
+              </td>
+              <td className="px-3 py-1.5 text-slate-600">{project.description?.trim() || '—'}</td>
+              <td className="px-3 py-1.5 text-slate-600">{project.childProjectNames.join(', ') || '—'}</td>
+              <td className="px-3 py-1.5 text-slate-600">{project.roles.join(', ') || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {items.length === 0 && (
+        <p className="px-3 py-4 text-center text-sm text-slate-400">{t('app.noData')}</p>
+      )}
+    </div>
+  );
+
   const SectionHeader = ({
     label,
     count,
@@ -190,6 +229,23 @@ export default function MyPagePage() {
           </p>
         )}
       </div>
+
+      {/* Participating projects */}
+      <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <SectionHeader
+          label="参加しているプロジェクト"
+          count={projects.length}
+          collapsed={collProjects}
+          onToggle={() => setCollProjects((v) => !v)}
+        />
+        {!collProjects && (
+          projectsQ.isLoading ? (
+            <p className="px-3 py-4 text-center text-sm text-slate-400">{t('app.loading')}</p>
+          ) : (
+            <ProjectTable items={projects} />
+          )
+        )}
+      </section>
 
       {/* Assigned to me */}
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">

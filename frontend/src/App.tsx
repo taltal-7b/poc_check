@@ -10,7 +10,6 @@ const LoginPage = lazy(() => import('./pages/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
-const HomePage = lazy(() => import('./pages/HomePage'));
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage'));
 const ProjectNewPage = lazy(() => import('./pages/ProjectNewPage'));
 const ProjectDetailPage = lazy(() => import('./pages/ProjectDetailPage'));
@@ -142,7 +141,7 @@ export default function App() {
       <Route path="/password/reset" element={<ResetPasswordPage />} />
 
       <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
-        <Route index element={<HomePage />} />
+        <Route index element={<MyPagePage />} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/new" element={<AdminRoute><ProjectNewPage /></AdminRoute>} />
         <Route path="projects/:identifier/edit" element={<ProjectNewPage isEdit />} />
@@ -185,7 +184,7 @@ export default function App() {
 
         <Route path="users/:userId" element={<UserProfilePage />} />
 
-        <Route path="my/page" element={<MyPagePage />} />
+        <Route path="my/page" element={<Navigate to="/" replace />} />
         <Route path="my/account" element={<MyAccountPage />} />
 
         <Route path="admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />

@@ -12,6 +12,23 @@ import { AttachmentLink } from '../components/AttachmentLink';
 import { renderMarkdown } from '../components/RichTextEditor';
 import type { News, Comment } from '../types';
 
+const NEWS_LIST_TITLE_MAX = 50;
+const NEWS_LIST_SUMMARY_MAX = 80;
+
+function truncateSingleLine(value: string | null | undefined, maxLength: number): string {
+  if (!value) return '';
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function truncateMultiline(value: string | null | undefined, maxLength: number): string {
+  if (!value) return '';
+  const normalized = value.replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
 function unwrapList<T>(raw: unknown): T[] {
   if (raw == null) return [];
   if (Array.isArray(raw)) return raw as T[];
@@ -135,32 +152,78 @@ export default function NewsPage() {
           ) : items.length === 0 ? (
             <div className="p-6 text-gray-500">{t('app.noData')}</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 text-left text-gray-600">
-                  <tr>
-                    <th className="px-4 py-2 font-medium">{t('documents.titleField')}</th>
-                    <th className="px-4 py-2 font-medium">{t('news.summary')}</th>
-                    <th className="px-4 py-2 font-medium">{t('users.createdAt')}</th>
-                    <th className="px-4 py-2 font-medium">{t('forums.lastMessage')}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {items.map((n) => (
-                    <tr key={n.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2">
-                        <Link to={`/projects/${identifier}/news/${n.id}`} className="text-primary-700 hover:underline font-medium">
-                          {n.title}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-2 text-gray-700">{n.summary?.trim() ? n.summary : '-'}</td>
-                      <td className="px-4 py-2">{n.createdAt ? format(parseISO(n.createdAt), 'yyyy-MM-dd HH:mm') : '-'}</td>
-                      <td className="px-4 py-2">{n.updatedAt ? format(parseISO(n.updatedAt), 'yyyy-MM-dd HH:mm') : '-'}</td>
+            <>
+              <div className="divide-y divide-gray-100 md:hidden">
+                {items.map((n) => (
+                  <article key={n.id} className="space-y-2 px-4 py-3">
+                    <Link
+                      to={`/projects/${identifier}/news/${n.id}`}
+                      className="block break-words font-medium text-primary-700 hover:underline"
+                      title={n.title}
+                    >
+                      {truncateSingleLine(n.title, NEWS_LIST_TITLE_MAX)}
+                    </Link>
+                    <p className="whitespace-pre-line break-words text-sm text-gray-700" title={n.summary ?? ''}>
+                      {n.summary?.trim()
+                        ? truncateMultiline(n.summary, NEWS_LIST_SUMMARY_MAX)
+                        : '-'}
+                    </p>
+                    <dl className="grid gap-1 text-xs text-gray-500">
+                      <div className="flex gap-2">
+                        <dt className="shrink-0">{t('users.createdAt')}</dt>
+                        <dd>{n.createdAt ? format(parseISO(n.createdAt), 'yyyy-MM-dd HH:mm') : '-'}</dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="shrink-0">{t('forums.lastMessage')}</dt>
+                        <dd>{n.updatedAt ? format(parseISO(n.updatedAt), 'yyyy-MM-dd HH:mm') : '-'}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                ))}
+              </div>
+              <div className="hidden overflow-hidden md:block">
+                <table className="w-full table-fixed text-sm">
+                  <colgroup>
+                    <col className="w-[28%]" />
+                    <col className="w-[38%]" />
+                    <col className="w-[17%]" />
+                    <col className="w-[17%]" />
+                  </colgroup>
+                  <thead className="bg-gray-50 text-left text-gray-600">
+                    <tr>
+                      <th className="px-4 py-2 font-medium">{t('documents.titleField')}</th>
+                      <th className="px-4 py-2 font-medium">{t('news.summary')}</th>
+                      <th className="px-4 py-2 font-medium">{t('users.createdAt')}</th>
+                      <th className="px-4 py-2 font-medium">{t('forums.lastMessage')}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {items.map((n) => (
+                      <tr key={n.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 align-top">
+                          <Link
+                            to={`/projects/${identifier}/news/${n.id}`}
+                            className="block break-words font-medium text-primary-700 hover:underline"
+                            title={n.title}
+                          >
+                            {truncateSingleLine(n.title, NEWS_LIST_TITLE_MAX)}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-2 align-top text-gray-700">
+                          <span className="block whitespace-pre-line break-words" title={n.summary ?? ''}>
+                            {n.summary?.trim()
+                              ? truncateMultiline(n.summary, NEWS_LIST_SUMMARY_MAX)
+                              : '-'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 align-top">{n.createdAt ? format(parseISO(n.createdAt), 'yyyy-MM-dd HH:mm') : '-'}</td>
+                        <td className="px-4 py-2 align-top">{n.updatedAt ? format(parseISO(n.updatedAt), 'yyyy-MM-dd HH:mm') : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
           {totalPages > 1 && (
             <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3 text-sm">

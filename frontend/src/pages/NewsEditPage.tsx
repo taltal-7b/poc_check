@@ -6,6 +6,9 @@ import RichTextEditor from '../components/RichTextEditor';
 import { useAuthStore } from '../stores/auth';
 import { useMembers, useProject, useProjectNewsItem, useUpdateProjectNews } from '../api/hooks';
 
+const NEWS_TITLE_MAX = 50;
+const NEWS_SUMMARY_MAX = 80;
+
 function parsePermissions(raw: unknown): string[] {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw.map(String);
@@ -98,15 +101,17 @@ export default function NewsEditPage() {
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
+                maxLength={NEWS_TITLE_MAX}
                 required
                 className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
               />
             </label>
             <label className="block text-sm">
-              <span className="text-gray-700">サマリー</span>
+              <span className="text-gray-700">{t('news.summary')}</span>
               <textarea
                 value={summary}
                 onChange={(e) => setSummary(e.target.value)}
+                maxLength={NEWS_SUMMARY_MAX}
                 rows={3}
                 className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
               />
