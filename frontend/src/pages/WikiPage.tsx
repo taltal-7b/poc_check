@@ -234,14 +234,11 @@ export default function WikiPage() {
       {identifier && <ProjectSubNav identifier={identifier} />}
       <div className="flex flex-col lg:flex-row gap-6">
       <aside className="lg:w-64 shrink-0 rounded-lg border border-gray-200 bg-white p-4 shadow-sm h-fit">
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-500">
           <Book size={16} />
           {t('wiki.title')}
         </h2>
         <nav className="space-y-1 text-sm">
-          <Link to={base} className="block py-1 text-primary-700 hover:underline">
-            Index
-          </Link>
           {tree.map((node) => (
             <div key={node.full} className="pl-2 border-l border-gray-100">
               <Link to={`${base}/${encodeURIComponent(node.full)}`} className="block py-1 text-gray-800 hover:text-primary-700">

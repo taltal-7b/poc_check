@@ -285,10 +285,6 @@ export default function CustomFieldsPage() {
                 <input type="checkbox" checked={isRequired} onChange={(e) => setIsRequired(e.target.checked)} />
                 {t('customFields.isRequired')}
               </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={isForAll} onChange={(e) => setIsForAll(e.target.checked)} />
-                すべてのプロジェクトで使用
-              </label>
               <div>
                 <label className="block text-sm font-medium text-gray-700">{t('trackers.position')}</label>
                 <input type="number" className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={position} min={1} onChange={(e) => setPosition(Number(e.target.value))} />
@@ -324,6 +320,10 @@ export default function CustomFieldsPage() {
                   ))}
                 </div>
               </fieldset>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={isForAll} onChange={(e) => setIsForAll(e.target.checked)} />
+                すべてのプロジェクトで使用
+              </label>
               {!isForAll && (
                 <fieldset className="rounded border border-gray-200 p-3">
                   <legend className="px-1 text-sm font-medium text-gray-800">使用するプロジェクト</legend>
