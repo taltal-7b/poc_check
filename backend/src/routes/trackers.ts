@@ -49,7 +49,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
       include: { defaultStatus: true },
     });
     if (!tracker) {
-      return next(AppError.notFound('トラッカーが見つかりません'));
+      return next(AppError.notFound('作業分類が見つかりません'));
     }
     sendSuccess(res, tracker);
   } catch (err) {
@@ -101,7 +101,7 @@ router.put('/:id', requireAdmin, async (req: Request, res: Response, next: NextF
 
     const existing = await prisma.tracker.findUnique({ where: { id } });
     if (!existing) {
-      return next(AppError.notFound('トラッカーが見つかりません'));
+      return next(AppError.notFound('作業分類が見つかりません'));
     }
 
     if (parsed.data.defaultStatusId !== undefined && parsed.data.defaultStatusId !== null) {
@@ -141,13 +141,13 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response, next: Ne
     if (!id) return next(AppError.badRequest('ID が無効です'));
     const existing = await prisma.tracker.findUnique({ where: { id } });
     if (!existing) {
-      return next(AppError.notFound('トラッカーが見つかりません'));
+      return next(AppError.notFound('作業分類が見つかりません'));
     }
 
     const issueCount = await prisma.issue.count({ where: { trackerId: id } });
     if (issueCount > 0) {
       return next(
-        AppError.conflict('このトラッカーを参照しているチケットがあるため削除できません', 'TRACKER_IN_USE'),
+        AppError.conflict('この作業分類を参照しているチケットがあるため削除できません', 'TRACKER_IN_USE'),
       );
     }
 

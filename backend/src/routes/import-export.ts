@@ -114,7 +114,7 @@ router.post(
           }
           const tracker = await prisma.tracker.findUnique({ where: { id: row.tracker_id } });
           if (!tracker) {
-            errors.push({ row: rowNum, message: 'トラッカーが存在しません' });
+            errors.push({ row: rowNum, message: '作業分類が存在しません' });
             continue;
           }
           const status = await prisma.issueStatus.findUnique({ where: { id: row.status_id } });

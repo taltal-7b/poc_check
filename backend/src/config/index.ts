@@ -60,7 +60,7 @@ const envSchema = z.object({
   AI_BOTTLENECK_DETECTION_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(100).max(6000).default(2200),
   AI_BOTTLENECK_DETECTION_MAX_INPUT_CHARS: z.coerce.number().int().min(1000).max(300000).default(80000),
   AI_BOTTLENECK_DETECTION_MOCK_OPENAI: envBoolean.default(false),
-  AI_BOTTLENECK_DETECTION_PROMPT: envString('あなたはチケット管理システムのボトルネック検知アシスタントです。未完了で期日超過しているチケットと、過去に期日超過後に完了したチケットの情報から、担当者・内容・トラッカー・カテゴリ・見積・進捗・履歴に見られる法則性、遅延要因、改善策を日本語で簡潔に示してください。個人攻撃ではなく、プロセス改善につながる表現にしてください。'),
+  AI_BOTTLENECK_DETECTION_PROMPT: envString('あなたはチケット管理システムのボトルネック検知アシスタントです。未完了で期日超過しているチケットと、過去に期日超過後に完了したチケットの情報から、担当者・内容・作業分類・カテゴリ・見積・進捗・履歴に見られる法則性、遅延要因、改善策を日本語で簡潔に示してください。個人攻撃ではなく、プロセス改善につながる表現にしてください。'),
   AI_TASK_INSTRUCTION_MODEL: envString('gpt-5-nano'),
   AI_TASK_INSTRUCTION_ISSUE_LIMIT: z.coerce.number().int().min(1).max(1000).default(80),
   AI_TASK_INSTRUCTION_MAX_COMMENTS: z.coerce.number().int().min(0).max(20).default(3),

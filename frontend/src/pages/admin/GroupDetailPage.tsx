@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { ArrowLeft } from 'lucide-react';
 import AppSelect from '../../components/AppSelect';
 import {
   useAddGroupProject,
@@ -237,8 +238,9 @@ export default function GroupDetailPage() {
 
   return (
     <div className="space-y-4">
-      <Link to="/admin/groups" className="inline-block text-sm text-primary-700 hover:underline">
-        ← {t('groups.title')}
+      <Link to="/admin/groups" className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900">
+        <ArrowLeft className="h-5 w-5" aria-hidden />
+        {t('app.back')}
       </Link>
       <h1 className="text-2xl font-semibold text-gray-900">{group.name}</h1>
 

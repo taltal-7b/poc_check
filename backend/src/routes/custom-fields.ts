@@ -165,7 +165,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     if (data.type === 'IssueCustomField' && trackerIds.length > 0) {
       const count = await prisma.tracker.count({ where: { id: { in: trackerIds } } });
       if (count !== trackerIds.length) {
-        return next(AppError.badRequest('存在しないトラッカー ID が含まれています'));
+        return next(AppError.badRequest('存在しない作業分類 ID が含まれています'));
       }
     } else if (data.type !== 'IssueCustomField' && trackerIds.length > 0) {
       return next(AppError.badRequest('trackerIds はチケット用カスタムフィールドでのみ指定できます'));
@@ -277,7 +277,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
       }
       const count = await prisma.tracker.count({ where: { id: { in: data.trackerIds } } });
       if (count !== data.trackerIds.length) {
-        return next(AppError.badRequest('存在しないトラッカー ID が含まれています'));
+        return next(AppError.badRequest('存在しない作業分類 ID が含まれています'));
       }
     }
 
