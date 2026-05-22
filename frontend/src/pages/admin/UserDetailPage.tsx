@@ -115,15 +115,7 @@ export default function UserDetailPage() {
       await userQuery.refetch();
       setMessage(t('groups.saved'));
     } catch (err: unknown) {
-      const msg =
-        typeof err === 'object' &&
-        err &&
-        'response' in err &&
-        typeof (err as { response?: { data?: { error?: { message?: string } } } }).response?.data?.error?.message ===
-          'string'
-          ? (err as { response?: { data?: { error?: { message?: string } } } }).response!.data!.error!.message!
-          : t('app.error');
-      setError(msg);
+      setError(mutationErrorMessage(err, t('app.error')));
     }
   };
 
@@ -190,15 +182,7 @@ export default function UserDetailPage() {
       await userQuery.refetch();
       setMessage(t('groups.saved'));
     } catch (err: unknown) {
-      const msg =
-        typeof err === 'object' &&
-        err &&
-        'response' in err &&
-        typeof (err as { response?: { data?: { error?: { message?: string } } } }).response?.data?.error?.message ===
-          'string'
-          ? (err as { response?: { data?: { error?: { message?: string } } } }).response!.data!.error!.message!
-          : t('app.error');
-      setError(msg);
+      setError(mutationErrorMessage(err, t('app.error')));
     }
   };
 
@@ -211,15 +195,7 @@ export default function UserDetailPage() {
       await userQuery.refetch();
       setMessage('二要素認証を無効化しました');
     } catch (err: unknown) {
-      const msg =
-        typeof err === 'object' &&
-        err &&
-        'response' in err &&
-        typeof (err as { response?: { data?: { error?: { message?: string } } } }).response?.data?.error?.message ===
-          'string'
-          ? (err as { response?: { data?: { error?: { message?: string } } } }).response!.data!.error!.message!
-          : t('app.error');
-      setError(msg);
+      setError(mutationErrorMessage(err, t('app.error')));
     }
   };
 

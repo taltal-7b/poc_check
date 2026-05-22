@@ -56,6 +56,14 @@ function effectiveProjectId(req: Request): string | undefined {
   return undefined;
 }
 
+function parseDateQueryParam(value: unknown, name: string): Date | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string') throw AppError.badRequest(`${name} は文字列で指定してください`);
+  const d = new Date(value);
+  if (isNaN(d.getTime())) throw AppError.badRequest(`${name} の日付形式が不正です（例: 2026-01-31）`);
+  return d;
+}
+
 function buildListWhere(req: Request): Prisma.TimeEntryWhereInput {
   const where: Prisma.TimeEntryWhereInput = {};
   const pid = effectiveProjectId(req);
@@ -71,13 +79,13 @@ function buildListWhere(req: Request): Prisma.TimeEntryWhereInput {
     where.activityId = activityId;
   }
 
-  const from = req.query.from;
-  const to = req.query.to;
-  if (typeof from === 'string' && from.length > 0) {
-    where.spentOn = { ...(where.spentOn as object), gte: new Date(from) };
+  const fromDate = parseDateQueryParam(req.query.from, 'from');
+  const toDate = parseDateQueryParam(req.query.to, 'to');
+  if (fromDate) {
+    where.spentOn = { ...(where.spentOn as object), gte: fromDate };
   }
-  if (typeof to === 'string' && to.length > 0) {
-    const end = new Date(to);
+  if (toDate) {
+    const end = new Date(toDate);
     end.setHours(23, 59, 59, 999);
     where.spentOn = { ...(where.spentOn as Prisma.DateTimeFilter), lte: end };
   }

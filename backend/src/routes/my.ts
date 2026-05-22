@@ -178,18 +178,65 @@ router.get('/mail_notifications', async (req: Request, res: Response, next: Next
   }
 });
 
-async function rootMessageId(boardId: string, messageId: string): Promise<string | null> {
-  let currentId: string | null = messageId;
-  while (currentId) {
-    const row: { id: string; parentId: string | null } | null = await prisma.message.findFirst({
-      where: { id: currentId, boardId },
-      select: { id: true, parentId: true },
-    });
-    if (!row) return null;
-    if (!row.parentId) return row.id;
-    currentId = row.parentId;
+/**
+ * メッセージ群のルートトピック ID を一括解決する。
+ * ループごとに DB を叩く N+1 を避けるため、未解決の parentId を
+ * ラウンドトリップごとにまとめてフェッチし、深さ O(depth) 回で収束させる。
+ */
+async function resolveRootMessageIds(
+  messages: { id: string; parentId: string | null }[],
+): Promise<Map<string, string>> {
+  const rootMap = new Map<string, string>();
+  const fetched = new Map<string, { id: string; parentId: string | null }>(
+    messages.map((m) => [m.id, m]),
+  );
+
+  for (const m of messages) {
+    if (!m.parentId) rootMap.set(m.id, m.id);
   }
-  return null;
+
+  let pending = messages.filter((m) => m.parentId && !rootMap.has(m.id));
+
+  while (pending.length > 0) {
+    const unknownParentIds = [
+      ...new Set(
+        pending.map((m) => m.parentId!).filter((id) => !fetched.has(id)),
+      ),
+    ];
+
+    if (unknownParentIds.length > 0) {
+      const rows = await prisma.message.findMany({
+        where: { id: { in: unknownParentIds } },
+        select: { id: true, parentId: true },
+      });
+      for (const row of rows) fetched.set(row.id, row);
+    }
+
+    const stillPending: typeof pending = [];
+    for (const msg of pending) {
+      const parent = fetched.get(msg.parentId!);
+      if (!parent) {
+        rootMap.set(msg.id, msg.id);
+        continue;
+      }
+      if (!parent.parentId) {
+        rootMap.set(parent.id, parent.id);
+        rootMap.set(msg.id, parent.id);
+      } else if (rootMap.has(parent.id)) {
+        rootMap.set(msg.id, rootMap.get(parent.id)!);
+      } else {
+        stillPending.push(msg);
+      }
+    }
+
+    if (stillPending.length === pending.length) {
+      for (const msg of stillPending) rootMap.set(msg.id, msg.id);
+      break;
+    }
+    pending = stillPending;
+  }
+
+  return rootMap;
 }
 
 router.get('/watchers', async (req: Request, res: Response, next: NextFunction) => {
@@ -265,76 +312,87 @@ router.get('/watchers', async (req: Request, res: Response, next: NextFunction) 
       return result;
     };
 
-    const items = [];
+    // ① 各 watchable 種別を並列でフィルタ・整形し、② メッセージのルート解決も一括で行う
+    const rootIdMap = await resolveRootMessageIds(messages);
 
-    for (const issue of issues) {
-      if (!(await canView(issue.project, ['view_issues']))) continue;
-      const watcher = watcherByKey.get(`Issue:${issue.id}`);
-      if (!watcher) continue;
-      items.push({
-        id: watcher.id,
-        watchableType: watcher.watchableType,
-        watchableId: watcher.watchableId,
-        title: `#${issue.number} ${issue.subject}`,
-        subtitle: issue.status.name,
-        updatedAt: issue.updatedAt,
-        url: `/projects/${issue.project.identifier}/issues/${issue.id}`,
-        project: { id: issue.project.id, name: issue.project.name, identifier: issue.project.identifier },
-      });
-    }
+    const [issueItems, boardItems, messageItems, pageItems] = await Promise.all([
+      Promise.all(
+        issues.map(async (issue) => {
+          if (!(await canView(issue.project, ['view_issues']))) return null;
+          const watcher = watcherByKey.get(`Issue:${issue.id}`);
+          if (!watcher) return null;
+          return {
+            id: watcher.id,
+            watchableType: watcher.watchableType,
+            watchableId: watcher.watchableId,
+            title: `#${issue.number} ${issue.subject}`,
+            subtitle: issue.status.name,
+            updatedAt: issue.updatedAt,
+            url: `/projects/${issue.project.identifier}/issues/${issue.id}`,
+            project: { id: issue.project.id, name: issue.project.name, identifier: issue.project.identifier },
+          };
+        }),
+      ),
+      Promise.all(
+        boards.map(async (board) => {
+          if (!(await canView(board.project, ['view_messages']))) return null;
+          const watcher = watcherByKey.get(`Board:${board.id}`);
+          if (!watcher) return null;
+          return {
+            id: watcher.id,
+            watchableType: watcher.watchableType,
+            watchableId: watcher.watchableId,
+            title: board.name,
+            subtitle: board.description,
+            updatedAt: board.updatedAt,
+            url: `/projects/${board.project.identifier}/forums/${board.id}`,
+            project: { id: board.project.id, name: board.project.name, identifier: board.project.identifier },
+          };
+        }),
+      ),
+      Promise.all(
+        messages.map(async (message) => {
+          if (!(await canView(message.board.project, ['view_messages']))) return null;
+          const watcher = watcherByKey.get(`Message:${message.id}`);
+          if (!watcher) return null;
+          const topicId = rootIdMap.get(message.id) ?? message.id;
+          return {
+            id: watcher.id,
+            watchableType: watcher.watchableType,
+            watchableId: watcher.watchableId,
+            title: message.subject,
+            subtitle: message.content,
+            updatedAt: message.updatedAt,
+            url: `/projects/${message.board.project.identifier}/forums/${message.boardId}/topics/${topicId}`,
+            project: {
+              id: message.board.project.id,
+              name: message.board.project.name,
+              identifier: message.board.project.identifier,
+            },
+          };
+        }),
+      ),
+      Promise.all(
+        pages.map(async (page) => {
+          if (!(await canView(page.wiki.project, ['view_wiki_pages']))) return null;
+          const watcher = watcherByKey.get(`WikiPage:${page.id}`);
+          if (!watcher) return null;
+          return {
+            id: watcher.id,
+            watchableType: watcher.watchableType,
+            watchableId: watcher.watchableId,
+            title: page.title,
+            subtitle: page.content?.comments ?? null,
+            updatedAt: page.updatedAt,
+            url: `/projects/${page.wiki.project.identifier}/wiki/${encodeURIComponent(page.title)}`,
+            project: { id: page.wiki.project.id, name: page.wiki.project.name, identifier: page.wiki.project.identifier },
+          };
+        }),
+      ),
+    ]);
 
-    for (const board of boards) {
-      if (!(await canView(board.project, ['view_messages']))) continue;
-      const watcher = watcherByKey.get(`Board:${board.id}`);
-      if (!watcher) continue;
-      items.push({
-        id: watcher.id,
-        watchableType: watcher.watchableType,
-        watchableId: watcher.watchableId,
-        title: board.name,
-        subtitle: board.description,
-        updatedAt: board.updatedAt,
-        url: `/projects/${board.project.identifier}/forums/${board.id}`,
-        project: { id: board.project.id, name: board.project.name, identifier: board.project.identifier },
-      });
-    }
-
-    for (const message of messages) {
-      if (!(await canView(message.board.project, ['view_messages']))) continue;
-      const watcher = watcherByKey.get(`Message:${message.id}`);
-      if (!watcher) continue;
-      const topicId = await rootMessageId(message.boardId, message.id);
-      items.push({
-        id: watcher.id,
-        watchableType: watcher.watchableType,
-        watchableId: watcher.watchableId,
-        title: message.subject,
-        subtitle: message.content,
-        updatedAt: message.updatedAt,
-        url: `/projects/${message.board.project.identifier}/forums/${message.boardId}/topics/${topicId ?? message.id}`,
-        project: {
-          id: message.board.project.id,
-          name: message.board.project.name,
-          identifier: message.board.project.identifier,
-        },
-      });
-    }
-
-    for (const page of pages) {
-      if (!(await canView(page.wiki.project, ['view_wiki_pages']))) continue;
-      const watcher = watcherByKey.get(`WikiPage:${page.id}`);
-      if (!watcher) continue;
-      items.push({
-        id: watcher.id,
-        watchableType: watcher.watchableType,
-        watchableId: watcher.watchableId,
-        title: page.title,
-        subtitle: page.content?.comments ?? null,
-        updatedAt: page.updatedAt,
-        url: `/projects/${page.wiki.project.identifier}/wiki/${encodeURIComponent(page.title)}`,
-        project: { id: page.wiki.project.id, name: page.wiki.project.name, identifier: page.wiki.project.identifier },
-      });
-    }
+    const items = [...issueItems, ...boardItems, ...messageItems, ...pageItems]
+      .filter((item): item is NonNullable<typeof item> => item !== null);
 
     items.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     return sendSuccess(res, items);

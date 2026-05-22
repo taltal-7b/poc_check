@@ -14,31 +14,27 @@ import type { Issue } from '../types';
 
 const PER_PAGE = 10;
 const EMPTY_MARK = '\uFF0D';
-type IssueSortKey =
-  | 'number'
-  | 'tracker'
-  | 'subject'
-  | 'parent'
-  | 'parentNumber'
-  | 'status'
-  | 'assignee'
-  | 'priority'
-  | 'createdAt'
-  | 'dueDate'
-  | 'updatedAt';
+
+const ISSUE_SORT_KEYS = [
+  'number',
+  'tracker',
+  'subject',
+  'parent',
+  'parentNumber',
+  'status',
+  'assignee',
+  'priority',
+  'createdAt',
+  'dueDate',
+  'updatedAt',
+] as const;
+
+type IssueSortKey = (typeof ISSUE_SORT_KEYS)[number];
+
+const ISSUE_SORT_KEY_SET = new Set<string>(ISSUE_SORT_KEYS);
 
 function isIssueSortKey(value: string | null): value is IssueSortKey {
-  return value === 'number'
-    || value === 'tracker'
-    || value === 'subject'
-    || value === 'parent'
-    || value === 'parentNumber'
-    || value === 'status'
-    || value === 'assignee'
-    || value === 'priority'
-    || value === 'createdAt'
-    || value === 'dueDate'
-    || value === 'updatedAt';
+  return value !== null && ISSUE_SORT_KEY_SET.has(value);
 }
 
 function priorityBadge(p: number) {
