@@ -991,6 +991,32 @@ async function attachIssueCustomFields<T extends { id: string; projectId: string
   };
 }
 
+async function attachIssueSpentHours<T extends { id: string }>(issues: T[]): Promise<Array<T & { spentHours: number }>> {
+  if (issues.length === 0) return [];
+  const issueIds = issues.map((issue) => issue.id);
+  const grouped = await prisma.timeEntry.groupBy({
+    by: ['issueId'],
+    where: { issueId: { in: issueIds } },
+    _sum: { hours: true },
+  });
+  const hoursByIssueId = new Map(
+    grouped.flatMap((row) => (row.issueId ? [[row.issueId, row._sum.hours ?? 0] as const] : [])),
+  );
+  return issues.map((issue) => ({
+    ...issue,
+    spentHours: hoursByIssueId.get(issue.id) ?? 0,
+  }));
+}
+
+function exposeIssueChildCount<T extends { _count?: { children?: number } }>(
+  issues: T[],
+): Array<Omit<T, '_count'> & { childIssueCount: number }> {
+  return issues.map(({ _count, ...issue }) => ({
+    ...issue,
+    childIssueCount: _count?.children ?? 0,
+  }));
+}
+
 router.get(
   '/',
   authenticate,
@@ -1025,15 +1051,18 @@ router.get(
               assignee: { select: { id: true, login: true, firstname: true, lastname: true } },
               assigneeGroup: { select: { id: true, name: true } },
               parent: { select: { id: true, number: true, subject: true } },
+              _count: { select: { children: true } },
             },
           })
         : [];
       const rowMap = new Map(rows.map((row) => [row.id, row]));
 
-      return sendPaginated(res, pageIds.flatMap((id) => {
+      const orderedRows = pageIds.flatMap((id) => {
         const row = rowMap.get(id);
         return row ? [{ ...row, treeDepth: depthById.get(id) ?? 0 }] : [];
-      }), {
+      });
+
+      return sendPaginated(res, await attachIssueSpentHours(exposeIssueChildCount(orderedRows)), {
         total,
         page,
         perPage,
@@ -1056,11 +1085,12 @@ router.get(
           assignee: { select: { id: true, login: true, firstname: true, lastname: true } },
           assigneeGroup: { select: { id: true, name: true } },
           parent: { select: { id: true, number: true, subject: true } },
+          _count: { select: { children: true } },
         },
       }),
     ]);
 
-    return sendPaginated(res, rows, {
+    return sendPaginated(res, await attachIssueSpentHours(exposeIssueChildCount(rows)), {
       total,
       page,
       perPage,
@@ -1327,7 +1357,11 @@ router.post(
       throw AppError.badRequest('changes が空です');
     }
 
-    const updated: unknown[] = [];
+    const prepared: Array<{
+      id: string;
+      oldIssue: NonNullable<Awaited<ReturnType<typeof prisma.issue.findUnique>>>;
+      data: Prisma.IssueUpdateInput;
+    }> = [];
 
     for (const id of ids) {
       const oldIssue = await prisma.issue.findUnique({ where: { id } });
@@ -1403,28 +1437,33 @@ router.post(
         data.closedOn = st?.isClosed ? oldIssue.closedOn ?? new Date() : null;
       }
 
-      const after = await prisma.$transaction(async (tx) => {
+      prepared.push({ id, oldIssue, data });
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const results = [];
+      for (const item of prepared) {
         const next = await tx.issue.update({
-          where: { id },
-          data,
+          where: { id: item.id },
+          data: item.data,
         });
 
         const beforePlain: Record<string, unknown> = {
-          projectId: oldIssue.projectId,
-          trackerId: oldIssue.trackerId,
-          statusId: oldIssue.statusId,
-          priority: oldIssue.priority,
-          subject: oldIssue.subject,
-          description: oldIssue.description,
-          assigneeId: oldIssue.assigneeId,
-          assigneeGroupId: oldIssue.assigneeGroupId,
-          categoryId: oldIssue.categoryId,
-          parentId: oldIssue.parentId,
-          startDate: oldIssue.startDate,
-          dueDate: oldIssue.dueDate,
-          estimatedHours: oldIssue.estimatedHours,
-          doneRatio: oldIssue.doneRatio,
-          repository: oldIssue.repository,
+          projectId: item.oldIssue.projectId,
+          trackerId: item.oldIssue.trackerId,
+          statusId: item.oldIssue.statusId,
+          priority: item.oldIssue.priority,
+          subject: item.oldIssue.subject,
+          description: item.oldIssue.description,
+          assigneeId: item.oldIssue.assigneeId,
+          assigneeGroupId: item.oldIssue.assigneeGroupId,
+          categoryId: item.oldIssue.categoryId,
+          parentId: item.oldIssue.parentId,
+          startDate: item.oldIssue.startDate,
+          dueDate: item.oldIssue.dueDate,
+          estimatedHours: item.oldIssue.estimatedHours,
+          doneRatio: item.oldIssue.doneRatio,
+          repository: item.oldIssue.repository,
         };
         const afterPlain: Record<string, unknown> = {
           projectId: next.projectId,
@@ -1448,7 +1487,7 @@ router.post(
         if (details.length) {
           await tx.journal.create({
             data: {
-              issueId: id,
+              issueId: item.id,
               userId: req.user!.userId,
               notes: null,
               details: { create: details },
@@ -1457,11 +1496,13 @@ router.post(
           await createIssueJournalActivity(tx, next, req.user!.userId, details, undefined);
         }
 
-        return next;
-      });
+        results.push(next);
+      }
+      return results;
+    });
 
+    for (const after of updated) {
       dispatchIssueNotification(after.id, req.user!.userId, 'updated');
-      updated.push(after);
     }
 
     return sendSuccess(res, { updated: updated.length, issues: updated });
@@ -1936,7 +1977,8 @@ router.get(
       })),
     };
 
-    return sendSuccess(res, await attachIssueCustomFields(enrichedIssue));
+    const [issueWithSpentHours] = await attachIssueSpentHours([enrichedIssue]);
+    return sendSuccess(res, await attachIssueCustomFields(issueWithSpentHours));
   }),
 );
 

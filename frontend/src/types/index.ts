@@ -101,6 +101,8 @@ export interface Issue {
   startDate: string | null;
   dueDate: string | null;
   estimatedHours: number | null;
+  spentHours?: number;
+  childIssueCount?: number;
   doneRatio: number;
   closedOn: string | null;
   createdAt: string;

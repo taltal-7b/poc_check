@@ -8,7 +8,7 @@ import ProjectSubNav from '../components/ProjectSubNav';
 import RichTextEditor from '../components/RichTextEditor';
 import IssueCustomFieldInputs from '../components/IssueCustomFieldInputs';
 import ProgressRangeInput from '../components/ProgressRangeInput';
-import type { Issue } from '../types';
+import type { CustomField, Issue } from '../types';
 import {
   convertEstimatedEffortInput,
   estimatedEffortUnitLabel,
@@ -24,6 +24,65 @@ function parseAssigneeValue(value: string) {
   if (value.startsWith('user:')) return { assigneeId: value.slice(5), assigneeGroupId: null };
   if (value.startsWith('group:')) return { assigneeId: null, assigneeGroupId: value.slice(6) };
   return { assigneeId: null, assigneeGroupId: null };
+}
+
+function customFieldOptions(field: CustomField): string[] {
+  const raw = field.possibleValues;
+  const values = Array.isArray(raw)
+    ? raw.map(String)
+    : typeof raw === 'string'
+      ? raw.split(/\r?\n|\|/).map((v) => v.trim()).filter(Boolean)
+      : [];
+  if (field.fieldFormat === 'key_value') {
+    return values.map((entry) => entry.match(/^([^=:\s]+)\s*[=:]\s*(.+)$/)?.[1] ?? entry);
+  }
+  return values;
+}
+
+function customFieldValues(value: string | string[] | undefined): string[] {
+  if (Array.isArray(value)) return value.map(String).map((v) => v.trim()).filter(Boolean);
+  if (value === undefined || value === '') return [];
+  return [String(value).trim()].filter(Boolean);
+}
+
+function validateCustomFieldValues(fields: CustomField[], values: Record<string, string | string[]>): string | null {
+  for (const field of fields) {
+    const submitted = customFieldValues(values[field.id]);
+    if (field.isRequired && submitted.length === 0) return `${field.name} を入力してください`;
+
+    const options = customFieldOptions(field);
+    if ((field.fieldFormat === 'list' || field.fieldFormat === 'key_value') && options.length) {
+      const invalid = submitted.find((value) => !options.includes(value));
+      if (invalid) return `${field.name} の値が候補に含まれていません`;
+    }
+
+    for (const value of submitted) {
+      if (field.fieldFormat === 'int' && !/^-?\d+$/.test(value)) return `${field.name} は整数で入力してください`;
+      if (field.fieldFormat === 'float' && !Number.isFinite(Number(value))) return `${field.name} は数値で入力してください`;
+      if (field.fieldFormat === 'date' && (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(value)))) {
+        return `${field.name} は日付で入力してください`;
+      }
+      if (
+        field.fieldFormat === 'progress' &&
+        (!/^\d+$/.test(value) || Number(value) < 0 || Number(value) > 100 || Number(value) % 10 !== 0)
+      ) {
+        return `${field.name} は 0 から 100 の10%区切りで入力してください`;
+      }
+      if (field.fieldFormat === 'link') {
+        try {
+          new URL(value);
+        } catch {
+          return `${field.name} はURLで入力してください`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function apiErrorMessage(error: unknown, fallback: string): string {
+  const message = (error as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+  return typeof message === 'string' && message.trim() ? message : fallback;
 }
 
 export default function IssueNewPage() {
@@ -188,6 +247,11 @@ export default function IssueNewPage() {
       setFormError(`${t('issues.estimatedHours')} は h:mm または数値で入力してください`);
       return;
     }
+    const customFieldValidationError = validateCustomFieldValues(customFieldsQuery.data?.data ?? [], customFields);
+    if (customFieldValidationError) {
+      setFormError(customFieldValidationError);
+      return;
+    }
     const assignee = parseAssigneeValue(assigneeValue);
     createMutation.mutate(
       {
@@ -220,6 +284,7 @@ export default function IssueNewPage() {
           }
           if (issue?.id) navigate(`/projects/${project.identifier}/issues/${issue.id}`);
         },
+        onError: (error) => setFormError(apiErrorMessage(error, 'チケットの作成に失敗しました')),
       },
     );
   };
@@ -250,7 +315,6 @@ export default function IssueNewPage() {
           {project.name} <span className="font-mono">({project.identifier})</span>
         </p>
         <form onSubmit={handleSubmit} className="space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        {formError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>}
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">
             {t('issues.tracker')}<RequiredMark />
@@ -393,6 +457,7 @@ export default function IssueNewPage() {
               />
             </div>
           </div>
+          <p className="mt-1 text-xs text-slate-500">日入力は1日=8時間で換算します。</p>
         </div>
         <div>
           <label className="mb-1 block flex justify-between text-sm font-medium text-slate-700">
@@ -419,14 +484,20 @@ export default function IssueNewPage() {
           referenceOptions={customFieldReferenceOptions}
           onUploadFiles={uploadCustomFieldFiles}
         />
-        {createMutation.isError && <p className="text-sm text-red-600">{t('app.error')}</p>}
-        <button
-          type="submit"
-          disabled={isPending || !!dateValidationError || !canCreateIssue || !trackerId}
-          className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60"
-        >
-          {isPending ? t('app.loading') : t('app.create')}
-        </button>
+        <div className="space-y-3">
+          {formError && (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+              {formError}
+            </p>
+          )}
+          <button
+            type="submit"
+            disabled={isPending || !!dateValidationError || !canCreateIssue || !trackerId}
+            className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60"
+          >
+            {isPending ? t('app.loading') : t('app.create')}
+          </button>
+        </div>
         </form>
       </div>
     </div>

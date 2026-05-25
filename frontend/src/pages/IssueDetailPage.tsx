@@ -10,6 +10,7 @@ import AppSelect from '../components/AppSelect';
 import IssueCustomFieldInputs from '../components/IssueCustomFieldInputs';
 import WatchButton from '../components/WatchButton';
 import ProgressRangeInput from '../components/ProgressRangeInput';
+import ProjectSubNav from '../components/ProjectSubNav';
 import { useDeleteIssue, useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useUpdateJournal, useDeleteJournal, useTrackers, useStatuses, useMembers, useProjectIssues, useIssueCustomFields } from '../api/hooks';
 import { AttachmentLink, AttachmentPreview } from '../components/AttachmentLink';
 import { useAuthStore } from '../stores/auth';
@@ -218,12 +219,40 @@ export default function IssueDetailPage() {
   const trackersQuery = useTrackers();
   const statusesQuery = useStatuses();
   const membersQuery = useMembers(issue?.project?.id ?? '');
-  const projectIssuesQuery = useProjectIssues(issue?.project?.id ?? '', { perPage: 1000 }, { enabled: !!issue?.project?.id });
+  const projectIssuesQuery = useProjectIssues(issue?.project?.id ?? '', { per_page: 100 }, { enabled: !!issue?.project?.id });
   const editCustomFieldsQuery = useIssueCustomFields(issue?.project?.id ?? '', form.trackerId);
   const trackers = trackersQuery.data?.data ?? [];
   const statuses = statusesQuery.data?.data ?? [];
   const members = membersQuery.data?.data ?? [];
-  const projectIssues = (projectIssuesQuery.data?.data ?? []).filter((iss) => iss.id !== id);
+  const projectIssues = projectIssuesQuery.data?.data ?? [];
+  const descendantIssueIds = useMemo(() => {
+    if (!issue?.id) return new Set<string>();
+    const childrenByParent = new Map<string, Issue[]>();
+    for (const item of projectIssues as Issue[]) {
+      if (!item.parentId) continue;
+      const children = childrenByParent.get(item.parentId) ?? [];
+      children.push(item);
+      childrenByParent.set(item.parentId, children);
+    }
+
+    const ids = new Set<string>();
+    const collect = (parentId: string) => {
+      for (const child of childrenByParent.get(parentId) ?? []) {
+        if (ids.has(child.id)) continue;
+        ids.add(child.id);
+        collect(child.id);
+      }
+    };
+    collect(issue.id);
+    return ids;
+  }, [issue?.id, projectIssues]);
+  const parentIssueOptions = useMemo(
+    () =>
+      (projectIssues as Issue[])
+        .filter((item) => item.id !== id && !descendantIssueIds.has(item.id))
+        .map((item) => ({ value: item.id, label: `#${item.number} ${item.subject}` })),
+    [descendantIssueIds, id, projectIssues],
+  );
 
   const trackerNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -744,7 +773,16 @@ export default function IssueDetailPage() {
     },
     { key: 'startDate', label: t('issues.startDate'), value: <span className="text-slate-900">{displayDate(issue.startDate)}</span> },
     { key: 'dueDate', label: t('issues.dueDate'), value: <span className="text-slate-900">{displayDate(issue.dueDate)}</span> },
-    { key: 'estimatedHours', label: t('issues.estimatedHours'), value: <span className="text-slate-900">{issue.estimatedHours != null ? `${issue.estimatedHours}h` : '-'}</span> },
+    {
+      key: 'estimatedHours',
+      label: t('issues.estimatedHours'),
+      value: <span className="text-slate-900">{issue.estimatedHours != null ? formatEstimatedEffort(issue.estimatedHours, 'hours') : '-'}</span>,
+    },
+    {
+      key: 'spentHours',
+      label: '実績工数',
+      value: <span className="text-slate-900">{formatEstimatedEffort(issue.spentHours ?? 0, 'hours')}</span>,
+    },
     {
       key: 'doneRatio',
       label: t('issues.doneRatio'),
@@ -807,7 +845,9 @@ export default function IssueDetailPage() {
   ];
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
+    <div className="space-y-6">
+      {projectSlug && <ProjectSubNav identifier={projectSlug} />}
+      <div className="mx-auto max-w-5xl px-4 py-2">
       {/* Context header */}
       <div className="mb-4 text-sm text-slate-500">
         <span>{issue.project?.name ?? projectSlug ?? '-'}</span>
@@ -931,6 +971,7 @@ export default function IssueDetailPage() {
                   />
                 </div>
               </div>
+              <p className="mt-1 text-xs normal-case tracking-normal text-slate-500">日入力は1日=8時間で換算します。</p>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.doneRatio')}</label>
@@ -943,7 +984,7 @@ export default function IssueDetailPage() {
                 onChange={(value) => setField('parentId', value)}
                 options={[
                   { value: '', label: '-' },
-                  ...(projectIssues ?? []).map((item) => ({ value: item.id, label: `#${(item as Issue).number} ${item.subject}` })),
+                  ...parentIssueOptions,
                 ]}
                 ariaLabel={t('issues.parent')}
                 className={selectCls}
@@ -1022,22 +1063,24 @@ export default function IssueDetailPage() {
 
       {/* Edit action bar */}
       {isEditing && (
-        <div className="mb-6 space-y-3">
-          {(editError || dateValidationError) && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
-              {editError || dateValidationError}
-            </div>
-          )}
+        <div className="mb-6">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <button type="button" onClick={saveEdit} disabled={updateMutation.isPending || !form.subject.trim() || !!dateValidationError}
-                className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50">
-                {updateMutation.isPending ? t('app.loading') : t('app.save')}
-              </button>
-              <button type="button" onClick={cancelEdit}
-                className="rounded-lg border border-slate-300 px-5 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
-                {t('app.cancel')}
-              </button>
+            <div className="space-y-3">
+              {(editError || dateValidationError) && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+                  {editError || dateValidationError}
+                </div>
+              )}
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={saveEdit} disabled={updateMutation.isPending || !form.subject.trim() || !!dateValidationError}
+                  className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50">
+                  {updateMutation.isPending ? t('app.loading') : t('app.save')}
+                </button>
+                <button type="button" onClick={cancelEdit}
+                  className="rounded-lg border border-slate-300 px-5 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+                  {t('app.cancel')}
+                </button>
+              </div>
             </div>
             <button type="button" onClick={() => setDeleteIssueConfirmOpen(true)}
               className="rounded-lg bg-red-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700">
@@ -1385,6 +1428,7 @@ export default function IssueDetailPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

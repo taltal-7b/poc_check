@@ -288,7 +288,7 @@ router.post(
         where: { id: decoded.userId },
       });
       if (!user || !user.totpEnabled) {
-        throw AppError.unauthorized('二要素認証が利用できません');
+        throw AppError.unauthorized('二段階認証が利用できません');
       }
       if (user.status === 3) {
         throw AppError.forbidden('Account is locked');

@@ -193,7 +193,7 @@ export default function UserDetailPage() {
     try {
       await adminDisableTotp.mutateAsync(userId);
       await userQuery.refetch();
-      setMessage('二要素認証を無効化しました');
+      setMessage('二段階認証を無効化しました');
     } catch (err: unknown) {
       setError(mutationErrorMessage(err, t('app.error')));
     }

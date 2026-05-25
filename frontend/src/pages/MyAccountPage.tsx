@@ -385,7 +385,7 @@ export default function MyAccountPage() {
                   disabled={setupTotp.isPending || !totpCurrentPassword}
                   className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
                 >
-                  {setupTotp.isPending ? t('app.loading') : 'メール認証を有効にする'}
+                  {setupTotp.isPending ? t('app.loading') : '二段階認証を有効にする'}
                 </button>
               </div>
             )}

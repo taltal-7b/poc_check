@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import ProjectSubNav from '../components/ProjectSubNav';
 import {
   addMonths,
+  differenceInCalendarDays,
   eachDayOfInterval,
   endOfMonth,
   endOfWeek,
@@ -19,7 +20,7 @@ import {
 } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { useProjectIssues, useStatuses } from '../api/hooks';
+import { useAllProjectIssues, useStatuses } from '../api/hooks';
 import type { Issue, IssueStatus } from '../types';
 
 function unwrapList<T>(raw: unknown): T[] {
@@ -44,6 +45,21 @@ type DayEntry = {
   issue: Issue;
   type: 'start' | 'end' | 'both';
 };
+
+type WeekBar = {
+  issue: Issue;
+  startCol: number;
+  endCol: number;
+  lane: number;
+  startsInWeek: boolean;
+  endsInWeek: boolean;
+};
+
+function clampDate(date: Date, min: Date, max: Date) {
+  if (differenceInCalendarDays(date, min) < 0) return min;
+  if (differenceInCalendarDays(date, max) > 0) return max;
+  return date;
+}
 
 export default function CalendarPage() {
   const { t } = useTranslation();
@@ -72,7 +88,7 @@ export default function CalendarPage() {
     });
   };
 
-  const issuesRaw = useProjectIssues(identifier ?? '', { per_page: 200, page: 1 });
+  const issuesRaw = useAllProjectIssues(identifier ?? '');
   const allIssues = useMemo(() => unwrapList<Issue>(issuesRaw.data), [issuesRaw.data]);
 
   const issues = useMemo(
@@ -99,26 +115,58 @@ export default function CalendarPage() {
       const s = parseDateOnly(issue.startDate);
       const d = parseDateOnly(issue.dueDate);
       if (!s && !d) continue;
+      if (s && d) continue;
 
-      if (s && d && isSameDay(s, d)) {
+      if (s) {
         const key = format(s, 'yyyy-MM-dd');
         if (!map.has(key)) map.set(key, []);
-        map.get(key)!.push({ issue, type: 'both' });
-      } else {
-        if (s) {
-          const key = format(s, 'yyyy-MM-dd');
-          if (!map.has(key)) map.set(key, []);
-          map.get(key)!.push({ issue, type: 'start' });
-        }
-        if (d) {
-          const key = format(d, 'yyyy-MM-dd');
-          if (!map.has(key)) map.set(key, []);
-          map.get(key)!.push({ issue, type: 'end' });
-        }
+        map.get(key)!.push({ issue, type: 'start' });
+      }
+      if (d) {
+        const key = format(d, 'yyyy-MM-dd');
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push({ issue, type: 'end' });
       }
     }
     return map;
   }, [issues]);
+
+  const weekBars = useMemo(() => {
+    return weeks.map((week) => {
+      const weekStart = week[0];
+      const weekEnd = week[6];
+      const segments = issues.flatMap((issue) => {
+        const start = parseDateOnly(issue.startDate);
+        const due = parseDateOnly(issue.dueDate);
+        if (!start || !due) return [];
+
+        const rangeStart = differenceInCalendarDays(start, due) <= 0 ? start : due;
+        const rangeEnd = differenceInCalendarDays(start, due) <= 0 ? due : start;
+        if (differenceInCalendarDays(rangeEnd, weekStart) < 0 || differenceInCalendarDays(rangeStart, weekEnd) > 0) {
+          return [];
+        }
+
+        const clippedStart = clampDate(rangeStart, weekStart, weekEnd);
+        const clippedEnd = clampDate(rangeEnd, weekStart, weekEnd);
+        return [{
+          issue,
+          startCol: differenceInCalendarDays(clippedStart, weekStart),
+          endCol: differenceInCalendarDays(clippedEnd, weekStart),
+          startsInWeek: isSameDay(clippedStart, rangeStart),
+          endsInWeek: isSameDay(clippedEnd, rangeEnd),
+        }];
+      }).sort((a, b) => a.startCol - b.startCol || a.endCol - b.endCol || (a.issue.number ?? 0) - (b.issue.number ?? 0));
+
+      const laneEndCols: number[] = [];
+      const bars: WeekBar[] = segments.map((segment) => {
+        const lane = laneEndCols.findIndex((endCol) => endCol < segment.startCol);
+        const nextLane = lane === -1 ? laneEndCols.length : lane;
+        laneEndCols[nextLane] = segment.endCol;
+        return { ...segment, lane: nextLane };
+      });
+      return { bars, laneCount: laneEndCols.length };
+    });
+  }, [issues, weeks]);
 
   const weekdayNames = ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日'];
 
@@ -192,8 +240,38 @@ export default function CalendarPage() {
         </div>
 
         {/* Calendar weeks */}
-        {weeks.map((week, wi) => (
-          <div key={wi} className="grid grid-cols-7">
+        {weeks.map((week, wi) => {
+          const rowBars = weekBars[wi]?.bars ?? [];
+          const laneCount = weekBars[wi]?.laneCount ?? 0;
+          const rowMinHeight = Math.max(110, 48 + laneCount * 24);
+          return (
+          <div key={wi} className="relative grid grid-cols-7" style={{ minHeight: rowMinHeight }}>
+            {rowBars.map((bar) => {
+              const left = `calc(${(bar.startCol / 7) * 100}% + 5px)`;
+              const width = `calc(${((bar.endCol - bar.startCol + 1) / 7) * 100}% - 10px)`;
+              const top = 34 + bar.lane * 24;
+              const progress = Math.max(0, Math.min(100, bar.issue.doneRatio ?? 0));
+              return (
+                <Link
+                  key={`${bar.issue.id}-${wi}-${bar.startCol}-${bar.endCol}`}
+                  to={`/projects/${identifier}/issues/${bar.issue.id}`}
+                  className={`absolute z-20 flex h-5 items-center overflow-hidden border border-primary-700/20 bg-primary-500 text-[11px] font-medium leading-none text-white shadow-sm hover:bg-primary-600 ${
+                    bar.startsInWeek ? 'rounded-l' : ''
+                  } ${bar.endsInWeek ? 'rounded-r' : ''}`}
+                  style={{ left, width, top }}
+                  title={`#${bar.issue.number} ${bar.issue.subject}`}
+                >
+                  <span
+                    className="absolute inset-y-0 left-0 bg-primary-700/45"
+                    style={{ width: `${progress}%` }}
+                    aria-hidden
+                  />
+                  <span className="relative min-w-0 truncate px-2">
+                    #{bar.issue.number}: {bar.issue.subject}
+                  </span>
+                </Link>
+              );
+            })}
             {week.map((day) => {
               const key = format(day, 'yyyy-MM-dd');
               const isCurrentMonth = isSameMonth(day, cursor);
@@ -209,9 +287,10 @@ export default function CalendarPage() {
               return (
                 <div
                   key={key}
-                  className={`border-b border-r border-gray-100 p-1.5 min-h-[110px] ${cellBg} ${isTo ? 'ring-2 ring-inset ring-primary-300 !bg-primary-50/50' : ''}`}
+                  className={`border-b border-r border-gray-100 p-1.5 ${cellBg} ${isTo ? 'ring-2 ring-inset ring-primary-300 !bg-primary-50/50' : ''}`}
+                  style={{ minHeight: rowMinHeight }}
                 >
-                  <div className="mb-1">
+                  <div className="relative z-10 mb-1">
                     <span
                       className={
                         isTo
@@ -231,8 +310,10 @@ export default function CalendarPage() {
                     </span>
                   </div>
 
+                  {laneCount > 0 && <div aria-hidden style={{ height: laneCount * 24 + 2 }} />}
+
                   {entries.length > 0 && (
-                    <ul className="space-y-0.5">
+                    <ul className="relative z-10 space-y-0.5">
                       {entries.map((entry) => (
                         <li key={`${entry.issue.id}-${entry.type}`}>
                           <Link
@@ -257,15 +338,10 @@ export default function CalendarPage() {
               );
             })}
           </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Legend */}
-      <div className="text-xs text-gray-500 space-y-0.5 px-1">
-        <div>⊙ この日に開始するチケット</div>
-        <div>⊘ この日に終了するチケット</div>
-        <div>◇ この日に開始・終了するチケット</div>
-      </div>
     </div>
   );
 }

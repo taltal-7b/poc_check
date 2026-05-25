@@ -53,7 +53,7 @@ export default function SettingsPage() {
 
   const TwoFactorField = () => (
     <label className="block text-sm">
-      <span className="block font-medium text-gray-700">二要素認証</span>
+      <span className="block font-medium text-gray-700">二段階認証</span>
       <AppSelect
         value={values.two_factor_authentication ?? 'optional'}
         onChange={(value) => setField('two_factor_authentication', value)}
@@ -62,7 +62,7 @@ export default function SettingsPage() {
           { value: 'required', label: '必須' },
           { value: 'admin', label: 'システム管理者のみ必須' },
         ]}
-        ariaLabel="二要素認証"
+        ariaLabel="二段階認証"
         className="mt-1 w-full max-w-xl rounded border border-gray-300 px-3 py-2 text-sm"
       />
     </label>

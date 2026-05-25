@@ -1,4 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query';
 import api from './client';
 import { useAuthStore } from '../stores/auth';
 import type { ApiResponse, Project, ProjectAiBottleneckDetection, ProjectAiProgressSummary, ProjectAiTaskInstruction, ProjectAiWeeklyReport, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, IssueStatusUsage, MailNotificationPreference, MyWatcherItem, MyParticipatingProject, TotpSetup, TotpStatus, SearchResponse, ProjectFile, ProjectFilesPayload } from '../types';
@@ -203,6 +204,80 @@ export const useProjectIssues = (projectId: string, params?: Record<string, unkn
     queryFn: () => get<Issue[]>(`/projects/${projectId}/issues`, params),
     enabled: (options?.enabled ?? true) && !!projectId,
   });
+export const useAllIssues = (params?: Record<string, unknown>, options?: { enabled?: boolean }) => {
+  const enabled = options?.enabled ?? true;
+  const firstParams = useMemo(() => ({ ...params, per_page: 100, page: 1 }), [params]);
+  const first = useQuery({
+    queryKey: ['issues', 'all', firstParams],
+    queryFn: () => get<Issue[]>('/issues', firstParams),
+    enabled,
+  });
+  const totalPages = first.data?.pagination?.totalPages ?? 1;
+  const rest = useQueries({
+    queries: Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => {
+      const page = index + 2;
+      const pageParams = { ...params, per_page: 100, page };
+      return {
+        queryKey: ['issues', 'all', pageParams],
+        queryFn: () => get<Issue[]>('/issues', pageParams),
+        enabled: enabled && first.isSuccess,
+      };
+    }),
+  });
+  const data = useMemo(() => {
+    if (!first.data) return first.data;
+    return {
+      ...first.data,
+      data: [
+        ...(first.data.data ?? []),
+        ...rest.flatMap((query) => query.data?.data ?? []),
+      ],
+    };
+  }, [first.data, rest]);
+  return {
+    ...first,
+    data,
+    isLoading: first.isLoading || rest.some((query) => query.isLoading),
+    isError: first.isError || rest.some((query) => query.isError),
+  };
+};
+export const useAllProjectIssues = (projectId: string, params?: Record<string, unknown>, options?: { enabled?: boolean }) => {
+  const enabled = (options?.enabled ?? true) && !!projectId;
+  const firstParams = useMemo(() => ({ ...params, per_page: 100, page: 1 }), [params]);
+  const first = useQuery({
+    queryKey: ['issues', projectId, 'all', firstParams],
+    queryFn: () => get<Issue[]>(`/projects/${projectId}/issues`, firstParams),
+    enabled,
+  });
+  const totalPages = first.data?.pagination?.totalPages ?? 1;
+  const rest = useQueries({
+    queries: Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => {
+      const page = index + 2;
+      const pageParams = { ...params, per_page: 100, page };
+      return {
+        queryKey: ['issues', projectId, 'all', pageParams],
+        queryFn: () => get<Issue[]>(`/projects/${projectId}/issues`, pageParams),
+        enabled: enabled && first.isSuccess,
+      };
+    }),
+  });
+  const data = useMemo(() => {
+    if (!first.data) return first.data;
+    return {
+      ...first.data,
+      data: [
+        ...(first.data.data ?? []),
+        ...rest.flatMap((query) => query.data?.data ?? []),
+      ],
+    };
+  }, [first.data, rest]);
+  return {
+    ...first,
+    data,
+    isLoading: first.isLoading || rest.some((query) => query.isLoading),
+    isError: first.isError || rest.some((query) => query.isError),
+  };
+};
 export const useIssue = (id: string) => useQuery({ queryKey: ['issue', id], queryFn: () => get<Issue>(`/issues/${id}`), enabled: !!id });
 export const useCreateIssue = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (body: Partial<Issue>) => post<Issue>('/issues', body), onSuccess: () => qc.invalidateQueries({ queryKey: ['issues'] }) }); };
 export const useUpdateIssue = () => { const qc = useQueryClient(); return useMutation({ mutationFn: ({ id, ...body }: { id: string } & Record<string, unknown>) => put<Issue>(`/issues/${id}`, body), onSuccess: (_, v) => { qc.invalidateQueries({ queryKey: ['issues'] }); qc.invalidateQueries({ queryKey: ['issue', v.id] }); } }); };
@@ -313,9 +388,15 @@ export const useTimeEntries = (params?: Record<string, unknown>, options?: { ena
   queryFn: () => get<TimeEntry[]>('/time_entries', params),
   enabled: options?.enabled ?? true,
 });
-export const useCreateTimeEntry = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (body: Partial<TimeEntry>) => post<TimeEntry>('/time_entries', body), onSuccess: () => qc.invalidateQueries({ queryKey: ['timeEntries'] }) }); };
-export const useUpdateTimeEntry = () => { const qc = useQueryClient(); return useMutation({ mutationFn: ({ id, ...body }: { id: string } & Partial<TimeEntry>) => put<TimeEntry>(`/time_entries/${id}`, body), onSuccess: () => qc.invalidateQueries({ queryKey: ['timeEntries'] }) }); };
-export const useDeleteTimeEntry = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (id: string) => del(`/time_entries/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['timeEntries'] }) }); };
+function invalidateTimeEntryDependents(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['timeEntries'] });
+  qc.invalidateQueries({ queryKey: ['timeReport'] });
+  qc.invalidateQueries({ queryKey: ['issues'] });
+  qc.invalidateQueries({ queryKey: ['issue'] });
+}
+export const useCreateTimeEntry = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (body: Partial<TimeEntry>) => post<TimeEntry>('/time_entries', body), onSuccess: () => invalidateTimeEntryDependents(qc) }); };
+export const useUpdateTimeEntry = () => { const qc = useQueryClient(); return useMutation({ mutationFn: ({ id, ...body }: { id: string } & Partial<TimeEntry>) => put<TimeEntry>(`/time_entries/${id}`, body), onSuccess: () => invalidateTimeEntryDependents(qc) }); };
+export const useDeleteTimeEntry = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (id: string) => del(`/time_entries/${id}`), onSuccess: () => invalidateTimeEntryDependents(qc) }); };
 export const useTimeEntryReport = (params?: Record<string, unknown>) => useQuery({ queryKey: ['timeReport', params], queryFn: () => get<unknown>('/time_entries/report', params) });
 
 // ========== Wiki ==========

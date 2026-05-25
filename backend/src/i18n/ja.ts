@@ -15,7 +15,7 @@ export const ja = {
     accountLocked: 'アカウントがロックされています',
     accountNotActivated: 'アカウントが有効化されていません',
     loggedOut: 'ログアウトしました',
-    totpRequired: '二要素認証コードが必要です',
+    totpRequired: '二段階認証コードが必要です',
     totpInvalid: '認証コードが正しくありません',
     passwordChanged: 'パスワードを変更しました',
   },
