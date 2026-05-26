@@ -134,7 +134,7 @@ export default function ProjectsPage() {
     const children = projectChildren.get(project.id) ?? [];
     const canManage = canManageProject(project);
     return (
-      <li key={project.id} className={depth > 0 ? 'rounded-md border-l-2 border-slate-300 bg-slate-50 py-2 pl-3 pr-2' : 'mb-4 min-w-0 break-inside-avoid'}>
+      <li key={project.id} className={depth > 0 ? 'rounded-md border-l-2 border-slate-300 bg-slate-50 py-2 pl-3 pr-2' : 'min-w-0'}>
         <div className={depth > 0 ? '' : 'rounded-lg border border-slate-200 bg-white p-4 shadow-sm'}>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1" style={depth > 1 ? { paddingLeft: `${(depth - 1) * 16}px` } : undefined}>
@@ -221,7 +221,7 @@ export default function ProjectsPage() {
         <p className="rounded-xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-sm">{t('app.noData')}</p>
       )}
 
-      <ul className="columns-1 gap-4 md:columns-2 xl:columns-3">
+      <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {rootProjects.map((p) => renderProjectNode(p))}
       </ul>
 

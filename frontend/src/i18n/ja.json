@@ -19,7 +19,7 @@
   "queries": { "title": "カスタムクエリ", "save": "クエリを保存", "filters": "フィルタ" },
   "settings": { "attachments": "添付ファイル" },
   "admin": { "title": "管理" },
-  "enumerations": { "pageTitle": "文書カテゴリ・工数分類", "name": "名前", "priorities": "チケットの優先度", "documentCategories": "文書カテゴリ", "timeActivities": "工数分類", "isDefault": "既定", "active": "有効" },
+  "enumerations": { "pageTitle": "文書カテゴリ・工数分類", "name": "名前", "priorities": "チケットの優先度", "documentCategories": "文書カテゴリ", "timeActivities": "工数分類", "isDefault": "デフォルト", "active": "有効", "inactive": "無効", "activeState": "有効/無効" },
   "myPage": { "title": "マイページ", "customize": "カスタマイズ", "assignedToMe": "担当しているチケット", "reportedByMe": "自分が作成した未完了チケット", "calendar7": "カレンダー（7日間）" },
   "myAccount": { "profile": "プロフィール", "language": "言語", "mailNotifications": "メール通知", "mailNotificationsEnabled": "メール通知を受け取る", "mailNotificationsHelp": "担当しているチケットや作成したコンテンツの更新、参加プロジェクトへのメンバー追加などをメールで通知します。", "twoFactor": "二段階認証", "qrCode": "QRコード", "deleteAccount": "アカウント削除", "deleteWarning": "この操作は取り消せません", "deleteConfirm": "削除を確認するためにDELETEと入力してください" },
   "search": { "title": "検索", "placeholder": "検索キーワード...", "noResults": "検索結果がありません", "scope": { "all": "全プロジェクト" } },
