@@ -34,7 +34,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       UPLOAD_DIR: /app/uploads
       NODE_ENV: production
-    command: sh -c "npx prisma db push --skip-generate && node --import tsx src/index.ts"
+    command: sh -c "npx prisma db push --skip-generate --accept-data-loss && node --import tsx src/index.ts"
     ports:
       - "${BACKEND_BIND:-127.0.0.1}:${BACKEND_PORT:-3000}:3000"
     volumes:

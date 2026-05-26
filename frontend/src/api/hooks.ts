@@ -712,11 +712,6 @@ export const useIssueCustomFields = (projectId: string, trackerId: string) =>
 // ========== Queries ==========
 export const useSavedQueries = () => useQuery({ queryKey: ['queries'], queryFn: () => get<SavedQuery[]>('/queries') });
 
-// ========== Settings ==========
-export const useSettings = () => useQuery({ queryKey: ['settings'], queryFn: () => get<Record<string, string>>('/settings') });
-export const useUpdateSettings = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (body: Record<string, string>) => put('/settings', body), onSuccess: () => qc.invalidateQueries({ queryKey: ['settings'] }) }); };
-export const useTestEmail = () => useMutation({ mutationFn: () => post('/settings/test_email') });
-
 // ========== Roles (admin) ==========
 type RoleWriteBody = Omit<Partial<Role>, 'permissions'> & { permissions?: string[] };
 
