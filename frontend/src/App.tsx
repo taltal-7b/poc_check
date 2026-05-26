@@ -54,7 +54,6 @@ const AdminTrackersPage = lazy(() => import('./pages/admin/TrackersPage'));
 const AdminStatusesPage = lazy(() => import('./pages/admin/StatusesPage'));
 const AdminCustomFieldsPage = lazy(() => import('./pages/admin/CustomFieldsPage'));
 const AdminEnumerationsPage = lazy(() => import('./pages/admin/EnumerationsPage'));
-const AdminSettingsPage = lazy(() => import('./pages/admin/SettingsPage'));
 
 function RouteLoading() {
   return <div className="flex min-h-screen items-center justify-center">読み込み中...</div>;
@@ -185,7 +184,8 @@ export default function App() {
         <Route path="users/:userId" element={<UserProfilePage />} />
 
         <Route path="my/page" element={<Navigate to="/" replace />} />
-        <Route path="my/account" element={<MyAccountPage />} />
+        <Route path="my/account" element={<Navigate to="/myaccount" replace />} />
+        <Route path="myaccount" element={<MyAccountPage />} />
 
         <Route path="admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
         <Route path="admin/users/:userId" element={<AdminRoute><AdminUserDetailPage /></AdminRoute>} />
@@ -197,7 +197,6 @@ export default function App() {
         <Route path="admin/statuses" element={<AdminRoute><AdminStatusesPage /></AdminRoute>} />
         <Route path="admin/custom-fields" element={<AdminRoute><AdminCustomFieldsPage /></AdminRoute>} />
         <Route path="admin/enumerations" element={<AdminRoute><AdminEnumerationsPage /></AdminRoute>} />
-        <Route path="admin/settings" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />
       </Route>
       </Routes>
     </Suspense>

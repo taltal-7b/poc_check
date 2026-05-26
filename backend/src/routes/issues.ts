@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
-import { authenticate, authenticateOrQueryApiKey, type AuthPayload } from '../middleware/auth';
+import { authenticate, type AuthPayload } from '../middleware/auth';
 import { notifyIssueEvent } from '../services/notification-service';
 import { logger } from '../utils/logger';
 import {
@@ -1101,7 +1101,7 @@ router.get(
 
 router.get(
   '/atom',
-  authenticateOrQueryApiKey,
+  authenticate,
   catchAsync(async (req, res) => {
     const { where, earlyEmpty } = await buildIssueWhere(req, req.user);
     const limitRaw = Number(req.query.limit ?? 100);
@@ -1238,7 +1238,7 @@ router.get(
 
 router.get(
   '/:id/atom',
-  authenticateOrQueryApiKey,
+  authenticate,
   catchAsync(async (req, res) => {
     const issue = await resolveIssueByParam(req.params.id);
     if (!issue) throw AppError.notFound('チケットが見つかりません');

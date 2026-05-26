@@ -3,7 +3,7 @@ import { config } from '../config';
 import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
-import { authenticate, authenticateOrQueryApiKey, requireAdmin } from '../middleware/auth';
+import { authenticate, requireAdmin } from '../middleware/auth';
 import { createOpenAiProjectBottleneckDetection, createOpenAiProjectProgressSummary, createOpenAiProjectTaskInstruction, createOpenAiProjectWeeklyReport } from '../services/openai-service';
 import {
   getUserGroupIds,
@@ -1266,7 +1266,7 @@ router.get(
 
 router.get(
   '/atom',
-  authenticateOrQueryApiKey,
+  authenticate,
   catchAsync(async (req, res) => {
     const feedUser = req.user!;
 

@@ -2,6 +2,8 @@
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
+import { LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import {
   useConfirmTotp,
   useDisableTotp,
@@ -13,6 +15,7 @@ import {
   useUpdateMe,
 } from '../api/hooks';
 import api from '../api/client';
+import { useAuthStore } from '../stores/auth';
 import type { User } from '../types';
 
 function unwrap<T>(raw: unknown): T | undefined {
@@ -26,6 +29,8 @@ function unwrap<T>(raw: unknown): T | undefined {
 export default function MyAccountPage() {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const logout = useAuthStore((s) => s.logout);
   const { data: meRaw } = useMe();
   const me = unwrap<User>(meRaw);
 
@@ -134,6 +139,13 @@ export default function MyAccountPage() {
       showTotpMessage({ type: 'error', text: error?.response?.data?.error?.message || '二段階認証の無効化に失敗しました' });
     }
   };
+
+  const handleLogout = () => {
+    logout();
+    qc.clear();
+    navigate('/login');
+  };
+
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -161,22 +173,13 @@ export default function MyAccountPage() {
     },
   });
 
-  const [apiKeyPreview, setApiKeyPreview] = useState<string | null>(null);
-  const regenerateKey = useMutation({
-    mutationFn: async () => {
-      const res = await api.post('/auth/api_key/regenerate');
-      const body = res.data as { data?: { apiKey?: string }; apiKey?: string };
-      return body.data?.apiKey ?? body.apiKey ?? '(regenerated)';
-    },
-    onSuccess: (key) => setApiKeyPreview(key),
-  });
-
+  const [logoutOpen, setLogoutOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState('');
 
   const deleteAccount = useMutation({
     mutationFn: async () => {
-      await api.delete('/auth/me');
+      await api.delete('/my');
     },
     onSuccess: () => {
       localStorage.removeItem('accessToken');
@@ -190,9 +193,10 @@ export default function MyAccountPage() {
   }
 
   return (
-    <div className="max-w-2xl space-y-10">
+    <div className="max-w-6xl space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">{t('nav.myAccount')}</h1>
 
+      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-800 mb-4">{t('myAccount.profile')}</h2>
         {profileMessage && (
@@ -451,18 +455,14 @@ export default function MyAccountPage() {
         )}
       </section>
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">{t('myAccount.apiKey')}</h2>
-        <p className="text-sm text-gray-600 mb-3">個人用APIアクセスキーを再生成します。</p>
-        {apiKeyPreview && (
-          <pre className="mb-3 rounded bg-gray-100 p-3 text-xs break-all">{apiKeyPreview}</pre>
-        )}
+        <h2 className="text-lg font-semibold text-gray-800 mb-4">{t('nav.logout')}</h2>
         <button
           type="button"
-          onClick={() => regenerateKey.mutate()}
-          disabled={regenerateKey.isPending}
-          className="rounded-lg border border-amber-600 text-amber-800 px-4 py-2 text-sm font-medium hover:bg-amber-50 disabled:opacity-50"
+          onClick={() => setLogoutOpen(true)}
+          className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
         >
-          {t('myAccount.regenerate')}
+          <LogOut size={16} />
+          {t('nav.logout')}
         </button>
       </section>
 
@@ -477,6 +477,30 @@ export default function MyAccountPage() {
           {t('app.delete')}
         </button>
       </section>
+      </div>
+
+      <Dialog open={logoutOpen} onClose={() => setLogoutOpen(false)} className="relative z-50">
+        <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <DialogTitle className="text-lg font-semibold text-gray-900">{t('nav.logout')}</DialogTitle>
+            <p className="mt-2 text-sm text-gray-600">ログアウトします。よろしいですか？</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setLogoutOpen(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm">
+                {t('app.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm text-white hover:bg-primary-700"
+              >
+                <LogOut size={16} />
+                {t('nav.logout')}
+              </button>
+            </div>
+          </DialogPanel>
+        </div>
+      </Dialog>
 
       <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)} className="relative z-50">
         <div className="fixed inset-0 bg-black/40" aria-hidden="true" />

@@ -1,18 +1,15 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../stores/auth';
 import { useMe } from '../api/hooks';
 import { useEffect, useState } from 'react';
-import { Menu, X, Search, User, LogOut, Settings, ChevronDown } from 'lucide-react';
+import { Menu, X, Search, User, ChevronDown } from 'lucide-react';
 
 export default function MainLayout() {
   const { t } = useTranslation();
-  const { isAuthenticated, logout, user, setUser } = useAuthStore();
+  const { isAuthenticated, user, setUser } = useAuthStore();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -23,12 +20,6 @@ export default function MainLayout() {
       setUser(meQuery.data.data as Parameters<typeof setUser>[0]);
     }
   }, [meQuery.data, isAuthenticated, setUser]);
-
-  const handleLogout = () => {
-    logout();
-    queryClient.clear();
-    navigate('/login');
-  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,7 +40,6 @@ export default function MainLayout() {
     { to: '/admin/statuses', label: t('statuses.title') },
     { to: '/admin/custom-fields', label: t('customFields.title') },
     { to: '/admin/enumerations', label: t('enumerations.pageTitle') },
-    { to: '/admin/settings', label: t('settings.title') },
   ] : [];
 
   return (
@@ -110,18 +100,10 @@ export default function MainLayout() {
               )}
 
               {isAuthenticated ? (
-                <div className="relative">
-                  <button onClick={() => setUserMenuOpen(!userMenuOpen)} className="flex items-center gap-2 px-3 py-1.5 rounded hover:bg-primary-600">
-                    <User size={16} />
-                    <span className="text-sm hidden sm:inline">{user?.login || ''}</span>
-                  </button>
-                  {userMenuOpen && (
-                    <div className="absolute right-0 top-full mt-1 bg-white text-gray-800 rounded-lg shadow-xl py-1 min-w-44 z-50">
-                      <Link to="/my/account" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 text-sm"><Settings size={14} />{t('nav.myAccount')}</Link>
-                      <button onClick={() => { setUserMenuOpen(false); handleLogout(); }} className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 text-sm w-full text-left"><LogOut size={14} />{t('nav.logout')}</button>
-                    </div>
-                  )}
-                </div>
+                <Link to="/myaccount" className="flex items-center gap-2 px-3 py-1.5 rounded hover:bg-primary-600">
+                  <User size={16} />
+                  <span className="text-sm hidden sm:inline">{user?.login || ''}</span>
+                </Link>
               ) : (
                 <Link to="/login" className="text-sm px-3 py-1.5 rounded bg-white text-primary-700 font-medium hover:bg-gray-100">{t('nav.login')}</Link>
               )}

@@ -1,7 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
 import { z } from 'zod';
 import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
@@ -520,22 +519,6 @@ router.put('/mail_notifications', async (req: Request, res: Response, next: Next
       mailNotificationsEnabled: nextOthers.mailNotificationsEnabled !== false,
     });
   } catch (err) {
-    next(err);
-  }
-});
-
-router.post('/api_key', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const apiKey = crypto.randomBytes(32).toString('hex');
-    const user = await prisma.user.update({
-      where: { id: req.user!.userId },
-      data: { apiKey },
-    });
-    return sendSuccess(res, { apiKey: user.apiKey });
-  } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-      return next(AppError.conflict('APIキーの生成に失敗しました。再試行してください'));
-    }
     next(err);
   }
 });
