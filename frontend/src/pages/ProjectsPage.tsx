@@ -3,19 +3,19 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { Pencil, Rss, Trash2 } from 'lucide-react';
-import { useProjects, useDeleteProject } from '../api/hooks';
+import { useProjects, useDeleteProject, useMyProjects } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 import { openAuthenticatedAtom } from '../utils/atom';
 import type { Project } from '../types';
 
-type Tab = 'active' | 'archived' | 'closed' | 'all';
+type Tab = 'active' | 'member' | 'archived' | 'closed' | 'all';
 
 const STATUS_ACTIVE = 1;
 const STATUS_ARCHIVED = 2;
 const STATUS_CLOSED = 3;
 
 function isTab(value: string | null): value is Tab {
-  return value === 'active' || value === 'archived' || value === 'closed' || value === 'all';
+  return value === 'active' || value === 'member' || value === 'archived' || value === 'closed' || value === 'all';
 }
 
 function statusLabel(t: (k: string) => string, status: number) {
@@ -43,7 +43,7 @@ export default function ProjectsPage() {
   const deleteMutation = useDeleteProject();
 
   const params = useMemo(() => {
-    if (tab === 'all') return undefined;
+    if (tab === 'all' || tab === 'member') return undefined;
     if (tab === 'active') return { status: STATUS_ACTIVE };
     if (tab === 'archived') return { status: STATUS_ARCHIVED };
     return { status: STATUS_CLOSED };
@@ -66,12 +66,21 @@ export default function ProjectsPage() {
     ...(params ?? {}),
     perPage: 1000,
   });
+  const myProjectsQuery = useMyProjects();
 
   const projects: Project[] = data?.data ?? [];
+  const myProjectIds = useMemo(
+    () => new Set((myProjectsQuery.data?.data ?? []).map((project) => project.projectId)),
+    [myProjectsQuery.data],
+  );
+  const visibleProjects = useMemo(
+    () => (tab === 'member' ? projects.filter((project) => myProjectIds.has(project.id)) : projects),
+    [myProjectIds, projects, tab],
+  );
 
   const projectChildren = useMemo(() => {
     const map = new Map<string, Project[]>();
-    projects.forEach((p) => {
+    visibleProjects.forEach((p) => {
       if (!p.parentId) return;
       const arr = map.get(p.parentId) ?? [];
       arr.push(p);
@@ -81,14 +90,14 @@ export default function ProjectsPage() {
       arr.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
     }
     return map;
-  }, [projects]);
+  }, [visibleProjects]);
 
   const rootProjects = useMemo(
     () =>
-      projects
-        .filter((p) => !p.parentId || !projects.some((x) => x.id === p.parentId))
+      visibleProjects
+        .filter((p) => !p.parentId || !visibleProjects.some((x) => x.id === p.parentId))
         .sort((a, b) => a.name.localeCompare(b.name, 'ja')),
-    [projects],
+    [visibleProjects],
   );
 
   const canManageProject = (project: Project): boolean => {
@@ -115,6 +124,7 @@ export default function ProjectsPage() {
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'active', label: t('projects.status.active') },
+    { key: 'member', label: '参加中' },
     { key: 'archived', label: t('projects.status.archived') },
     { key: 'closed', label: t('projects.status.closed') },
     { key: 'all', label: t('search.scope.all') },
@@ -134,7 +144,7 @@ export default function ProjectsPage() {
     const children = projectChildren.get(project.id) ?? [];
     const canManage = canManageProject(project);
     return (
-      <li key={project.id} className={depth > 0 ? 'rounded-md border-l-2 border-slate-300 bg-slate-50 py-2 pl-3 pr-2' : 'mb-4 min-w-0 break-inside-avoid'}>
+      <li key={project.id} className={depth > 0 ? 'rounded-md border-l-2 border-slate-300 bg-slate-50 py-2 pl-3 pr-2' : 'min-w-0'}>
         <div className={depth > 0 ? '' : 'rounded-lg border border-slate-200 bg-white p-4 shadow-sm'}>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1" style={depth > 1 ? { paddingLeft: `${(depth - 1) * 16}px` } : undefined}>
@@ -214,18 +224,21 @@ export default function ProjectsPage() {
         ))}
       </div>
 
-      {isLoading && <p className="text-slate-500">{t('app.loading')}</p>}
+      {(isLoading || (tab === 'member' && myProjectsQuery.isLoading)) && <p className="text-slate-500">{t('app.loading')}</p>}
       {isError && <p className="text-red-600">{t('app.error')}</p>}
 
-      {!isLoading && !isError && projects.length === 0 && (
+      {!isLoading && !isError && !(tab === 'member' && myProjectsQuery.isLoading) && visibleProjects.length === 0 && (
         <p className="rounded-xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-sm">{t('app.noData')}</p>
       )}
 
-      <ul className="columns-1 gap-4 md:columns-2 xl:columns-3">
-        {rootProjects.map((p) => renderProjectNode(p))}
-      </ul>
+      {!isLoading && !isError && !(tab === 'member' && myProjectsQuery.isLoading) && visibleProjects.length > 0 && (
+        <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {rootProjects.map((p) => renderProjectNode(p))}
+        </ul>
+      )}
 
-      <div className="flex justify-end pt-2">
+      {tab !== 'member' && (
+        <div className="flex justify-end pt-2">
         <a
           href={atomUrl}
           onClick={openAtom}
@@ -234,7 +247,8 @@ export default function ProjectsPage() {
           <Rss className="h-4 w-4" />
           Atom
         </a>
-      </div>
+        </div>
+      )}
 
       <Dialog open={!!deleteConfirm} onClose={closeDeleteConfirm} className="relative z-50">
         <div className="fixed inset-0 bg-black/30" aria-hidden />

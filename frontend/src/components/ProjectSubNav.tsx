@@ -5,6 +5,7 @@ import { useProject } from '../api/hooks';
 const tabs = [
   { key: 'overview', suffix: '', labelKey: 'nav.overview', moduleKey: null },
   { key: 'issues', suffix: 'issues', labelKey: 'nav.issues', moduleKey: 'issue_tracking' },
+  { key: 'issueBoard', suffix: 'issues/board', labelKey: 'nav.issueBoard', moduleKey: 'issue_tracking' },
   { key: 'time_entries', suffix: 'time_entries', labelKey: 'nav.timeEntries', moduleKey: 'time_tracking' },
   { key: 'wiki', suffix: 'wiki', labelKey: 'nav.wiki', moduleKey: 'wiki' },
   { key: 'news', suffix: 'news', labelKey: 'nav.news', moduleKey: 'news' },
@@ -32,9 +33,11 @@ export default function ProjectSubNav({ identifier }: { identifier: string }) {
     <nav className="flex overflow-x-auto border-b border-slate-200">
       {visibleTabs.map((tab) => {
         const to = tab.suffix ? `${base}/${tab.suffix}` : base;
-        const isActive = tab.suffix
-          ? location.pathname.startsWith(`${base}/${tab.suffix}`)
-          : location.pathname === base || location.pathname === `${base}/`;
+        const isActive = tab.key === 'issues'
+          ? location.pathname.startsWith(`${base}/issues`) && !location.pathname.startsWith(`${base}/issues/board`)
+          : tab.suffix
+            ? location.pathname.startsWith(`${base}/${tab.suffix}`)
+            : location.pathname === base || location.pathname === `${base}/`;
         return (
           <Link
             key={tab.key}

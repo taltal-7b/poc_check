@@ -15,6 +15,7 @@ const ProjectNewPage = lazy(() => import('./pages/ProjectNewPage'));
 const ProjectDetailPage = lazy(() => import('./pages/ProjectDetailPage'));
 const ProjectSettingsPage = lazy(() => import('./pages/ProjectSettingsPage'));
 const IssuesPage = lazy(() => import('./pages/IssuesPage'));
+const IssueBoardPage = lazy(() => import('./pages/IssueBoardPage'));
 const IssueNewPage = lazy(() => import('./pages/IssueNewPage'));
 const IssueDetailPage = lazy(() => import('./pages/IssueDetailPage'));
 const TimeEntriesPage = lazy(() => import('./pages/TimeEntriesPage'));
@@ -147,6 +148,7 @@ export default function App() {
         <Route path="projects/:identifier" element={<ProjectDetailPage />} />
         <Route path="projects/:identifier/settings" element={<ProjectSettingsPage />} />
         <Route path="projects/:identifier/issues" element={<ProjectModuleRoute moduleKey="issue_tracking"><IssuesPage /></ProjectModuleRoute>} />
+        <Route path="projects/:identifier/issues/board" element={<ProjectModuleRoute moduleKey="issue_tracking"><IssueBoardPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/issues/new" element={<ProjectModuleRoute moduleKey="issue_tracking"><IssueCreateRoute><IssueNewPage /></IssueCreateRoute></ProjectModuleRoute>} />
         <Route path="projects/:identifier/issues/:issueId" element={<IssueDetailPage />} />
         <Route path="projects/:identifier/time_entries" element={<ProjectModuleRoute moduleKey="time_tracking"><TimeEntriesPage /></ProjectModuleRoute>} />

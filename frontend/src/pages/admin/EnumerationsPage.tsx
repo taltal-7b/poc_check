@@ -104,7 +104,7 @@ export default function EnumerationsPage() {
                 <th className="px-4 py-3 font-medium">{t('enumerations.name')}</th>
                 <th className="px-4 py-3 font-medium">{t('trackers.position')}</th>
                 <th className="px-4 py-3 font-medium">{t('enumerations.isDefault')}</th>
-                <th className="px-4 py-3 font-medium">{t('enumerations.active')}</th>
+                <th className="px-4 py-3 font-medium">{t('enumerations.activeState')}</th>
                 <th className="px-4 py-3 text-center font-medium">{t('app.actions')}</th>
               </tr>
             </thead>
@@ -127,7 +127,7 @@ export default function EnumerationsPage() {
                     </td>
                     <td className="px-4 py-2">
                       <button type="button" className={`rounded px-2 py-1 text-xs font-medium ${row.active ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200 text-gray-600'}`} onClick={() => void toggleActive(row)}>
-                        {row.active ? t('enumerations.active') : t('app.no')}
+                        {row.active ? t('enumerations.active') : t('enumerations.inactive')}
                       </button>
                     </td>
                     <td className="px-4 py-2">

@@ -17,6 +17,15 @@ const router = Router({ mergeParams: true });
 
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
+const ISSUE_STATUS_NOTIFICATION_DELAY_MS = 5 * 60 * 1000;
+const delayedIssueStatusNotifications = new Map<
+  string,
+  {
+    actorId: string;
+    timer: ReturnType<typeof setTimeout>;
+  }
+>();
+
 function dispatchIssueNotification(
   issueId: string,
   actorId: string,
@@ -29,6 +38,21 @@ function dispatchIssueNotification(
       error: error instanceof Error ? error.message : String(error),
     });
   });
+}
+
+function scheduleIssueStatusNotification(issueId: string, actorId: string) {
+  const current = delayedIssueStatusNotifications.get(issueId);
+  if (current) clearTimeout(current.timer);
+
+  const timer = setTimeout(() => {
+    delayedIssueStatusNotifications.delete(issueId);
+    dispatchIssueNotification(issueId, actorId, 'updated');
+  }, ISSUE_STATUS_NOTIFICATION_DELAY_MS);
+  if (typeof (timer as { unref?: () => void }).unref === 'function') {
+    (timer as { unref: () => void }).unref();
+  }
+
+  delayedIssueStatusNotifications.set(issueId, { actorId, timer });
 }
 
 const ISSUE_JOURNAL_KEYS = [
@@ -2036,7 +2060,9 @@ router.put(
     }
 
     let customFieldInput: Awaited<ReturnType<typeof validateIssueCustomFields>> | null = null;
-    if (!onlyNotesUpdate) {
+    const onlyStatusUpdate = Object.keys(body).length === 1 && body.statusId !== undefined;
+    const shouldValidateCustomFields = !onlyNotesUpdate && !onlyStatusUpdate;
+    if (shouldValidateCustomFields) {
       let customFieldValues = body.customFields;
       if (customFieldValues === undefined) {
         const currentValues = await prisma.customValue.findMany({
@@ -2187,7 +2213,11 @@ router.put(
     });
 
     if (updated.journalId) {
-      dispatchIssueNotification(updated.id, req.user!.userId, onlyNotesUpdate ? 'commented' : 'updated');
+      if (onlyStatusUpdate) {
+        scheduleIssueStatusNotification(updated.id, req.user!.userId);
+      } else {
+        dispatchIssueNotification(updated.id, req.user!.userId, onlyNotesUpdate ? 'commented' : 'updated');
+      }
     }
     return sendSuccess(res, await attachIssueCustomFields(updated));
   }),

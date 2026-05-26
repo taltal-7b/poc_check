@@ -4,7 +4,8 @@ WORKDIR /app
 RUN apk add --no-cache font-noto-cjk font-ipaex
 
 COPY package.json ./
-RUN npm install
+RUN npm install --no-audit --no-fund --ignore-scripts
+RUN npm rebuild esbuild
 
 COPY . .
 RUN npx prisma generate
