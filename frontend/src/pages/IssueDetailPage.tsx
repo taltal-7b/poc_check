@@ -11,7 +11,7 @@ import IssueCustomFieldInputs from '../components/IssueCustomFieldInputs';
 import WatchButton from '../components/WatchButton';
 import ProgressRangeInput from '../components/ProgressRangeInput';
 import ProjectSubNav from '../components/ProjectSubNav';
-import { useDeleteIssue, useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useUpdateJournal, useDeleteJournal, useTrackers, useStatuses, useMembers, useProjectIssues, useIssueCustomFields } from '../api/hooks';
+import { useDeleteIssue, useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useUpdateJournal, useDeleteJournal, useTrackers, useStatuses, useMembers, useProjectIssues, useIssueCustomFields, useEnumerations } from '../api/hooks';
 import { AttachmentLink, AttachmentPreview } from '../components/AttachmentLink';
 import { useAuthStore } from '../stores/auth';
 import { openAuthenticatedAtom } from '../utils/atom';
@@ -39,6 +39,7 @@ interface EditForm {
   statusId: string;
   priority: string;
   assigneeValue: string;
+  categoryId: string;
   parentId: string;
   startDate: string;
   dueDate: string;
@@ -46,6 +47,29 @@ interface EditForm {
   doneRatio: string;
   repository: string;
   customFields: Record<string, string | string[]>;
+}
+
+const STANDARD_FIELD_LABELS = {
+  description: '説明',
+  assignee: '担当者',
+  category: 'カテゴリ',
+  parent: '親チケット',
+  startDate: '開始日',
+  dueDate: '期日',
+  estimatedHours: '予定工数',
+  doneRatio: '進捗率',
+  repository: 'リポジトリ',
+} as const;
+
+type StandardFieldKey = keyof typeof STANDARD_FIELD_LABELS;
+
+function isStandardFieldEnabled(tracker: { standardFields?: Array<{ fieldKey: string; enabled: boolean }> } | undefined, key: StandardFieldKey) {
+  return tracker?.standardFields?.find((field) => field.fieldKey === key)?.enabled ?? true;
+}
+
+function isStandardFieldRequired(tracker: { standardFields?: Array<{ fieldKey: string; enabled: boolean; required: boolean }> } | undefined, key: StandardFieldKey) {
+  const setting = tracker?.standardFields?.find((field) => field.fieldKey === key);
+  return (setting?.enabled ?? true) && (setting?.required ?? false);
 }
 
 function customFieldFormValue(field: IssueCustomFieldValue): string | string[] {
@@ -198,7 +222,7 @@ export default function IssueDetailPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState<EditForm>({
     subject: '', description: '', trackerId: '', statusId: '',
-    priority: '2', assigneeValue: '', parentId: '', startDate: '', dueDate: '',
+    priority: '2', assigneeValue: '', categoryId: '', parentId: '', startDate: '', dueDate: '',
     estimatedHours: '', doneRatio: '0', repository: '', customFields: {},
   });
   const [note, setNote] = useState('');
@@ -219,12 +243,17 @@ export default function IssueDetailPage() {
   const trackersQuery = useTrackers();
   const statusesQuery = useStatuses();
   const membersQuery = useMembers(issue?.project?.id ?? '');
+  const categoriesQuery = useEnumerations('IssueCategory');
   const projectIssuesQuery = useProjectIssues(issue?.project?.id ?? '', { per_page: 100 }, { enabled: !!issue?.project?.id });
   const editCustomFieldsQuery = useIssueCustomFields(issue?.project?.id ?? '', form.trackerId);
   const trackers = trackersQuery.data?.data ?? [];
   const statuses = statusesQuery.data?.data ?? [];
   const members = membersQuery.data?.data ?? [];
+  const categories = categoriesQuery.data?.data ?? [];
   const projectIssues = projectIssuesQuery.data?.data ?? [];
+  const currentEditTracker = useMemo(() => trackers.find((tr) => tr.id === form.trackerId) ?? issue?.tracker, [trackers, form.trackerId, issue?.tracker]);
+  const fieldEnabled = (key: StandardFieldKey) => isStandardFieldEnabled(currentEditTracker, key);
+  const fieldRequired = (key: StandardFieldKey) => isStandardFieldRequired(currentEditTracker, key);
   const descendantIssueIds = useMemo(() => {
     if (!issue?.id) return new Set<string>();
     const childrenByParent = new Map<string, Issue[]>();
@@ -284,7 +313,9 @@ export default function IssueDetailPage() {
     const seen = new Set<string>();
     const currentUserValue = currentUser?.id ? `user:${currentUser.id}` : '';
     const options = members.flatMap((member) => {
+      if (!(member.memberRoles ?? []).some((memberRole) => memberRole.role?.assignable)) return [];
       if (member.user) {
+        if (member.user.status !== 1) return [];
         const value = `user:${member.user.id}`;
         if (seen.has(value)) return [];
         seen.add(value);
@@ -430,6 +461,7 @@ export default function IssueDetailPage() {
       statusId: issue.statusId,
       priority: String(issue.priority),
       assigneeValue: issue.assigneeGroupId ? `group:${issue.assigneeGroupId}` : issue.assigneeId ? `user:${issue.assigneeId}` : '',
+      categoryId: issue.categoryId ?? '',
       parentId: issue.parentId ?? '',
       startDate: toDateStr(issue.startDate),
       dueDate: toDateStr(issue.dueDate),
@@ -469,22 +501,39 @@ export default function IssueDetailPage() {
       return;
     }
     const assignee = parseAssigneeValue(form.assigneeValue);
+    const requiredValues: Record<StandardFieldKey, boolean> = {
+      description: form.description.trim().length > 0,
+      assignee: Boolean(assignee.assigneeId || assignee.assigneeGroupId),
+      category: Boolean(form.categoryId),
+      parent: Boolean(form.parentId),
+      startDate: Boolean(form.startDate),
+      dueDate: Boolean(form.dueDate),
+      estimatedHours: parsedEstimatedHours != null,
+      doneRatio: true,
+      repository: form.repository.trim().length > 0,
+    };
+    for (const key of Object.keys(STANDARD_FIELD_LABELS) as StandardFieldKey[]) {
+      if (fieldRequired(key) && !requiredValues[key]) {
+        setEditError(`${STANDARD_FIELD_LABELS[key]}を入力してください`);
+        return;
+      }
+    }
     updateMutation.mutate(
       {
         id: issue.id,
         subject: form.subject.trim(),
-        description: form.description,
         trackerId: form.trackerId,
         statusId: form.statusId,
         priority: Number(form.priority),
-        assigneeId: assignee.assigneeId,
-        assigneeGroupId: assignee.assigneeGroupId,
-        parentId: form.parentId || null,
-        startDate: form.startDate || null,
-        dueDate: form.dueDate || null,
-        estimatedHours: parsedEstimatedHours,
-        doneRatio: Number(form.doneRatio),
-        repository: form.repository.trim() || null,
+        ...(fieldEnabled('description') ? { description: form.description } : {}),
+        ...(fieldEnabled('assignee') ? { assigneeId: assignee.assigneeId, assigneeGroupId: assignee.assigneeGroupId } : {}),
+        ...(fieldEnabled('category') ? { categoryId: form.categoryId || null } : {}),
+        ...(fieldEnabled('parent') ? { parentId: form.parentId || null } : {}),
+        ...(fieldEnabled('startDate') ? { startDate: form.startDate || null } : {}),
+        ...(fieldEnabled('dueDate') ? { dueDate: form.dueDate || null } : {}),
+        ...(fieldEnabled('estimatedHours') ? { estimatedHours: parsedEstimatedHours } : {}),
+        ...(fieldEnabled('doneRatio') ? { doneRatio: Number(form.doneRatio) } : {}),
+        ...(fieldEnabled('repository') ? { repository: form.repository.trim() || null } : {}),
         customFields: form.customFields,
       },
       {
@@ -843,6 +892,19 @@ export default function IssueDetailPage() {
         : <span className="text-slate-900">-</span>,
     },
   ];
+  const visiblePropertyRows = propertyRows.filter((row) => {
+    const standardKeyByRow: Record<string, StandardFieldKey> = {
+      assignee: 'assignee',
+      startDate: 'startDate',
+      dueDate: 'dueDate',
+      estimatedHours: 'estimatedHours',
+      doneRatio: 'doneRatio',
+      parent: 'parent',
+      repository: 'repository',
+    };
+    const standardKey = standardKeyByRow[row.key];
+    return standardKey ? fieldEnabled(standardKey) : true;
+  });
 
   return (
     <div className="space-y-6">
@@ -901,6 +963,18 @@ export default function IssueDetailPage() {
                 className={selectCls}
               />
             </div>
+            {fieldEnabled('category') && (
+            <div>
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.category')}</label>
+              <AppSelect
+                value={form.categoryId}
+                onChange={(value) => setField('categoryId', value)}
+                options={[{ value: '', label: '-' }, ...categories.map((item) => ({ value: item.id, label: item.name }))]}
+                ariaLabel={t('issues.category')}
+                className={selectCls}
+              />
+            </div>
+            )}
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.status')}</label>
               <AppSelect
@@ -921,6 +995,7 @@ export default function IssueDetailPage() {
                 className={selectCls}
               />
             </div>
+            {fieldEnabled('assignee') && (
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.assignee')}</label>
               <AppSelect
@@ -931,14 +1006,20 @@ export default function IssueDetailPage() {
                 className={selectCls}
               />
             </div>
+            )}
+            {fieldEnabled('startDate') && (
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.startDate')}</label>
               <input type="date" value={form.startDate} onChange={(e) => setField('startDate', e.target.value)} className={inputCls} />
             </div>
+            )}
+            {fieldEnabled('dueDate') && (
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.dueDate')}</label>
               <input type="date" value={form.dueDate} onChange={(e) => setField('dueDate', e.target.value)} className={inputCls} />
             </div>
+            )}
+            {fieldEnabled('estimatedHours') && (
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.estimatedHours')}</label>
               <div className="flex gap-2">
@@ -973,10 +1054,14 @@ export default function IssueDetailPage() {
               </div>
               <p className="mt-1 text-xs normal-case tracking-normal text-slate-500">日入力は1日=8時間で換算します。</p>
             </div>
+            )}
+            {fieldEnabled('doneRatio') && (
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.doneRatio')}</label>
               <ProgressRangeInput value={form.doneRatio} onChange={(value) => setField('doneRatio', value)} />
             </div>
+            )}
+            {fieldEnabled('parent') && (
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.parent')}</label>
               <AppSelect
@@ -990,11 +1075,14 @@ export default function IssueDetailPage() {
                 className={selectCls}
               />
             </div>
+            )}
+            {fieldEnabled('repository') && (
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">{t('issues.repository')}</label>
               <input type="text" value={form.repository}
                 onChange={(e) => setField('repository', e.target.value)} placeholder="https://github.com/..." className={inputCls} />
             </div>
+            )}
             <IssueCustomFieldInputs
               fields={editCustomFieldsQuery.data?.data ?? issue.customFields ?? []}
               values={form.customFields}
@@ -1024,7 +1112,7 @@ export default function IssueDetailPage() {
         ) : (
           <>
             <div className="grid grid-cols-1 divide-y divide-slate-100 sm:grid-cols-2 sm:divide-y-0">
-              {propertyRows.map((row, idx, arr) => (
+              {visiblePropertyRows.map((row, idx, arr) => (
                 <div key={row.key}
                   className={`flex items-center gap-3 px-5 py-3 ${idx < arr.length - (arr.length % 2 === 0 ? 2 : 1) ? 'sm:border-b sm:border-slate-100' : ''} ${idx % 2 === 0 ? 'sm:border-r sm:border-slate-100' : ''}`}>
                   <dt className="w-24 shrink-0 text-xs font-medium uppercase tracking-wide text-slate-500">{row.label}</dt>
@@ -1044,6 +1132,7 @@ export default function IssueDetailPage() {
       </div>
 
       {/* Description */}
+      {fieldEnabled('description') && (
       <div className="mb-6">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('issues.description')}</h2>
         {isEditing ? (
@@ -1060,6 +1149,7 @@ export default function IssueDetailPage() {
           />
         )}
       </div>
+      )}
 
       {/* Edit action bar */}
       {isEditing && (

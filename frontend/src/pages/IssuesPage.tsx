@@ -2,16 +2,28 @@ import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Edit3, Rss, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bookmark, ChevronDown, ChevronRight, Edit3, Rss, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
-import { useBulkDeleteIssues, useBulkUpdateIssues, useIssues, useProjectIssues, useStatuses, useTrackers, useMembers, useProject } from '../api/hooks';
+import {
+  useBulkDeleteIssues,
+  useBulkUpdateIssues,
+  useCreateSavedQuery,
+  useDeleteSavedQuery,
+  useIssues,
+  useProjectIssues,
+  useSavedQueries,
+  useStatuses,
+  useTrackers,
+  useMembers,
+  useProject,
+} from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 import ProjectSubNav from '../components/ProjectSubNav';
 import AppSelect from '../components/AppSelect';
 import ProgressRangeInput from '../components/ProgressRangeInput';
 import { openAuthenticatedAtom } from '../utils/atom';
 import { formatEstimatedEffort } from '../utils/estimatedEffort';
-import type { Issue } from '../types';
+import type { Issue, Query as SavedQuery } from '../types';
 
 const PER_PAGE = 10;
 const EMPTY_MARK = '\uFF0D';
@@ -32,6 +44,13 @@ const ISSUE_SORT_KEYS = [
 ] as const;
 
 type IssueSortKey = (typeof ISSUE_SORT_KEYS)[number];
+type IssueSavedFilters = {
+  trackerId?: string;
+  statusId?: string;
+  priority?: string;
+  assignee?: string;
+  q?: string;
+};
 
 const ISSUE_SORT_KEY_SET = new Set<string>(ISSUE_SORT_KEYS);
 
@@ -63,6 +82,13 @@ function formatHours(value: number | null | undefined) {
   return typeof value === 'number' ? formatEstimatedEffort(value, 'hours') : EMPTY_MARK;
 }
 
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function issueQueryProjectId(query: SavedQuery): string | null {
+  return query.projectId ?? query.project?.id ?? null;
+}
 
 export default function IssuesPage() {
   const { t } = useTranslation();
@@ -74,8 +100,11 @@ export default function IssuesPage() {
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkError, setBulkError] = useState('');
-  const [parentSearch, setParentSearch] = useState('');
-  const [parentPickerOpen, setParentPickerOpen] = useState(false);
+  const [saveQueryOpen, setSaveQueryOpen] = useState(false);
+  const [savedQueryId, setSavedQueryId] = useState('');
+  const [queryName, setQueryName] = useState('');
+  const [queryError, setQueryError] = useState('');
+  const [issueNameSearch, setIssueNameSearch] = useState('');
   const [bulkParentSearch, setBulkParentSearch] = useState('');
   const [bulkParentPickerOpen, setBulkParentPickerOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -96,7 +125,7 @@ export default function IssuesPage() {
   const statusId = searchParams.get('statusId') || '';
   const priority = searchParams.get('priority') || '';
   const assignee = searchParams.get('assignee') || '';
-  const parentNumber = searchParams.get('parent') || '';
+  const issueName = searchParams.get('q') || '';
   const sortParam = searchParams.get('sort');
   const sort: IssueSortKey = isIssueSortKey(sortParam) ? sortParam : 'updatedAt';
   const order = searchParams.get('order') === 'asc' ? 'asc' : 'desc';
@@ -110,7 +139,7 @@ export default function IssuesPage() {
         ...(trackerId ? { tracker: trackerId } : {}),
         ...(statusId ? { status: statusId } : {}),
         ...(priority ? { priority: Number(priority) } : {}),
-        ...(parentNumber ? { parent: parentNumber } : {}),
+        ...(issueName ? { q: issueName } : {}),
         sort,
         order,
         ...(trimmedAssignee.startsWith('group:')
@@ -120,7 +149,7 @@ export default function IssuesPage() {
             : trimmedAssignee ? { assignee: trimmedAssignee } : {}),
       };
     },
-    [page, trackerId, statusId, priority, assignee, parentNumber, sort, order],
+    [page, trackerId, statusId, priority, assignee, issueName, sort, order],
   );
 
   const atomUrl = useMemo(() => {
@@ -128,7 +157,7 @@ export default function IssuesPage() {
     if (trackerId) params.set('tracker', trackerId);
     if (statusId) params.set('status', statusId);
     if (priority) params.set('priority', priority);
-    if (parentNumber) params.set('parent', parentNumber);
+    if (issueName) params.set('q', issueName);
     if (assignee.trim().startsWith('group:')) params.set('assignee_group', assignee.trim().slice(6));
     else if (assignee.trim().startsWith('user:')) params.set('assignee', assignee.trim().slice(5));
     else if (assignee.trim()) params.set('assignee', assignee.trim());
@@ -138,7 +167,7 @@ export default function IssuesPage() {
       ? `/api/v1/projects/${identifier}/issues/atom`
       : '/api/v1/issues/atom';
     return `${base}${qs ? `?${qs}` : ''}`;
-  }, [identifier, trackerId, statusId, priority, assignee, parentNumber]);
+  }, [identifier, trackerId, statusId, priority, assignee, issueName]);
 
   const openAtom = async (event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
@@ -147,21 +176,6 @@ export default function IssuesPage() {
 
   const globalQuery = useIssues(queryParams, { enabled: !identifier });
   const projectQuery = useProjectIssues(identifier ?? '', queryParams, { enabled: !!identifier });
-  const parentCandidateParams = useMemo(() => {
-    const q = parentSearch.trim().replace(/^#/, '');
-    return {
-      page: 1,
-      per_page: 20,
-      sort: 'updatedAt',
-      order: 'desc',
-      ...(q ? { q } : {}),
-    };
-  }, [parentSearch]);
-  const globalParentCandidates = useIssues(parentCandidateParams, { enabled: parentPickerOpen && !identifier });
-  const projectParentCandidates = useProjectIssues(identifier ?? '', parentCandidateParams, {
-    enabled: parentPickerOpen && !!identifier,
-  });
-
   const active = identifier ? projectQuery : globalQuery;
   const { data, isLoading, isError } = active;
   const projectDetailQuery = useProject(identifier ?? '', {
@@ -169,6 +183,7 @@ export default function IssuesPage() {
     refetchOnMount: 'always',
     cacheScope: currentUser?.id ?? 'signed-out',
   });
+  const currentProjectId = identifier ? projectDetailQuery.data?.data.id ?? '' : '';
   const canCreateIssue = identifier ? Boolean(projectDetailQuery.data?.data.permissions?.canCreateIssue) : false;
   const canBulkEdit = identifier ? Boolean(projectDetailQuery.data?.data.permissions?.canEditIssue) : isAuthenticated;
   const canBulkDelete = canBulkEdit;
@@ -180,9 +195,8 @@ export default function IssuesPage() {
     canCreateIssue;
 
   const issues: Issue[] = data?.data ?? [];
-  const parentCandidates = (identifier ? projectParentCandidates.data : globalParentCandidates.data)?.data ?? [];
   const pagination = data?.pagination;
-  const activeFilterCount = [trackerId, statusId, priority, assignee, parentNumber].filter(Boolean).length;
+  const activeFilterCount = [trackerId, statusId, priority, assignee, issueName].filter(Boolean).length;
   const issueChildrenByParent = useMemo(() => {
     const issueIds = new Set(issues.map((issue) => issue.id));
     const map = new Map<string, Issue[]>();
@@ -251,11 +265,28 @@ export default function IssuesPage() {
   const bulkParentEditDisabled = !identifier || selectedIncludesParentIssue;
   const bulkUpdate = useBulkUpdateIssues();
   const bulkDelete = useBulkDeleteIssues();
+  const savedQueriesQuery = useSavedQueries({ enabled: isAuthenticated });
+  const createSavedQuery = useCreateSavedQuery();
+  const deleteSavedQuery = useDeleteSavedQuery();
 
   const trackersQuery = useTrackers();
   const statusesQuery = useStatuses();
   const trackers = trackersQuery.data?.data ?? [];
   const statuses = statusesQuery.data?.data ?? [];
+  const savedIssueQueries = useMemo(() => {
+    const projectId = identifier ? currentProjectId : null;
+    return (savedQueriesQuery.data?.data ?? []).filter((query) => (
+      query.type === 'IssueQuery' &&
+      issueQueryProjectId(query) === projectId
+    ));
+  }, [currentProjectId, identifier, savedQueriesQuery.data?.data]);
+  const savedQueryOptions = useMemo(
+    () => [
+      { value: '', label: '保存した検索条件' },
+      ...savedIssueQueries.map((query) => ({ value: query.id, label: query.name })),
+    ],
+    [savedIssueQueries],
+  );
 
   const membersQuery = useMembers(identifier ?? '');
   const members = identifier ? (membersQuery.data?.data ?? []) : [];
@@ -278,7 +309,9 @@ export default function IssuesPage() {
     const seen = new Set<string>();
     const currentUserValue = currentUser?.id ? `user:${currentUser.id}` : '';
     const options = members.flatMap((member) => {
+      if (!(member.memberRoles ?? []).some((memberRole) => memberRole.role?.assignable)) return [];
       if (member.user) {
+        if (member.user.status !== 1) return [];
         const value = `user:${member.user.id}`;
         if (seen.has(value)) return [];
         seen.add(value);
@@ -318,11 +351,11 @@ export default function IssuesPage() {
   }, [issues]);
 
   useEffect(() => {
-    if (!parentNumber) return;
-    setParentSearch((current) => current || `#${parentNumber}`);
-  }, [parentNumber]);
+    setIssueNameSearch(issueName);
+  }, [issueName]);
 
   const setFilter = (key: string, value: string) => {
+    setSavedQueryId('');
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       if (value) next.set(key, value);
@@ -340,7 +373,92 @@ export default function IssuesPage() {
     });
   };
 
+  const submitIssueNameSearch = () => {
+    setFilter('q', issueNameSearch.trim());
+  };
+
+  const currentSavedFilters = (): IssueSavedFilters => ({
+    ...(trackerId ? { trackerId } : {}),
+    ...(statusId ? { statusId } : {}),
+    ...(priority ? { priority } : {}),
+    ...(assignee ? { assignee } : {}),
+    ...(issueName ? { q: issueName } : {}),
+  });
+
+  const applySavedQuery = (id: string) => {
+    setSavedQueryId(id);
+    const query = savedIssueQueries.find((item) => item.id === id);
+    if (!query) return;
+    const filters = query.filters as IssueSavedFilters;
+    const sortCriteria = Array.isArray(query.sortCriteria) ? query.sortCriteria : [];
+    const nextSort = isIssueSortKey(String(sortCriteria[0] ?? '')) ? String(sortCriteria[0]) as IssueSortKey : 'updatedAt';
+    const nextOrder = String(sortCriteria[1] ?? '') === 'asc' ? 'asc' : 'desc';
+    const next = new URLSearchParams();
+    const nextTrackerId = stringValue(filters.trackerId);
+    const nextStatusId = stringValue(filters.statusId);
+    const nextPriority = stringValue(filters.priority);
+    const nextAssignee = stringValue(filters.assignee);
+    const nextIssueName = stringValue(filters.q);
+    if (nextTrackerId) next.set('trackerId', nextTrackerId);
+    if (nextStatusId) next.set('statusId', nextStatusId);
+    if (nextPriority) next.set('priority', nextPriority);
+    if (nextAssignee) next.set('assignee', nextAssignee);
+    if (nextIssueName) next.set('q', nextIssueName);
+    next.set('sort', nextSort);
+    next.set('order', nextOrder);
+    next.set('page', '1');
+    setSearchParams(next);
+    setIssueNameSearch(nextIssueName);
+    setFiltersOpen(true);
+  };
+
+  const openSaveQuery = () => {
+    setQueryName('');
+    setQueryError('');
+    setSaveQueryOpen(true);
+  };
+
+  const submitSaveQuery = async () => {
+    const name = queryName.trim();
+    if (!name) {
+      setQueryError('名称を入力してください');
+      return;
+    }
+    if (identifier && !currentProjectId) {
+      setQueryError('プロジェクト情報の読み込み後に保存してください');
+      return;
+    }
+    try {
+      const created = await createSavedQuery.mutateAsync({
+        name,
+        type: 'IssueQuery',
+        visibility: 0,
+        projectId: identifier ? currentProjectId : null,
+        filters: currentSavedFilters(),
+        columns: [],
+        sortCriteria: [sort, order],
+      });
+      setSavedQueryId(created.data.id);
+      setSaveQueryOpen(false);
+      setQueryName('');
+      setQueryError('');
+    } catch {
+      setQueryError(t('app.error'));
+    }
+  };
+
+  const removeSavedQuery = async () => {
+    if (!savedQueryId) return;
+    try {
+      await deleteSavedQuery.mutateAsync(savedQueryId);
+      setSavedQueryId('');
+    } catch {
+      setQueryError(t('app.error'));
+    }
+  };
+
   const toggleSort = (key: IssueSortKey) => {
+    setSavedQueryId('');
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       const nextOrder = sort === key && order === 'asc' ? 'desc' : 'asc';
@@ -351,12 +469,6 @@ export default function IssuesPage() {
     });
   };
 
-  const selectParentIssue = (issue: Issue) => {
-    setFilter('parent', String(issue.number));
-    setParentSearch(`#${issue.number} ${issue.subject}`);
-    setParentPickerOpen(false);
-  };
-
   const toggleIssueExpanded = (issueId: string) => {
     setExpandedIssueIds((current) => {
       const next = new Set(current);
@@ -364,12 +476,6 @@ export default function IssuesPage() {
       else next.add(issueId);
       return next;
     });
-  };
-
-  const clearParentIssue = () => {
-    setFilter('parent', '');
-    setParentSearch('');
-    setParentPickerOpen(false);
   };
 
   const selectBulkParentIssue = (issue: Issue) => {
@@ -470,7 +576,7 @@ export default function IssuesPage() {
       if (bulkParentEditDisabled) {
         setBulkError(
           selectedIncludesParentIssue
-            ? '子チケットを持つチケットが含まれているため、親チケットは一括変更できません。'
+            ? '子チケットを持つチケットは親チケットを一括変更できません。'
             : '親チケットはプロジェクト内のチケット一覧でのみ一括変更できます。',
         );
         return;
@@ -543,6 +649,45 @@ export default function IssuesPage() {
             />
           </button>
         <div className={`${filtersOpen ? 'grid' : 'hidden'} gap-3 border-t border-slate-100 p-4 md:grid-cols-2 lg:grid lg:grid-cols-6 lg:border-t-0`}>
+        {isAuthenticated && (
+          <div className="md:col-span-2 lg:col-span-6">
+            <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="min-w-0 flex-1">
+                <label className="mb-1 block text-xs font-medium text-slate-500">保存した検索条件</label>
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                  <AppSelect
+                    value={savedQueryId}
+                    onChange={applySavedQuery}
+                    options={savedQueryOptions}
+                    ariaLabel="保存した検索条件"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm sm:max-w-xs"
+                  />
+                  {savedQueriesQuery.isLoading && <span className="text-xs text-slate-500">{t('app.loading')}</span>}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={openSaveQuery}
+                  disabled={identifier ? !currentProjectId : false}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Bookmark className="h-4 w-4" aria-hidden />
+                  現在の条件を保存
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void removeSavedQuery()}
+                  disabled={!savedQueryId || deleteSavedQuery.isPending}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 shadow-sm hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden />
+                  削除
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-500">{t('issues.tracker')}</label>
           <AppSelect
@@ -584,50 +729,34 @@ export default function IssuesPage() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-500">{t('issues.parent')}</label>
+          <label className="mb-1 block text-xs font-medium text-slate-500">チケット名</label>
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" aria-hidden />
             <input
-              value={parentSearch}
-              onFocus={() => setParentPickerOpen(true)}
-              onBlur={() => window.setTimeout(() => setParentPickerOpen(false), 120)}
+              value={issueNameSearch}
+              onBlur={submitIssueNameSearch}
               onChange={(event) => {
-                setParentSearch(event.target.value);
-                if (parentNumber) setFilter('parent', '');
-                setParentPickerOpen(true);
+                setIssueNameSearch(event.target.value);
               }}
-              placeholder="No・題名で検索"
-              aria-label={`${t('issues.parent')}を検索`}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') submitIssueNameSearch();
+              }}
+              placeholder="チケット名"
+              aria-label="チケット名"
               className="w-full rounded-lg border border-slate-300 py-2 pl-8 pr-9 text-sm"
             />
-            {(parentSearch || parentNumber) && (
+            {(issueNameSearch || issueName) && (
               <button
                 type="button"
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={clearParentIssue}
-                aria-label={`${t('issues.parent')}を解除`}
+                onClick={() => {
+                  setIssueNameSearch('');
+                  setFilter('q', '');
+                }}
                 className="absolute right-2 top-2 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
               >
                 <X className="h-4 w-4" aria-hidden />
               </button>
-            )}
-            {parentPickerOpen && (
-              <div className="absolute left-0 right-0 z-40 mt-1 max-h-64 overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-                {parentCandidates.length > 0 ? parentCandidates.map((issue) => (
-                  <button
-                    key={issue.id}
-                    type="button"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => selectParentIssue(issue)}
-                    className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                  >
-                    <span className="font-mono text-xs text-slate-500">#{issue.number}</span>{' '}
-                    <span>{issue.subject}</span>
-                  </button>
-                )) : (
-                  <p className="px-3 py-2 text-sm text-slate-500">候補がありません</p>
-                )}
-              </div>
             )}
           </div>
         </div>
@@ -643,7 +772,7 @@ export default function IssuesPage() {
               {bulkSelectionMode
                 ? selectedCount > 0
                   ? `${selectedCount}件選択中`
-                  : 'チケットを選択して一括操作できます'
+                  : 'チケットを選択してください'
                 : '一括編集を押すとチケットを選択できます'}
             </div>
             <div className="flex flex-wrap gap-2">
@@ -946,8 +1075,7 @@ export default function IssuesPage() {
                       setBulkForm((form) => ({ ...form, parentId: event.target.value.trim() ? 'pending' : 'none' }));
                       setBulkParentPickerOpen(true);
                     }}
-                    placeholder={bulkForm.parentId === '' ? '変更しない' : 'No・題名で検索（空欄で親なし）'}
-                    aria-label={`${t('issues.parent')}を検索`}
+                    placeholder={bulkForm.parentId === '' ? '変更しない' : 'No・題名で検索'}
                     className="w-full rounded-lg border border-slate-300 py-2 pl-8 pr-9 text-sm disabled:cursor-not-allowed disabled:bg-slate-50"
                   />
                   {bulkForm.parentId !== '' && bulkParentSearch && !bulkParentEditDisabled && (
@@ -958,7 +1086,6 @@ export default function IssuesPage() {
                         setBulkForm((form) => ({ ...form, parentId: 'none' }));
                         setBulkParentSearch('');
                       }}
-                      aria-label={`${t('issues.parent')}を親なしにする`}
                       className="absolute right-2 top-2 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                     >
                       <X className="h-4 w-4" aria-hidden />
@@ -1029,6 +1156,52 @@ export default function IssuesPage() {
               >
                 {bulkUpdate.isPending ? t('app.loading') : t('app.save')}
               </button>
+            </div>
+          </DialogPanel>
+        </div>
+      </Dialog>
+
+      <Dialog open={saveQueryOpen} onClose={() => setSaveQueryOpen(false)} className="relative z-50">
+        <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <DialogTitle className="text-lg font-semibold text-slate-900">検索条件を保存</DialogTitle>
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">名称</label>
+                <input
+                  value={queryName}
+                  onChange={(event) => {
+                    setQueryName(event.target.value);
+                    setQueryError('');
+                  }}
+                  maxLength={255}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  autoFocus
+                />
+              </div>
+              <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+                <div>現在のフィルタ、チケット名、並び順を保存します。</div>
+                <div className="mt-1">保存先: {identifier ? 'このプロジェクト' : '全体のチケット一覧'}</div>
+              </div>
+              {queryError && <p className="text-sm text-red-600">{queryError}</p>}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSaveQueryOpen(false)}
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  {t('app.cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitSaveQuery()}
+                  disabled={createSavedQuery.isPending}
+                  className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {createSavedQuery.isPending ? t('app.loading') : t('app.save')}
+                </button>
+              </div>
             </div>
           </DialogPanel>
         </div>

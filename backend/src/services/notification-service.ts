@@ -1,9 +1,25 @@
 import { Prisma } from '@prisma/client';
 import { config } from '../config';
 import { prisma } from '../utils/db';
+import { logger } from '../utils/logger';
 import { sendMailBestEffort } from './mail-service';
 
 type NotificationAction = 'created' | 'updated' | 'commented' | 'member_added';
+type IssueUpdateNotificationAction = Extract<NotificationAction, 'updated' | 'commented'>;
+
+const ISSUE_UPDATE_NOTIFICATION_DELAY_MS = 5 * 60 * 1000;
+const ISSUE_UPDATE_QUEUE_SETTING_PREFIX = 'issue_update_notification_queue_';
+const ISSUE_UPDATE_QUEUE_LOCK_MS = 10 * 60 * 1000;
+const issueUpdateTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+type IssueUpdateQueuePayload = {
+  issueId: string;
+  firstQueuedAt: string;
+  sendAfter: string;
+  actorIds: string[];
+  actions: IssueUpdateNotificationAction[];
+  lockedUntil?: string;
+};
 
 type RecipientUser = {
   id: string;
@@ -33,6 +49,11 @@ function actionLabel(action: NotificationAction): string {
     member_added: 'メンバー追加',
   };
   return labels[action];
+}
+
+function issueUpdateSummaryLabel(actions: Set<IssueUpdateNotificationAction>): string {
+  if (actions.has('commented') && actions.has('updated')) return 'updated/commented';
+  return actions.has('commented') ? 'commented' : 'updated';
 }
 
 function baseUrl(): string {
@@ -119,6 +140,280 @@ async function sendNotification(params: {
     subject: params.subject,
     text: params.lines.filter((line) => line !== undefined).join('\n'),
   });
+}
+
+function issueUpdateQueueSettingName(issueId: string): string {
+  return `${ISSUE_UPDATE_QUEUE_SETTING_PREFIX}${issueId}`;
+}
+
+function newIssueUpdateQueueSettingName(issueId: string): string {
+  return `${issueUpdateQueueSettingName(issueId)}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function parseIssueUpdateQueuePayload(value: string): IssueUpdateQueuePayload | null {
+  try {
+    const parsed = JSON.parse(value) as Partial<IssueUpdateQueuePayload>;
+    if (
+      typeof parsed.issueId !== 'string' ||
+      typeof parsed.firstQueuedAt !== 'string' ||
+      typeof parsed.sendAfter !== 'string' ||
+      !Array.isArray(parsed.actorIds) ||
+      !Array.isArray(parsed.actions)
+    ) {
+      return null;
+    }
+    const actions = parsed.actions.filter((action): action is IssueUpdateNotificationAction => (
+      action === 'updated' || action === 'commented'
+    ));
+    return {
+      issueId: parsed.issueId,
+      firstQueuedAt: parsed.firstQueuedAt,
+      sendAfter: parsed.sendAfter,
+      actorIds: parsed.actorIds.filter((id): id is string => typeof id === 'string'),
+      actions,
+      lockedUntil: typeof parsed.lockedUntil === 'string' ? parsed.lockedUntil : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function journalDetailLine(detail: { propKey: string; oldValue: string | null; newValue: string | null }): string {
+  const before = detail.oldValue ?? '-';
+  const after = detail.newValue ?? '-';
+  return `  - ${detail.propKey}: ${before} -> ${after}`;
+}
+
+async function sendQueuedIssueUpdateNotification(
+  issueId: string,
+  firstQueuedAt: Date,
+  actorIds: Set<string>,
+  actions: Set<IssueUpdateNotificationAction>,
+): Promise<void> {
+  const since = new Date(firstQueuedAt.getTime() - 10_000);
+  const issue = await prisma.issue.findUnique({
+    where: { id: issueId },
+    include: {
+      project: { select: { name: true, identifier: true } },
+      author: { select: { id: true, login: true, firstname: true, lastname: true } },
+      assigneeGroup: { select: { groupUsers: { select: { userId: true } } } },
+      watchers: { select: { userId: true } },
+      journals: {
+        where: {
+          private: false,
+          OR: [
+            { createdAt: { gte: since } },
+            { updatedAt: { gte: since } },
+          ],
+        },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          notes: true,
+          createdAt: true,
+          user: { select: { login: true, firstname: true, lastname: true } },
+          details: { select: { propKey: true, oldValue: true, newValue: true } },
+        },
+      },
+    },
+  });
+  if (!issue) return;
+
+  const actors = await prisma.user.findMany({
+    where: { id: { in: Array.from(actorIds) } },
+    select: { login: true, firstname: true, lastname: true },
+  });
+  const userIds = new Set<string>([
+    issue.authorId,
+    ...(issue.assigneeId ? [issue.assigneeId] : []),
+    ...issue.watchers.map((watcher) => watcher.userId),
+    ...(issue.assigneeGroup?.groupUsers.map((groupUser) => groupUser.userId) ?? []),
+  ]);
+  const projectName = issue.project?.name ?? 'Project';
+  const url = absoluteUrl(`/projects/${issue.project?.identifier ?? issue.projectId}/issues/${issue.id}`);
+  const label = issueUpdateSummaryLabel(actions);
+  const actorNames = actors.map(displayName).join(', ') || '-';
+  const changeLines = issue.journals.flatMap((journal) => {
+    const header = `- ${journal.createdAt.toISOString()} ${displayName(journal.user)}`;
+    const details = journal.details.map(journalDetailLine);
+    const notes = journal.notes?.trim() ? [`  Comment: ${journal.notes.trim()}`] : [];
+    return [header, ...details, ...notes];
+  });
+
+  await sendNotification({
+    userIds,
+    subject: `TaskNova: [${projectName}] Issue - ${label}`,
+    lines: [
+      `Issue #${issue.number} "${issue.subject}" was updated. Recent changes are summarized below.`,
+      `Project: ${projectName}`,
+      `Actors: ${actorNames}`,
+      `URL: ${url}`,
+      '',
+      'Recent changes:',
+      ...(changeLines.length ? changeLines : ['- See the issue page for details.']),
+    ],
+  });
+}
+
+export function scheduleIssueUpdateNotification(
+  issueId: string,
+  actorId: string,
+  action: IssueUpdateNotificationAction,
+): void {
+  queueIssueUpdateNotification(issueId, actorId, action).catch((error) => {
+    logger.warn('Issue update notification queue failed', {
+      issueId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}
+
+async function queueIssueUpdateNotification(
+  issueId: string,
+  actorId: string,
+  action: IssueUpdateNotificationAction,
+): Promise<void> {
+  const name = issueUpdateQueueSettingName(issueId);
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const now = new Date();
+    const sendAfter = new Date(now.getTime() + ISSUE_UPDATE_NOTIFICATION_DELAY_MS);
+    const existing = await prisma.setting.findUnique({ where: { name } });
+    const existingPayload = existing ? parseIssueUpdateQueuePayload(existing.value) : null;
+    const lockedUntil = existingPayload?.lockedUntil ? new Date(existingPayload.lockedUntil) : null;
+    const locked = Boolean(lockedUntil && !Number.isNaN(lockedUntil.getTime()) && lockedUntil.getTime() > now.getTime());
+    const actorIds = new Set(locked ? [] : existingPayload?.actorIds ?? []);
+    const actions = new Set<IssueUpdateNotificationAction>(locked ? [] : existingPayload?.actions ?? []);
+    actorIds.add(actorId);
+    actions.add(action);
+
+    const queueName = locked ? newIssueUpdateQueueSettingName(issueId) : name;
+    const payload: IssueUpdateQueuePayload = {
+      issueId,
+      firstQueuedAt: locked ? now.toISOString() : existingPayload?.firstQueuedAt ?? now.toISOString(),
+      sendAfter: sendAfter.toISOString(),
+      actorIds: Array.from(actorIds),
+      actions: Array.from(actions),
+    };
+    const value = JSON.stringify(payload);
+
+    if (!existing || locked) {
+      try {
+        await prisma.setting.create({ data: { name: queueName, value } });
+        armIssueUpdateTimer(queueName, sendAfter);
+        return;
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') continue;
+        throw error;
+      }
+    }
+
+    const updated = await prisma.setting.updateMany({
+      where: { name, value: existing.value },
+      data: { value },
+    });
+    if (updated.count === 1) {
+      armIssueUpdateTimer(name, sendAfter);
+      return;
+    }
+  }
+  throw new Error('Failed to update issue notification queue after retries');
+}
+
+function armIssueUpdateTimer(name: string, sendAfter: Date): void {
+  const current = issueUpdateTimers.get(name);
+  if (current) clearTimeout(current);
+  const delay = Math.max(0, sendAfter.getTime() - Date.now());
+  const timer = setTimeout(() => {
+    issueUpdateTimers.delete(name);
+    processQueuedIssueUpdateNotification(name).catch((error) => {
+      logger.warn('Issue update notification failed', {
+        queueName: name,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, delay);
+  if (typeof (timer as { unref?: () => void }).unref === 'function') {
+    (timer as { unref: () => void }).unref();
+  }
+  issueUpdateTimers.set(name, timer);
+}
+
+async function processQueuedIssueUpdateNotification(name: string): Promise<void> {
+  const row = await prisma.setting.findUnique({ where: { name } });
+  if (!row) return;
+  const payload = parseIssueUpdateQueuePayload(row.value);
+  if (!payload) {
+    await prisma.setting.deleteMany({ where: { name } });
+    return;
+  }
+
+  const sendAfter = new Date(payload.sendAfter);
+  if (Number.isNaN(sendAfter.getTime())) {
+    await prisma.setting.deleteMany({ where: { name } });
+    return;
+  }
+  const lockedUntil = payload.lockedUntil ? new Date(payload.lockedUntil) : null;
+  if (lockedUntil && !Number.isNaN(lockedUntil.getTime()) && lockedUntil.getTime() > Date.now()) {
+    return;
+  }
+  if (sendAfter.getTime() > Date.now()) {
+    armIssueUpdateTimer(name, sendAfter);
+    return;
+  }
+  const firstQueuedAt = new Date(payload.firstQueuedAt);
+  if (Number.isNaN(firstQueuedAt.getTime())) {
+    await prisma.setting.deleteMany({ where: { name } });
+    return;
+  }
+
+  const lockedPayload: IssueUpdateQueuePayload = {
+    ...payload,
+    lockedUntil: new Date(Date.now() + ISSUE_UPDATE_QUEUE_LOCK_MS).toISOString(),
+  };
+  const lockedValue = JSON.stringify(lockedPayload);
+  const locked = await prisma.setting.updateMany({
+    where: { name, value: row.value },
+    data: { value: lockedValue },
+  });
+  if (locked.count !== 1) return;
+
+  await sendQueuedIssueUpdateNotification(
+    payload.issueId,
+    firstQueuedAt,
+    new Set(payload.actorIds),
+    new Set(payload.actions),
+  );
+  await prisma.setting.deleteMany({ where: { name, value: lockedValue } });
+}
+
+export async function processDueIssueUpdateNotifications(date = new Date()): Promise<void> {
+  const rows = await prisma.setting.findMany({
+    where: { name: { startsWith: ISSUE_UPDATE_QUEUE_SETTING_PREFIX } },
+    select: { name: true, value: true },
+  });
+  for (const row of rows) {
+    const payload = parseIssueUpdateQueuePayload(row.value);
+    if (!payload) {
+      await prisma.setting.deleteMany({ where: { name: row.name } });
+      continue;
+    }
+    const sendAfter = new Date(payload.sendAfter);
+    if (Number.isNaN(sendAfter.getTime())) {
+      await prisma.setting.deleteMany({ where: { name: row.name } });
+      continue;
+    }
+    if (sendAfter.getTime() <= date.getTime()) {
+      try {
+        await processQueuedIssueUpdateNotification(row.name);
+      } catch (error) {
+        logger.warn('Queued issue update notification processing failed', {
+          issueId: payload.issueId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    } else {
+      armIssueUpdateTimer(row.name, sendAfter);
+    }
+  }
 }
 
 export async function notifyIssueEvent(

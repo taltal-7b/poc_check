@@ -16,7 +16,24 @@ import {
 } from '../api/hooks';
 import api from '../api/client';
 import { useAuthStore } from '../stores/auth';
-import type { User } from '../types';
+import type { DueSummaryNotificationRange, User } from '../types';
+
+const DUE_SUMMARY_RANGE_OPTIONS: { value: DueSummaryNotificationRange; label: string }[] = [
+  { value: '5_days_before', label: '期日5日前' },
+  { value: '4_days_before', label: '期日4日前' },
+  { value: '3_days_before', label: '期日3日前' },
+  { value: '2_days_before', label: '期日2日前' },
+  { value: '1_day_before', label: '期日1日前' },
+  { value: 'due_today', label: '当日が期日' },
+  { value: 'overdue', label: '超過' },
+  { value: 'estimated_hours_exceeds_remaining_days', label: '予定工数が残り日数を超過' },
+];
+
+const DUE_SUMMARY_SEND_TIME_OPTIONS = Array.from({ length: 24 }, (_, hour) => {
+  const minute = '00';
+  const value = `${String(hour).padStart(2, '0')}:${minute}`;
+  return { value, label: value };
+});
 
 function unwrap<T>(raw: unknown): T | undefined {
   if (raw == null) return undefined;
@@ -38,6 +55,10 @@ export default function MyAccountPage() {
   const [lastname, setLastname] = useState('');
   const [email, setEmail] = useState('');
   const [mailNotificationsEnabled, setMailNotificationsEnabled] = useState(true);
+  const [dueSummaryEnabled, setDueSummaryEnabled] = useState(true);
+  const [dueSummarySendTime, setDueSummarySendTime] = useState('07:00');
+  const [dueSummaryRanges, setDueSummaryRanges] = useState<DueSummaryNotificationRange[]>(['3_days_before']);
+  const [dueSummaryIncludeAuthored, setDueSummaryIncludeAuthored] = useState(false);
   const [profileMessage, setProfileMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [mailPreferenceMessage, setMailPreferenceMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null,
@@ -66,6 +87,10 @@ export default function MyAccountPage() {
     const pref = mailPreferenceQuery.data?.data;
     if (!pref) return;
     setMailNotificationsEnabled(pref.mailNotificationsEnabled);
+    setDueSummaryEnabled(pref.dueSummaryNotification.enabled);
+    setDueSummarySendTime(pref.dueSummaryNotification.sendTime);
+    setDueSummaryRanges(pref.dueSummaryNotification.ranges);
+    setDueSummaryIncludeAuthored(pref.dueSummaryNotification.includeAuthoredAssignedToOthers);
   }, [mailPreferenceQuery.data]);
 
   const saveProfile = async (e: React.FormEvent) => {
@@ -92,7 +117,16 @@ export default function MyAccountPage() {
   const saveMailPreference = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await updateMailPreference.mutateAsync({ mailNotificationsEnabled });
+      await updateMailPreference.mutateAsync({
+        mailNotificationsEnabled,
+        canCustomizeDueSummaryNotification: true,
+        dueSummaryNotification: {
+          enabled: dueSummaryEnabled,
+          sendTime: dueSummarySendTime,
+          ranges: dueSummaryRanges,
+          includeAuthoredAssignedToOthers: dueSummaryIncludeAuthored,
+        },
+      });
       setMailPreferenceMessage({ type: 'success', text: 'メール通知設定を保存しました' });
     } catch (error: any) {
       const message = error?.response?.data?.error?.message || 'メール通知設定の保存に失敗しました';
@@ -146,6 +180,14 @@ export default function MyAccountPage() {
     navigate('/login');
   };
 
+  const toggleDueSummaryRange = (range: DueSummaryNotificationRange, checked: boolean) => {
+    setDueSummaryRanges((current) => {
+      if (checked) return current.includes(range) ? current : [...current, range];
+      const next = current.filter((item) => item !== range);
+      return next.length ? next : current;
+    });
+  };
+
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -176,6 +218,7 @@ export default function MyAccountPage() {
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState('');
+  const dueSummaryControlsDisabled = !mailNotificationsEnabled || !dueSummaryEnabled;
 
   const deleteAccount = useMutation({
     mutationFn: async () => {
@@ -275,6 +318,65 @@ export default function MyAccountPage() {
               {t('myAccount.mailNotificationsEnabled')}
             </label>
             <p className="text-sm text-gray-600">{t('myAccount.mailNotificationsHelp')}</p>
+            {mailPreferenceQuery.data?.data.canCustomizeDueSummaryNotification && (
+              <div className={`space-y-4 border-t border-gray-200 pt-4 ${!mailNotificationsEnabled ? 'opacity-60' : ''}`}>
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-800">期日が近いチケットのリマインド通知</h3>
+                  <p className="mt-1 text-sm text-gray-600">期日が近いチケットや超過したチケットのリマインド通知メールを受け取ります。</p>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-gray-800">
+                  <input
+                    type="checkbox"
+                    checked={dueSummaryEnabled}
+                    onChange={(e) => setDueSummaryEnabled(e.target.checked)}
+                    disabled={!mailNotificationsEnabled}
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
+                  />
+                  期日が近いチケットのリマインド通知を受け取る
+                </label>
+                <label className="block text-sm">
+                  <span className="text-gray-700">メールの送信時刻</span>
+                  <select
+                    value={dueSummarySendTime}
+                    onChange={(e) => setDueSummarySendTime(e.target.value)}
+                    disabled={dueSummaryControlsDisabled}
+                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-500"
+                  >
+                    {DUE_SUMMARY_SEND_TIME_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <fieldset disabled={dueSummaryControlsDisabled} className="space-y-2 disabled:opacity-60">
+                  <legend className="text-sm text-gray-700">通知するチケットの範囲</legend>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {DUE_SUMMARY_RANGE_OPTIONS.map((option) => (
+                      <label key={option.value} className="flex items-center gap-2 text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={dueSummaryRanges.includes(option.value)}
+                          onChange={(e) => toggleDueSummaryRange(option.value, e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        />
+                        {option.label}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <label className="flex items-start gap-2 text-sm text-gray-800">
+                  <input
+                    type="checkbox"
+                    checked={dueSummaryIncludeAuthored}
+                    onChange={(e) => setDueSummaryIncludeAuthored(e.target.checked)}
+                    disabled={dueSummaryControlsDisabled}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 disabled:opacity-50"
+                  />
+                  <span>自身が作成したが担当者は別のチケットも含める</span>
+                </label>
+              </div>
+            )}
             <button
               type="submit"
               disabled={updateMailPreference.isPending}

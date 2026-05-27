@@ -5,8 +5,32 @@ import { logger } from '../utils/logger';
 import { sendMail } from './mail-service';
 import { createOpenAiSummary } from './openai-service';
 
-const LAST_RUN_SETTING = 'ai_due_summary_last_run_date';
+const LAST_RUN_SETTING_PREFIX = 'ai_due_summary_last_run';
 const LOCK_EXPIRES_MS = 30 * 60 * 1000;
+const DUE_SUMMARY_RANGE_VALUES = [
+  '5_days_before',
+  '4_days_before',
+  '3_days_before',
+  '2_days_before',
+  '1_day_before',
+  'due_today',
+  'overdue',
+  'estimated_hours_exceeds_remaining_days',
+] as const;
+const DEFAULT_DUE_SUMMARY_NOTIFICATION = {
+  enabled: true,
+  sendTime: '07:00',
+  ranges: ['3_days_before'] as DueSummaryRange[],
+  includeAuthoredAssignedToOthers: false,
+};
+
+type DueSummaryRange = typeof DUE_SUMMARY_RANGE_VALUES[number];
+type DueSummaryNotificationPreference = {
+  enabled: boolean;
+  sendTime: string;
+  ranges: DueSummaryRange[];
+  includeAuthoredAssignedToOthers: boolean;
+};
 
 type RecipientUser = {
   id: string;
@@ -22,10 +46,36 @@ function jsonObject(value: Prisma.JsonValue): Prisma.JsonObject | null {
   return null;
 }
 
-function wantsMail(user: RecipientUser): boolean {
+function isValidDueSummarySendTime(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  return /^([01]\d|2[0-3]):00$/.test(value);
+}
+
+function dueSummaryPreference(user: RecipientUser): DueSummaryNotificationPreference {
+  const others = user.userPreference ? jsonObject(user.userPreference.others) : null;
+  const raw = others?.dueSummaryNotification;
+  const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Prisma.JsonObject : {};
+  const ranges = Array.isArray(source.ranges)
+    ? source.ranges.filter((value): value is DueSummaryRange => (
+        typeof value === 'string' && DUE_SUMMARY_RANGE_VALUES.includes(value as DueSummaryRange)
+      ))
+    : DEFAULT_DUE_SUMMARY_NOTIFICATION.ranges;
+
+  return {
+    enabled: typeof source.enabled === 'boolean' ? source.enabled : DEFAULT_DUE_SUMMARY_NOTIFICATION.enabled,
+    sendTime: isValidDueSummarySendTime(source.sendTime) ? source.sendTime : DEFAULT_DUE_SUMMARY_NOTIFICATION.sendTime,
+    ranges: ranges.length ? ranges : DEFAULT_DUE_SUMMARY_NOTIFICATION.ranges,
+    includeAuthoredAssignedToOthers: typeof source.includeAuthoredAssignedToOthers === 'boolean'
+      ? source.includeAuthoredAssignedToOthers
+      : DEFAULT_DUE_SUMMARY_NOTIFICATION.includeAuthoredAssignedToOthers,
+  };
+}
+
+function wantsMail(user: RecipientUser, slotTime: string): boolean {
   if (user.status !== 1 || !user.mail.trim()) return false;
   const others = user.userPreference ? jsonObject(user.userPreference.others) : null;
-  return others?.mailNotificationsEnabled !== false;
+  const pref = dueSummaryPreference(user);
+  return others?.mailNotificationsEnabled !== false && pref.enabled && pref.sendTime === slotTime;
 }
 
 function zonedParts(date: Date, timeZone: string) {
@@ -52,6 +102,15 @@ function zonedDateRange(dateKey: string, timeZone: string, days: number) {
   const start = new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - offsetMinutes * 60_000);
   const end = new Date(start);
   end.setUTCDate(end.getUTCDate() + days + 1);
+  end.setUTCMilliseconds(end.getUTCMilliseconds() - 1);
+  return { start, end };
+}
+
+function zonedDayRange(dateKey: string, timeZone: string, offsetDays: number) {
+  const { start } = zonedDateRange(dateKey, timeZone, 0);
+  start.setUTCDate(start.getUTCDate() + offsetDays);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
   end.setUTCMilliseconds(end.getUTCMilliseconds() - 1);
   return { start, end };
 }
@@ -127,6 +186,10 @@ function lockSettingName(dateKey: string): string {
   return `ai_due_summary_lock_${dateKey}`;
 }
 
+function lastRunSettingName(dateKey: string, slotTime: string): string {
+  return `${LAST_RUN_SETTING_PREFIX}_${dateKey}_${slotTime.replace(':', '')}`;
+}
+
 async function tryAcquireJobLock(dateKey: string): Promise<boolean> {
   const name = lockSettingName(dateKey);
   const now = new Date();
@@ -158,6 +221,14 @@ async function releaseJobLock(dateKey: string): Promise<void> {
 const dueIssueInclude = {
   project: { select: { name: true, identifier: true } },
   status: { select: { name: true } },
+  author: {
+    select: {
+      id: true,
+      mail: true,
+      status: true,
+      userPreference: { select: { others: true } },
+    },
+  },
   assignee: {
     select: {
       id: true,
@@ -195,34 +266,133 @@ const dueIssueInclude = {
 
 type DueIssue = Prisma.IssueGetPayload<{ include: typeof dueIssueInclude }>;
 
-function issueRecipients(issue: DueIssue): RecipientUser[] {
-  const users = [
+function assignedRecipients(issue: DueIssue): RecipientUser[] {
+  return [
     issue.assignee,
     ...(issue.assigneeGroup?.groupUsers.map((groupUser) => groupUser.user) ?? []),
   ].filter((user): user is RecipientUser => Boolean(user));
-
-  const deduped = new Map(users.map((user) => [user.id, user]));
-  return Array.from(deduped.values()).filter(wantsMail);
 }
 
-async function dueIssuesFor(dateKey: string): Promise<DueIssue[]> {
-  const { start, end } = zonedDateRange(dateKey, config.AI_DUE_SUMMARY_TIME_ZONE, config.AI_DUE_SUMMARY_LOOKAHEAD_DAYS);
+function daysUntilDue(issue: DueIssue, dateKey: string): number | null {
+  if (!issue.dueDate) return null;
+  const dueDateKey = zonedParts(issue.dueDate, config.AI_DUE_SUMMARY_TIME_ZONE).dateKey;
+  const todayDate = new Date(`${dateKey}T00:00:00.000Z`);
+  const dueDate = new Date(`${dueDateKey}T00:00:00.000Z`);
+  return Math.round((dueDate.getTime() - todayDate.getTime()) / 86_400_000);
+}
+
+function rangesForIssue(issue: DueIssue, dateKey: string): DueSummaryRange[] {
+  if (!issue.dueDate) return [];
+  const ranges: DueSummaryRange[] = [];
+  const { start: todayStart } = zonedDayRange(dateKey, config.AI_DUE_SUMMARY_TIME_ZONE, 0);
+  const { end: fifthDayEnd } = zonedDayRange(dateKey, config.AI_DUE_SUMMARY_TIME_ZONE, 5);
+  if (issue.dueDate < todayStart) ranges.push('overdue');
+  if (issue.dueDate <= fifthDayEnd && issue.dueDate >= todayStart) {
+    const dayDiff = daysUntilDue(issue, dateKey);
+    if (dayDiff === 0) ranges.push('due_today');
+    if (dayDiff !== null && dayDiff >= 1 && dayDiff <= 5) {
+      ranges.push(`${dayDiff}_day${dayDiff === 1 ? '' : 's'}_before` as DueSummaryRange);
+    }
+  }
+
+  const remainingDays = daysUntilDue(issue, dateKey);
+  if (
+    remainingDays !== null &&
+    remainingDays >= 0 &&
+    typeof issue.estimatedHours === 'number' &&
+    issue.estimatedHours > remainingDays
+  ) {
+    ranges.push('estimated_hours_exceeds_remaining_days');
+  }
+  return ranges;
+}
+
+function issueRecipients(issue: DueIssue, dateKey: string, slotTime: string): RecipientUser[] {
+  const ranges = rangesForIssue(issue, dateKey);
+  if (!ranges.length) return [];
+
+  const assigned = assignedRecipients(issue);
+  const assignedIds = new Set(assigned.map((user) => user.id));
+  const authorHasDifferentAssignee = Boolean(issue.assigneeId || issue.assigneeGroupId) && !assignedIds.has(issue.author.id);
+  const users = [...assigned];
+  if (authorHasDifferentAssignee) {
+    users.push(issue.author);
+  }
+
+  const deduped = new Map(users.map((user) => [user.id, user]));
+  return Array.from(deduped.values()).filter((user) => {
+    if (!wantsMail(user, slotTime)) return false;
+    const pref = dueSummaryPreference(user);
+    if (!ranges.some((range) => pref.ranges.includes(range))) return false;
+    if (assignedIds.has(user.id)) return true;
+    return pref.includeAuthoredAssignedToOthers && authorHasDifferentAssignee && issue.author.id === user.id;
+  });
+}
+
+type EstimatedHoursRecipientScope = {
+  assigneeUserIds: string[];
+  authorUserIds: string[];
+};
+
+async function estimatedHoursRecipientScope(slotTime: string): Promise<EstimatedHoursRecipientScope | null> {
+  const users = await prisma.user.findMany({
+    where: { status: 1, mail: { not: '' } },
+    select: {
+      id: true,
+      mail: true,
+      status: true,
+      userPreference: { select: { others: true } },
+    },
+  });
+  const assigneeUserIds: string[] = [];
+  const authorUserIds: string[] = [];
+  for (const user of users) {
+    if (!wantsMail(user, slotTime)) continue;
+    const pref = dueSummaryPreference(user);
+    if (!pref.ranges.includes('estimated_hours_exceeds_remaining_days')) continue;
+    assigneeUserIds.push(user.id);
+    if (pref.includeAuthoredAssignedToOthers) authorUserIds.push(user.id);
+  }
+  return assigneeUserIds.length || authorUserIds.length ? { assigneeUserIds, authorUserIds } : null;
+}
+
+async function dueIssuesFor(dateKey: string, estimatedHoursScope: EstimatedHoursRecipientScope | null): Promise<DueIssue[]> {
+  const { end: fifthDayEnd } = zonedDayRange(dateKey, config.AI_DUE_SUMMARY_TIME_ZONE, 5);
+  const estimatedHoursConditions: Prisma.IssueWhereInput[] = estimatedHoursScope
+    ? [
+        ...(estimatedHoursScope.assigneeUserIds.length
+          ? [
+              { assigneeId: { in: estimatedHoursScope.assigneeUserIds } },
+              { assigneeGroup: { groupUsers: { some: { userId: { in: estimatedHoursScope.assigneeUserIds } } } } },
+            ] satisfies Prisma.IssueWhereInput[]
+          : []),
+        ...(estimatedHoursScope.authorUserIds.length
+          ? [{ authorId: { in: estimatedHoursScope.authorUserIds } } satisfies Prisma.IssueWhereInput]
+          : []),
+      ]
+    : [];
   return prisma.issue.findMany({
     where: {
-      dueDate: { gte: start, lte: end },
+      dueDate: { not: null },
       status: { isClosed: false },
-      OR: [
-        { assigneeId: { not: null } },
-        { assigneeGroupId: { not: null } },
-      ],
+      OR: estimatedHoursConditions.length
+        ? [
+            { dueDate: { lte: fifthDayEnd } },
+            {
+              estimatedHours: { gt: 0 },
+              OR: estimatedHoursConditions,
+            },
+          ]
+        : [
+            { dueDate: { lte: fifthDayEnd } },
+          ],
     },
     include: dueIssueInclude,
     orderBy: [{ dueDate: 'asc' }, { number: 'asc' }],
   });
 }
 
-async function sendIssueDueSummary(issue: DueIssue): Promise<void> {
-  const recipients = issueRecipients(issue);
+async function sendIssueDueSummary(issue: DueIssue, recipients: RecipientUser[]): Promise<void> {
   if (!recipients.length) return;
 
   const summary = await createOpenAiSummary(buildIssueInput(issue));
@@ -259,7 +429,8 @@ async function sendIssueDueSummary(issue: DueIssue): Promise<void> {
 export async function runIssueDueSummaryJob(date = new Date()): Promise<void> {
   if (!config.AI_DUE_SUMMARY_ENABLED) return;
 
-  const { dateKey } = zonedParts(date, config.AI_DUE_SUMMARY_TIME_ZONE);
+  const { dateKey, hour, minute } = zonedParts(date, config.AI_DUE_SUMMARY_TIME_ZONE);
+  const slotTime = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
   const locked = await tryAcquireJobLock(dateKey);
   if (!locked) {
     logger.info('AI due summary notification skipped because another worker is running', { dateKey });
@@ -267,19 +438,25 @@ export async function runIssueDueSummaryJob(date = new Date()): Promise<void> {
   }
 
   try {
-    if ((await settingValue(LAST_RUN_SETTING)) === dateKey) return;
+    const lastRunSetting = lastRunSettingName(dateKey, slotTime);
+    if ((await settingValue(lastRunSetting)) === 'done') return;
     if (!config.AI_DUE_SUMMARY_MOCK_OPENAI && !config.OPENAI_API_KEY.trim()) {
       logger.warn('AI due summary notification skipped because OPENAI_API_KEY is not configured');
       return;
     }
 
-    const issues = await dueIssuesFor(dateKey);
-    logger.info('AI due summary notification started', { dateKey, issues: issues.length });
+    const estimatedScope = await estimatedHoursRecipientScope(slotTime);
+    const issues = await dueIssuesFor(dateKey, estimatedScope);
+    logger.info('AI due summary notification started', { dateKey, slotTime, issues: issues.length });
 
     let failed = 0;
+    let sentIssues = 0;
     for (const issue of issues) {
+      const recipients = issueRecipients(issue, dateKey, slotTime);
+      if (!recipients.length) continue;
       try {
-        await sendIssueDueSummary(issue);
+        await sendIssueDueSummary(issue, recipients);
+        sentIssues += 1;
       } catch (error) {
         failed += 1;
         logger.warn('AI due summary notification failed for issue', {
@@ -291,15 +468,15 @@ export async function runIssueDueSummaryJob(date = new Date()): Promise<void> {
     }
 
     if (!failed && !config.AI_DUE_SUMMARY_DRY_RUN) {
-      await saveSetting(LAST_RUN_SETTING, dateKey);
+      await saveSetting(lastRunSetting, 'done');
     }
-    logger.info('AI due summary notification finished', { dateKey, issues: issues.length, failed });
+    logger.info('AI due summary notification finished', { dateKey, slotTime, issues: issues.length, sentIssues, failed });
   } finally {
     await releaseJobLock(dateKey);
   }
 }
 
 export function shouldRunIssueDueSummary(date = new Date()): boolean {
-  const { hour, minute } = zonedParts(date, config.AI_DUE_SUMMARY_TIME_ZONE);
-  return hour === config.AI_DUE_SUMMARY_HOUR && minute === 0;
+  const { minute } = zonedParts(date, config.AI_DUE_SUMMARY_TIME_ZONE);
+  return minute === 0;
 }

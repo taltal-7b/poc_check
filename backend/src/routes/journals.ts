@@ -4,7 +4,7 @@ import { AppError } from '../utils/errors';
 import { sendSuccess } from '../utils/response';
 import { authenticate } from '../middleware/auth';
 import { hasAnyProjectPermission } from '../utils/project-permissions';
-import { notifyIssueEvent } from '../services/notification-service';
+import { notifyIssueEvent, scheduleIssueUpdateNotification } from '../services/notification-service';
 import { logger } from '../utils/logger';
 import { z } from 'zod';
 
@@ -92,7 +92,7 @@ router.put(
       },
     });
 
-    dispatchIssueCommentNotification(journal.issueId, req.user!.userId);
+    scheduleIssueUpdateNotification(journal.issueId, req.user!.userId, 'commented');
     return sendSuccess(res, updated);
   }),
 );
@@ -122,7 +122,7 @@ router.delete(
       await prisma.journal.delete({ where: { id: journal.id } });
     }
 
-    dispatchIssueCommentNotification(journal.issueId, req.user!.userId);
+    scheduleIssueUpdateNotification(journal.issueId, req.user!.userId, 'commented');
     return sendSuccess(res, { deleted: true });
   }),
 );

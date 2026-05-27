@@ -4,7 +4,7 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 import { sendSuccess, sendPaginated, parsePagination } from '../utils/response';
 import { authenticate, type AuthPayload } from '../middleware/auth';
-import { notifyIssueEvent } from '../services/notification-service';
+import { notifyIssueEvent, scheduleIssueUpdateNotification } from '../services/notification-service';
 import { logger } from '../utils/logger';
 import {
   getUserGroupIds,
@@ -16,15 +16,6 @@ import { z } from 'zod';
 const router = Router({ mergeParams: true });
 
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
-
-const ISSUE_STATUS_NOTIFICATION_DELAY_MS = 5 * 60 * 1000;
-const delayedIssueStatusNotifications = new Map<
-  string,
-  {
-    actorId: string;
-    timer: ReturnType<typeof setTimeout>;
-  }
->();
 
 function dispatchIssueNotification(
   issueId: string,
@@ -38,21 +29,6 @@ function dispatchIssueNotification(
       error: error instanceof Error ? error.message : String(error),
     });
   });
-}
-
-function scheduleIssueStatusNotification(issueId: string, actorId: string) {
-  const current = delayedIssueStatusNotifications.get(issueId);
-  if (current) clearTimeout(current.timer);
-
-  const timer = setTimeout(() => {
-    delayedIssueStatusNotifications.delete(issueId);
-    dispatchIssueNotification(issueId, actorId, 'updated');
-  }, ISSUE_STATUS_NOTIFICATION_DELAY_MS);
-  if (typeof (timer as { unref?: () => void }).unref === 'function') {
-    (timer as { unref: () => void }).unref();
-  }
-
-  delayedIssueStatusNotifications.set(issueId, { actorId, timer });
 }
 
 const ISSUE_JOURNAL_KEYS = [
@@ -537,7 +513,12 @@ async function assertAssignableToProject(
 
   if (assigneeId) {
     const member = await prisma.member.findFirst({
-      where: { projectId, userId: assigneeId },
+      where: {
+        projectId,
+        userId: assigneeId,
+        user: { status: 1 },
+        memberRoles: { some: { role: { assignable: true } } },
+      },
       select: { id: true },
     });
     if (!member) throw AppError.badRequest('担当者はプロジェクトのメンバーから選択してください');
@@ -545,7 +526,11 @@ async function assertAssignableToProject(
 
   if (assigneeGroupId) {
     const member = await prisma.member.findFirst({
-      where: { projectId, groupId: assigneeGroupId },
+      where: {
+        projectId,
+        groupId: assigneeGroupId,
+        memberRoles: { some: { role: { assignable: true } } },
+      },
       select: { id: true },
     });
     if (!member) throw AppError.badRequest('担当グループはプロジェクトのグループから選択してください');
@@ -665,6 +650,88 @@ function ensureIssueDateOrder(
   if (!startDate || !dueDate) return;
   if (dueDate.getTime() < startDate.getTime()) {
     throw AppError.badRequest('期日は開始日以降を指定してください');
+  }
+}
+
+const TRACKER_STANDARD_FIELDS = [
+  'description',
+  'assignee',
+  'category',
+  'parent',
+  'startDate',
+  'dueDate',
+  'estimatedHours',
+  'doneRatio',
+  'repository',
+] as const;
+
+type TrackerStandardFieldKey = (typeof TRACKER_STANDARD_FIELDS)[number];
+
+const STANDARD_FIELD_LABELS: Record<TrackerStandardFieldKey, string> = {
+  description: '説明',
+  assignee: '担当者',
+  category: 'カテゴリ',
+  parent: '親チケット',
+  startDate: '開始日',
+  dueDate: '期日',
+  estimatedHours: '予定工数',
+  doneRatio: '進捗率',
+  repository: 'リポジトリ',
+};
+
+type StandardFieldInput = {
+  description?: string | null;
+  assigneeId?: string | null;
+  assigneeGroupId?: string | null;
+  categoryId?: string | null;
+  parentId?: string | null;
+  startDate?: Date | null;
+  dueDate?: Date | null;
+  estimatedHours?: number | null;
+  doneRatio?: number;
+  repository?: string | null;
+};
+
+function standardFieldValue(body: StandardFieldInput, key: TrackerStandardFieldKey): unknown {
+  if (key === 'assignee') return body.assigneeId ?? body.assigneeGroupId ?? null;
+  if (key === 'category') return body.categoryId;
+  if (key === 'parent') return body.parentId;
+  return body[key];
+}
+
+function hasMeaningfulStandardFieldValue(key: TrackerStandardFieldKey, value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (key === 'doneRatio') return typeof value === 'number' && value !== 0;
+  return true;
+}
+
+async function validateTrackerStandardFields(
+  trackerId: string,
+  effectiveBody: StandardFieldInput,
+  submittedBody: StandardFieldInput,
+) {
+  const tracker = await prisma.tracker.findUnique({
+    where: { id: trackerId },
+    include: { standardFields: true },
+  });
+  if (!tracker) throw AppError.badRequest('作業分類が存在しません');
+
+  const settings = new Map(tracker.standardFields.map((field) => [field.fieldKey, field]));
+  for (const key of TRACKER_STANDARD_FIELDS) {
+    const setting = settings.get(key);
+    const enabled = setting?.enabled ?? true;
+    const required = enabled && (setting?.required ?? false);
+    const value = standardFieldValue(effectiveBody, key);
+    const submittedValue = standardFieldValue(submittedBody, key);
+    const hasValue = hasMeaningfulStandardFieldValue(key, value);
+
+    if (!enabled && hasMeaningfulStandardFieldValue(key, submittedValue)) {
+      throw AppError.badRequest(`${STANDARD_FIELD_LABELS[key]}はこの作業分類では利用できません`);
+    }
+    if (required && !hasValue) {
+      throw AppError.badRequest(`${STANDARD_FIELD_LABELS[key]}を入力してください`);
+    }
   }
 }
 
@@ -1276,7 +1343,7 @@ router.get(
       where: { id: issue.id },
       include: {
         project: { select: { id: true, name: true, identifier: true } },
-        tracker: true,
+        tracker: { include: { standardFields: true } },
         status: true,
         author: { select: { id: true, login: true, firstname: true, lastname: true } },
         assignee: { select: { id: true, login: true, firstname: true, lastname: true } },
@@ -1427,7 +1494,24 @@ router.post(
       }
 
       const effectiveStatusId = changes.statusId ?? oldIssue.statusId;
+      const effectiveTrackerId = changes.trackerId ?? oldIssue.trackerId;
       const st = await prisma.issueStatus.findUnique({ where: { id: effectiveStatusId } });
+      await validateTrackerStandardFields(
+        effectiveTrackerId,
+        {
+          description: changes.description !== undefined ? changes.description : oldIssue.description,
+          assigneeId: changes.assigneeId !== undefined ? changes.assigneeId : oldIssue.assigneeId,
+          assigneeGroupId: changes.assigneeGroupId !== undefined ? changes.assigneeGroupId : oldIssue.assigneeGroupId,
+          categoryId: changes.categoryId !== undefined ? changes.categoryId : oldIssue.categoryId,
+          parentId: changes.parentId !== undefined ? changes.parentId : oldIssue.parentId,
+          startDate: changes.startDate !== undefined ? changes.startDate : oldIssue.startDate,
+          dueDate: changes.dueDate !== undefined ? changes.dueDate : oldIssue.dueDate,
+          estimatedHours: changes.estimatedHours !== undefined ? changes.estimatedHours : oldIssue.estimatedHours,
+          doneRatio: changes.doneRatio !== undefined ? changes.doneRatio : oldIssue.doneRatio,
+          repository: changes.repository !== undefined ? changes.repository : oldIssue.repository,
+        },
+        changes,
+      );
 
       const data: Prisma.IssueUpdateInput = {};
       if (changes.projectId !== undefined) data.project = { connect: { id: changes.projectId } };
@@ -1526,7 +1610,7 @@ router.post(
     });
 
     for (const after of updated) {
-      dispatchIssueNotification(after.id, req.user!.userId, 'updated');
+      scheduleIssueUpdateNotification(after.id, req.user!.userId, 'updated');
     }
 
     return sendSuccess(res, { updated: updated.length, issues: updated });
@@ -1691,6 +1775,23 @@ router.post(
     const sourceCustomValues = await prisma.customValue.findMany({
       where: { customizedType: 'Issue', customizedId: src.id },
     });
+    await validateTrackerStandardFields(
+      src.trackerId,
+      {
+        description: src.description,
+        assigneeId: src.assigneeId,
+        assigneeGroupId: src.assigneeGroupId,
+        categoryId: src.categoryId,
+        parentId: null,
+        startDate: src.startDate,
+        dueDate: src.dueDate,
+        estimatedHours: src.estimatedHours,
+        doneRatio: 0,
+        repository: src.repository,
+      },
+      {},
+    );
+
     const customFieldInput = await validateIssueCustomFields(
       targetProjectId,
       src.trackerId,
@@ -1896,7 +1997,7 @@ router.get(
       where: { id: req.params.id },
       include: {
         project: true,
-        tracker: true,
+        tracker: { include: { standardFields: true } },
         status: true,
         author: { select: { id: true, login: true, firstname: true, lastname: true, mail: true } },
         assignee: { select: { id: true, login: true, firstname: true, lastname: true, mail: true } },
@@ -2058,6 +2159,24 @@ router.put(
       }
       await assertAssignableToProject(nextAssigneeId, nextAssigneeGroupId, effectiveProjectId);
     }
+    if (!onlyNotesUpdate) {
+      await validateTrackerStandardFields(
+        effectiveTrackerId,
+        {
+          description: body.description !== undefined ? body.description : oldIssue.description,
+          assigneeId: body.assigneeId !== undefined ? body.assigneeId : oldIssue.assigneeId,
+          assigneeGroupId: body.assigneeGroupId !== undefined ? body.assigneeGroupId : oldIssue.assigneeGroupId,
+          categoryId: body.categoryId !== undefined ? body.categoryId : oldIssue.categoryId,
+          parentId: body.parentId !== undefined ? body.parentId : oldIssue.parentId,
+          startDate: body.startDate !== undefined ? body.startDate : oldIssue.startDate,
+          dueDate: body.dueDate !== undefined ? body.dueDate : oldIssue.dueDate,
+          estimatedHours: body.estimatedHours !== undefined ? body.estimatedHours : oldIssue.estimatedHours,
+          doneRatio: body.doneRatio !== undefined ? body.doneRatio : oldIssue.doneRatio,
+          repository: body.repository !== undefined ? body.repository : oldIssue.repository,
+        },
+        body,
+      );
+    }
 
     let customFieldInput: Awaited<ReturnType<typeof validateIssueCustomFields>> | null = null;
     const onlyStatusUpdate = Object.keys(body).length === 1 && body.statusId !== undefined;
@@ -2213,11 +2332,7 @@ router.put(
     });
 
     if (updated.journalId) {
-      if (onlyStatusUpdate) {
-        scheduleIssueStatusNotification(updated.id, req.user!.userId);
-      } else {
-        dispatchIssueNotification(updated.id, req.user!.userId, onlyNotesUpdate ? 'commented' : 'updated');
-      }
+      scheduleIssueUpdateNotification(updated.id, req.user!.userId, onlyNotesUpdate ? 'commented' : 'updated');
     }
     return sendSuccess(res, await attachIssueCustomFields(updated));
   }),
@@ -2276,6 +2391,8 @@ router.post(
 
     const st = await prisma.issueStatus.findUnique({ where: { id: body.statusId } });
     if (!st) throw AppError.badRequest('ステータスが存在しません');
+
+    await validateTrackerStandardFields(body.trackerId, body, body);
 
     const customFieldInput = await validateIssueCustomFields(
       projectId,

@@ -20,6 +20,29 @@ function RequiredMark() {
   return <span className="ml-0.5 text-red-500">*</span>;
 }
 
+const STANDARD_FIELD_LABELS = {
+  description: '説明',
+  assignee: '担当者',
+  category: 'カテゴリ',
+  parent: '親チケット',
+  startDate: '開始日',
+  dueDate: '期日',
+  estimatedHours: '予定工数',
+  doneRatio: '進捗率',
+  repository: 'リポジトリ',
+} as const;
+
+type StandardFieldKey = keyof typeof STANDARD_FIELD_LABELS;
+
+function isStandardFieldEnabled(tracker: { standardFields?: Array<{ fieldKey: string; enabled: boolean }> } | undefined, key: StandardFieldKey) {
+  return tracker?.standardFields?.find((field) => field.fieldKey === key)?.enabled ?? true;
+}
+
+function isStandardFieldRequired(tracker: { standardFields?: Array<{ fieldKey: string; enabled: boolean; required: boolean }> } | undefined, key: StandardFieldKey) {
+  const setting = tracker?.standardFields?.find((field) => field.fieldKey === key);
+  return (setting?.enabled ?? true) && (setting?.required ?? false);
+}
+
 function parseAssigneeValue(value: string) {
   if (value.startsWith('user:')) return { assigneeId: value.slice(5), assigneeGroupId: null };
   if (value.startsWith('group:')) return { assigneeId: null, assigneeGroupId: value.slice(6) };
@@ -113,6 +136,9 @@ export default function IssueNewPage() {
         .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)),
     [project?.projectTrackers],
   );
+  const currentTracker = useMemo(() => trackers.find((tr) => tr.id === trackerId), [trackers, trackerId]);
+  const fieldEnabled = (key: StandardFieldKey) => isStandardFieldEnabled(currentTracker, key);
+  const fieldRequired = (key: StandardFieldKey) => isStandardFieldRequired(currentTracker, key);
   const statuses = statusesQuery.data?.data ?? [];
   const members = membersQuery.data?.data ?? [];
   const categories = categoriesQuery.data?.data ?? [];
@@ -144,7 +170,9 @@ export default function IssueNewPage() {
     const seen = new Set<string>();
     const currentUserValue = currentUser?.id ? `user:${currentUser.id}` : '';
     const options = members.flatMap((member) => {
+      if (!(member.memberRoles ?? []).some((memberRole) => memberRole.role?.assignable)) return [];
       if (member.user) {
+        if (member.user.status !== 1) return [];
         const value = `user:${member.user.id}`;
         if (seen.has(value)) return [];
         seen.add(value);
@@ -247,29 +275,45 @@ export default function IssueNewPage() {
       setFormError(`${t('issues.estimatedHours')} は h:mm または数値で入力してください`);
       return;
     }
+    const assignee = parseAssigneeValue(assigneeValue);
+    const requiredValues: Record<StandardFieldKey, boolean> = {
+      description: description.trim().length > 0,
+      assignee: Boolean(assignee.assigneeId || assignee.assigneeGroupId),
+      category: Boolean(categoryId),
+      parent: Boolean(parentId),
+      startDate: Boolean(startDate),
+      dueDate: Boolean(dueDate),
+      estimatedHours: parsedEstimatedHours != null,
+      doneRatio: true,
+      repository: repository.trim().length > 0,
+    };
+    for (const key of Object.keys(STANDARD_FIELD_LABELS) as StandardFieldKey[]) {
+      if (fieldRequired(key) && !requiredValues[key]) {
+        setFormError(`${STANDARD_FIELD_LABELS[key]}を入力してください`);
+        return;
+      }
+    }
     const customFieldValidationError = validateCustomFieldValues(customFieldsQuery.data?.data ?? [], customFields);
     if (customFieldValidationError) {
       setFormError(customFieldValidationError);
       return;
     }
-    const assignee = parseAssigneeValue(assigneeValue);
     createMutation.mutate(
       {
         projectId: project.id,
         trackerId,
         subject: subject.trim(),
-        description: description.trim() || null,
         statusId,
         priority,
-        assigneeId: assignee.assigneeId,
-        assigneeGroupId: assignee.assigneeGroupId,
-        categoryId: categoryId || null,
-        parentId: parentId || null,
-        startDate: startDate || null,
-        dueDate: dueDate || null,
-        estimatedHours: parsedEstimatedHours,
-        doneRatio,
-        repository: repository.trim() || null,
+        ...(fieldEnabled('description') ? { description: description.trim() || null } : {}),
+        ...(fieldEnabled('assignee') ? { assigneeId: assignee.assigneeId, assigneeGroupId: assignee.assigneeGroupId } : {}),
+        ...(fieldEnabled('category') ? { categoryId: categoryId || null } : {}),
+        ...(fieldEnabled('parent') ? { parentId: parentId || null } : {}),
+        ...(fieldEnabled('startDate') ? { startDate: startDate || null } : {}),
+        ...(fieldEnabled('dueDate') ? { dueDate: dueDate || null } : {}),
+        ...(fieldEnabled('estimatedHours') ? { estimatedHours: parsedEstimatedHours } : {}),
+        ...(fieldEnabled('doneRatio') ? { doneRatio } : {}),
+        ...(fieldEnabled('repository') ? { repository: repository.trim() || null } : {}),
         customFields,
       },
       {
@@ -339,8 +383,11 @@ export default function IssueNewPage() {
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
+        {fieldEnabled('description') && (
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.description')}</label>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            {t('issues.description')}{fieldRequired('description') && <RequiredMark />}
+          </label>
           <RichTextEditor
             value={description}
             onChange={setDescription}
@@ -351,6 +398,7 @@ export default function IssueNewPage() {
             showAttachments={true}
           />
         </div>
+        )}
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">
             {t('issues.status')}<RequiredMark />
@@ -375,8 +423,11 @@ export default function IssueNewPage() {
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
+        {fieldEnabled('assignee') && (
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.assignee')}</label>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            {t('issues.assignee')}{fieldRequired('assignee') && <RequiredMark />}
+          </label>
           <AppSelect
             value={assigneeValue}
             onChange={setAssigneeValue}
@@ -385,8 +436,12 @@ export default function IssueNewPage() {
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
+        )}
+        {fieldEnabled('category') && (
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.category')}</label>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            {t('issues.category')}{fieldRequired('category') && <RequiredMark />}
+          </label>
           <AppSelect
             value={categoryId}
             onChange={setCategoryId}
@@ -395,8 +450,12 @@ export default function IssueNewPage() {
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
+        )}
+        {fieldEnabled('parent') && (
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.parent')}</label>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            {t('issues.parent')}{fieldRequired('parent') && <RequiredMark />}
+          </label>
           <AppSelect
             value={parentId}
             onChange={setParentId}
@@ -405,9 +464,14 @@ export default function IssueNewPage() {
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
+        )}
+        {(fieldEnabled('startDate') || fieldEnabled('dueDate')) && (
         <div className="grid gap-4 sm:grid-cols-2">
+          {fieldEnabled('startDate') && (
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.startDate')}</label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              {t('issues.startDate')}{fieldRequired('startDate') && <RequiredMark />}
+            </label>
             <input
               type="date"
               value={startDate}
@@ -415,8 +479,12 @@ export default function IssueNewPage() {
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </div>
+          )}
+          {fieldEnabled('dueDate') && (
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.dueDate')}</label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              {t('issues.dueDate')}{fieldRequired('dueDate') && <RequiredMark />}
+            </label>
             <input
               type="date"
               value={dueDate}
@@ -424,10 +492,15 @@ export default function IssueNewPage() {
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </div>
+          )}
         </div>
+        )}
         {dateValidationError && <p className="text-sm text-red-600">{dateValidationError}</p>}
+        {fieldEnabled('estimatedHours') && (
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.estimatedHours')}</label>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            {t('issues.estimatedHours')}{fieldRequired('estimatedHours') && <RequiredMark />}
+          </label>
           <div className="flex gap-2">
             <input
               type="text"
@@ -459,6 +532,8 @@ export default function IssueNewPage() {
           </div>
           <p className="mt-1 text-xs text-slate-500">日入力は1日=8時間で換算します。</p>
         </div>
+        )}
+        {fieldEnabled('doneRatio') && (
         <div>
           <label className="mb-1 block flex justify-between text-sm font-medium text-slate-700">
             <span>{t('issues.doneRatio')}</span>
@@ -468,8 +543,12 @@ export default function IssueNewPage() {
             onChange={(value) => setDoneRatio(Number(value))}
           />
         </div>
+        )}
+        {fieldEnabled('repository') && (
         <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">{t('issues.repository')}</label>
+          <label className="mb-1 block text-sm font-medium text-slate-700">
+            {t('issues.repository')}{fieldRequired('repository') && <RequiredMark />}
+          </label>
           <input
             value={repository}
             onChange={(e) => setRepository(e.target.value)}
@@ -477,6 +556,7 @@ export default function IssueNewPage() {
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
+        )}
         <IssueCustomFieldInputs
           fields={customFieldsQuery.data?.data ?? []}
           values={customFields}

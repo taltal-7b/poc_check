@@ -11,6 +11,26 @@ import { userCanViewProject } from '../utils/project-access';
 const router = Router();
 
 const BCRYPT_ROUNDS = 12;
+const DUE_SUMMARY_RANGE_VALUES = [
+  '5_days_before',
+  '4_days_before',
+  '3_days_before',
+  '2_days_before',
+  '1_day_before',
+  'due_today',
+  'overdue',
+  'estimated_hours_exceeds_remaining_days',
+] as const;
+const DEFAULT_DUE_SUMMARY_NOTIFICATION = {
+  enabled: true,
+  sendTime: '07:00',
+  ranges: ['3_days_before'],
+  includeAuthoredAssignedToOthers: false,
+};
+const MY_PAGE_RESERVED_PREFERENCE_KEYS = new Set([
+  'mailNotificationsEnabled',
+  'dueSummaryNotification',
+]);
 
 function serializeUser(user: {
   id: string;
@@ -121,11 +141,7 @@ router.get('/page', async (req: Request, res: Response, next: NextFunction) => {
     const pref = await prisma.userPreference.findUnique({
       where: { userId: req.user!.userId },
     });
-    const others = pref?.others;
-    const page =
-      others !== null && typeof others === 'object' && !Array.isArray(others)
-        ? others
-        : {};
+    const page = pagePreferenceFromOthers(pref?.others);
     return sendSuccess(res, page);
   } catch (err) {
     next(err);
@@ -135,22 +151,26 @@ router.get('/page', async (req: Request, res: Response, next: NextFunction) => {
 router.put('/page', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = z.record(z.string(), z.unknown()).parse(req.body) as Prisma.InputJsonObject;
+    const current = await prisma.userPreference.findUnique({
+      where: { userId: req.user!.userId },
+    });
+    const existingOthers = preferenceOthersObject(current?.others);
+    const preserved = Object.fromEntries(
+      Object.entries(existingOthers).filter(([key]) => MY_PAGE_RESERVED_PREFERENCE_KEYS.has(key)),
+    ) as Prisma.InputJsonObject;
+    const page = pagePreferenceFromObject(body);
+    const others = { ...preserved, ...page };
 
     const pref = await prisma.userPreference.upsert({
       where: { userId: req.user!.userId },
       create: {
         userId: req.user!.userId,
-        others: body,
+        others,
       },
-      update: { others: body },
+      update: { others },
     });
 
-    const others = pref.others;
-    const page =
-      others !== null && typeof others === 'object' && !Array.isArray(others)
-        ? others
-        : {};
-    return sendSuccess(res, page);
+    return sendSuccess(res, pagePreferenceFromOthers(pref.others));
   } catch (err) {
     next(err);
   }
@@ -252,6 +272,41 @@ function preferenceOthersObject(value: Prisma.JsonValue | null | undefined): Pri
   return {};
 }
 
+function pagePreferenceFromOthers(value: Prisma.JsonValue | null | undefined): Prisma.InputJsonObject {
+  return pagePreferenceFromObject(preferenceOthersObject(value));
+}
+
+function pagePreferenceFromObject(others: Prisma.InputJsonObject): Prisma.InputJsonObject {
+  return Object.fromEntries(
+    Object.entries(others).filter(([key]) => !MY_PAGE_RESERVED_PREFERENCE_KEYS.has(key)),
+  ) as Prisma.InputJsonObject;
+}
+
+function isValidDueSummarySendTime(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const match = value.match(/^([01]\d|2[0-3]):00$/);
+  return Boolean(match);
+}
+
+function dueSummaryNotificationFromOthers(others: Prisma.InputJsonObject) {
+  const raw = others.dueSummaryNotification;
+  const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Prisma.JsonObject : {};
+  const ranges = Array.isArray(source.ranges)
+    ? source.ranges.filter((value): value is typeof DUE_SUMMARY_RANGE_VALUES[number] => (
+        typeof value === 'string' && DUE_SUMMARY_RANGE_VALUES.includes(value as typeof DUE_SUMMARY_RANGE_VALUES[number])
+      ))
+    : DEFAULT_DUE_SUMMARY_NOTIFICATION.ranges;
+
+  return {
+    enabled: typeof source.enabled === 'boolean' ? source.enabled : DEFAULT_DUE_SUMMARY_NOTIFICATION.enabled,
+    sendTime: isValidDueSummarySendTime(source.sendTime) ? source.sendTime : DEFAULT_DUE_SUMMARY_NOTIFICATION.sendTime,
+    ranges: ranges.length ? ranges : DEFAULT_DUE_SUMMARY_NOTIFICATION.ranges,
+    includeAuthoredAssignedToOthers: typeof source.includeAuthoredAssignedToOthers === 'boolean'
+      ? source.includeAuthoredAssignedToOthers
+      : DEFAULT_DUE_SUMMARY_NOTIFICATION.includeAuthoredAssignedToOthers,
+  };
+}
+
 router.get('/mail_notifications', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const pref = await prisma.userPreference.findUnique({
@@ -260,6 +315,8 @@ router.get('/mail_notifications', async (req: Request, res: Response, next: Next
     const others = preferenceOthersObject(pref?.others);
     return sendSuccess(res, {
       mailNotificationsEnabled: others.mailNotificationsEnabled !== false,
+      canCustomizeDueSummaryNotification: true,
+      dueSummaryNotification: dueSummaryNotificationFromOthers(others),
     });
   } catch (err) {
     next(err);
@@ -494,6 +551,12 @@ router.put('/mail_notifications', async (req: Request, res: Response, next: Next
     const body = z
       .object({
         mailNotificationsEnabled: z.boolean(),
+        dueSummaryNotification: z.object({
+          enabled: z.boolean(),
+          sendTime: z.string().refine(isValidDueSummarySendTime, 'sendTime must be in hourly increments'),
+          ranges: z.array(z.enum(DUE_SUMMARY_RANGE_VALUES)).min(1),
+          includeAuthoredAssignedToOthers: z.boolean(),
+        }),
       })
       .parse(req.body);
 
@@ -503,6 +566,7 @@ router.put('/mail_notifications', async (req: Request, res: Response, next: Next
     const others = {
       ...preferenceOthersObject(current?.others),
       mailNotificationsEnabled: body.mailNotificationsEnabled,
+      dueSummaryNotification: body.dueSummaryNotification,
     };
 
     const pref = await prisma.userPreference.upsert({
@@ -517,6 +581,8 @@ router.put('/mail_notifications', async (req: Request, res: Response, next: Next
     const nextOthers = preferenceOthersObject(pref.others);
     return sendSuccess(res, {
       mailNotificationsEnabled: nextOthers.mailNotificationsEnabled !== false,
+      canCustomizeDueSummaryNotification: true,
+      dueSummaryNotification: dueSummaryNotificationFromOthers(nextOthers),
     });
   } catch (err) {
     next(err);

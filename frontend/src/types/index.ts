@@ -75,6 +75,15 @@ export interface Tracker {
   position: number;
   defaultStatusId: string | null;
   description: string | null;
+  standardFields?: TrackerStandardField[];
+}
+
+export interface TrackerStandardField {
+  id?: string;
+  trackerId?: string;
+  fieldKey: string;
+  enabled: boolean;
+  required: boolean;
 }
 
 export interface IssueStatus {
@@ -113,6 +122,7 @@ export interface Issue {
   author?: User;
   assignee?: User | null;
   assigneeGroup?: Group | null;
+  category?: { id: string; name: string } | null;
   parent?: { id: string; number?: number; subject: string };
   children?: { id: string; number: number; subject: string }[];
   treeDepth?: number;
@@ -353,7 +363,24 @@ export interface UserDetail extends User {
 
 export interface MailNotificationPreference {
   mailNotificationsEnabled: boolean;
+  canCustomizeDueSummaryNotification: boolean;
+  dueSummaryNotification: {
+    enabled: boolean;
+    sendTime: string;
+    ranges: DueSummaryNotificationRange[];
+    includeAuthoredAssignedToOthers: boolean;
+  };
 }
+
+export type DueSummaryNotificationRange =
+  | '5_days_before'
+  | '4_days_before'
+  | '3_days_before'
+  | '2_days_before'
+  | '1_day_before'
+  | 'due_today'
+  | 'overdue'
+  | 'estimated_hours_exceeds_remaining_days';
 
 export interface MyWatcherItem {
   id: string;
@@ -402,11 +429,15 @@ export interface Query {
   id: string;
   name: string;
   type: string;
+  userId?: string | null;
+  projectId?: string | null;
   visibility: number;
   filters: Record<string, unknown>;
   columns: string[];
   sortCriteria: string[];
   groupBy: string | null;
+  project?: Pick<Project, 'id' | 'name' | 'identifier'> | null;
+  user?: Pick<User, 'id' | 'login' | 'firstname' | 'lastname'> | null;
 }
 
 export interface Attachment {
