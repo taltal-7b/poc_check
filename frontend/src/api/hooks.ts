@@ -117,7 +117,8 @@ export const useUpdateMailNotificationPreference = () => {
 };
 
 // ========== Projects ==========
-export const useProjects = (params?: Record<string, unknown>) => useQuery({ queryKey: ['projects', params], queryFn: () => get<Project[]>('/projects', params) });
+export const useProjects = (params?: Record<string, unknown>, options?: { enabled?: boolean }) =>
+  useQuery({ queryKey: ['projects', params], queryFn: () => get<Project[]>('/projects', params), enabled: options?.enabled });
 export const useAllProjects = (options?: { enabled?: boolean }) =>
   useQuery({
     queryKey: ['projects', 'all'],
@@ -515,7 +516,8 @@ export const useBoardMessage = (projectId: string, boardId: string, messageId: s
   });
 
 // ========== Users (admin) ==========
-export const useUsers = (params?: Record<string, unknown>) => useQuery({ queryKey: ['users', params], queryFn: () => get<User[]>('/users', params) });
+export const useUsers = (params?: Record<string, unknown>, options?: { enabled?: boolean }) =>
+  useQuery({ queryKey: ['users', params], queryFn: () => get<User[]>('/users', params), enabled: options?.enabled });
 export const useUser = (id: string) => useQuery({ queryKey: ['user', id], queryFn: () => get<UserDetail>(`/users/${id}`), enabled: !!id });
 export const useCreateUser = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (body: Record<string, unknown>) => post<User>('/users', body), onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }) }); };
 export const useUpdateUser = () => { const qc = useQueryClient(); return useMutation({ mutationFn: ({ id, ...body }: { id: string } & Record<string, unknown>) => put<User>(`/users/${id}`, body), onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }) }); };
@@ -553,10 +555,12 @@ export const useRemoveUserProject = () => {
 };
 
 // ========== Roles ==========
-export const useRoles = () => useQuery({ queryKey: ['roles'], queryFn: () => get<Role[]>('/roles') });
+export const useRoles = (options?: { enabled?: boolean }) =>
+  useQuery({ queryKey: ['roles'], queryFn: () => get<Role[]>('/roles'), enabled: options?.enabled });
 
 // ========== Groups ==========
-export const useGroups = () => useQuery({ queryKey: ['groups'], queryFn: () => get<Group[]>('/groups') });
+export const useGroups = (options?: { enabled?: boolean }) =>
+  useQuery({ queryKey: ['groups'], queryFn: () => get<Group[]>('/groups'), enabled: options?.enabled });
 export const useGroup = (id: string) =>
   useQuery({
     queryKey: ['group', id],
@@ -577,6 +581,16 @@ export const useUpdateGroup = () => {
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ['groups'] });
       qc.invalidateQueries({ queryKey: ['group', vars.id] });
+    },
+  });
+};
+export const useDeleteGroup = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/groups/${id}`),
+    onSuccess: (_res, id) => {
+      qc.invalidateQueries({ queryKey: ['groups'] });
+      qc.removeQueries({ queryKey: ['group', id] });
     },
   });
 };
@@ -710,7 +724,22 @@ export const useIssueCustomFields = (projectId: string, trackerId: string) =>
   });
 
 // ========== Queries ==========
-export const useSavedQueries = () => useQuery({ queryKey: ['queries'], queryFn: () => get<SavedQuery[]>('/queries') });
+export const useSavedQueries = (options?: { enabled?: boolean }) =>
+  useQuery({ queryKey: ['queries'], queryFn: () => get<SavedQuery[]>('/queries'), enabled: options?.enabled });
+export const useCreateSavedQuery = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<SavedQuery>) => post<SavedQuery>('/queries', body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['queries'] }),
+  });
+};
+export const useDeleteSavedQuery = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del(`/queries/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['queries'] }),
+  });
+};
 
 // ========== Roles (admin) ==========
 type RoleWriteBody = Omit<Partial<Role>, 'permissions'> & { permissions?: string[] };

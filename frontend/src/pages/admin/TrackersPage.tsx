@@ -6,6 +6,41 @@ import { useTrackers, useStatuses, useCreateTracker, useUpdateTracker, useDelete
 import AppSelect from '../../components/AppSelect';
 import type { Tracker } from '../../types';
 
+const STANDARD_FIELDS = [
+  { key: 'description', label: '説明', requiredAllowed: true },
+  { key: 'assignee', label: '担当者', requiredAllowed: true },
+  { key: 'category', label: 'カテゴリ', requiredAllowed: true },
+  { key: 'parent', label: '親チケット', requiredAllowed: true },
+  { key: 'startDate', label: '開始日', requiredAllowed: true },
+  { key: 'dueDate', label: '期日', requiredAllowed: true },
+  { key: 'estimatedHours', label: '予定工数', requiredAllowed: true },
+  { key: 'doneRatio', label: '進捗率', requiredAllowed: false },
+  { key: 'repository', label: 'リポジトリ', requiredAllowed: true },
+] as const;
+
+type StandardFieldKey = (typeof STANDARD_FIELDS)[number]['key'];
+type StandardFieldState = Record<StandardFieldKey, { enabled: boolean; required: boolean }>;
+
+function defaultStandardFields(): StandardFieldState {
+  return Object.fromEntries(
+    STANDARD_FIELDS.map((field) => [field.key, { enabled: true, required: false }]),
+  ) as StandardFieldState;
+}
+
+function standardFieldsFromTracker(tracker: Tracker | null): StandardFieldState {
+  const values = defaultStandardFields();
+  for (const setting of tracker?.standardFields ?? []) {
+    if (setting.fieldKey in values) {
+      const key = setting.fieldKey as StandardFieldKey;
+      values[key] = {
+        enabled: setting.enabled,
+        required: setting.enabled ? setting.required : false,
+      };
+    }
+  }
+  return values;
+}
+
 export default function TrackersPage() {
   const { t } = useTranslation();
   const { data: trackersRes, isLoading, isError } = useTrackers();
@@ -29,6 +64,8 @@ export default function TrackersPage() {
   const [defaultStatusId, setDefaultStatusId] = useState('');
   const [description, setDescription] = useState('');
   const [positionInput, setPositionInput] = useState<number>(1);
+  const [activeTab, setActiveTab] = useState<'basic' | 'fields'>('basic');
+  const [standardFields, setStandardFields] = useState<StandardFieldState>(() => defaultStandardFields());
 
   const openCreate = () => {
     setEditing(null);
@@ -36,6 +73,8 @@ export default function TrackersPage() {
     setDefaultStatusId(sortedStatuses[0]?.id ?? '');
     setDescription('');
     setPositionInput(ordered.length + 1);
+    setStandardFields(defaultStandardFields());
+    setActiveTab('basic');
     setModalOpen(true);
   };
 
@@ -45,7 +84,23 @@ export default function TrackersPage() {
     setDefaultStatusId(tr.defaultStatusId ?? '');
     setDescription(tr.description ?? '');
     setPositionInput(tr.position);
+    setStandardFields(standardFieldsFromTracker(tr));
+    setActiveTab('basic');
     setModalOpen(true);
+  };
+
+  const setStandardField = (key: StandardFieldKey, patch: Partial<{ enabled: boolean; required: boolean }>) => {
+    setStandardFields((prev) => {
+      const current = prev[key];
+      const enabled = patch.enabled ?? current.enabled;
+      return {
+        ...prev,
+        [key]: {
+          enabled,
+          required: enabled ? (patch.required ?? current.required) : false,
+        },
+      };
+    });
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -57,6 +112,11 @@ export default function TrackersPage() {
         defaultStatusId: defaultStatusId || null,
         description: description || null,
         position: positionInput,
+        standardFields: STANDARD_FIELDS.map((field) => ({
+          fieldKey: field.key,
+          enabled: standardFields[field.key].enabled,
+          required: field.requiredAllowed && standardFields[field.key].enabled ? standardFields[field.key].required : false,
+        })),
       });
     } else {
       await createTracker.mutateAsync({
@@ -64,6 +124,11 @@ export default function TrackersPage() {
         defaultStatusId: defaultStatusId || null,
         description: description || null,
         position: positionInput,
+        standardFields: STANDARD_FIELDS.map((field) => ({
+          fieldKey: field.key,
+          enabled: standardFields[field.key].enabled,
+          required: field.requiredAllowed && standardFields[field.key].enabled ? standardFields[field.key].required : false,
+        })),
       });
     }
     setModalOpen(false);
@@ -145,33 +210,90 @@ export default function TrackersPage() {
       <Dialog open={modalOpen} onClose={() => setModalOpen(false)} className="relative z-50">
         <div className="fixed inset-0 bg-black/40" aria-hidden />
         <div className="fixed inset-0 flex items-center justify-center p-4">
-          <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+          <DialogPanel className="w-full max-w-2xl rounded-xl bg-white p-6 shadow-xl">
             <DialogTitle className="text-lg font-semibold text-gray-900">{editing ? t('app.edit') : t('trackers.new')}</DialogTitle>
-            <form className="mt-4 space-y-3" onSubmit={submit}>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  {t('trackers.name')}<span className="ml-1 text-red-500">*</span>
-                </label>
-                <input className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={name} onChange={e => setName(e.target.value)} required />
+            <form className="mt-4 space-y-4" onSubmit={submit}>
+              <div className="flex border-b border-gray-200">
+                {[
+                  { id: 'basic' as const, label: '基本' },
+                  { id: 'fields' as const, label: '標準フィールド' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`border-b-2 px-4 py-2 text-sm font-medium ${
+                      activeTab === tab.id
+                        ? 'border-primary-600 text-primary-700'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">{t('trackers.defaultStatus')}</label>
-                <AppSelect
-                  value={defaultStatusId}
-                  onChange={setDefaultStatusId}
-                  options={[{ value: '', label: '-' }, ...sortedStatuses.map((item) => ({ value: item.id, label: item.name }))]}
-                  ariaLabel={t('trackers.defaultStatus')}
-                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">{t('projects.description')}</label>
-                <textarea className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" rows={3} value={description} onChange={e => setDescription(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">{t('trackers.position')}</label>
-                <input type="number" className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={positionInput} min={1} onChange={e => setPositionInput(Number(e.target.value))} />
-              </div>
+              {activeTab === 'basic' ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      {t('trackers.name')}<span className="ml-1 text-red-500">*</span>
+                    </label>
+                    <input className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={name} onChange={e => setName(e.target.value)} required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">{t('trackers.defaultStatus')}</label>
+                    <AppSelect
+                      value={defaultStatusId}
+                      onChange={setDefaultStatusId}
+                      options={[{ value: '', label: '-' }, ...sortedStatuses.map((item) => ({ value: item.id, label: item.name }))]}
+                      ariaLabel={t('trackers.defaultStatus')}
+                      className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">{t('projects.description')}</label>
+                    <textarea className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" rows={3} value={description} onChange={e => setDescription(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">{t('trackers.position')}</label>
+                    <input type="number" className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={positionInput} min={1} onChange={e => setPositionInput(Number(e.target.value))} />
+                  </div>
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-lg border border-gray-200">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 text-left text-gray-600">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">フィールド</th>
+                        <th className="px-4 py-3 text-center font-medium">使用</th>
+                        <th className="px-4 py-3 text-center font-medium">必須</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {STANDARD_FIELDS.map((field) => (
+                        <tr key={field.key}>
+                          <td className="px-4 py-3 font-medium text-gray-900">{field.label}</td>
+                          <td className="px-4 py-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={standardFields[field.key].enabled}
+                              onChange={(e) => setStandardField(field.key, { enabled: e.target.checked })}
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={standardFields[field.key].required}
+                              disabled={!field.requiredAllowed || !standardFields[field.key].enabled}
+                              onChange={(e) => setStandardField(field.key, { required: e.target.checked })}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" className="rounded border border-gray-300 px-4 py-2 text-sm" onClick={() => setModalOpen(false)}>
                   {t('app.cancel')}

@@ -22,9 +22,47 @@ const createBodySchema = z.object({
   defaultStatusId: z.string().uuid().nullable().optional(),
   description: z.string().nullable().optional(),
   position: z.number().int().min(0).optional(),
+  standardFields: z.array(z.object({
+    fieldKey: z.string().min(1).max(64),
+    enabled: z.boolean(),
+    required: z.boolean(),
+  })).optional(),
 });
 
 const updateBodySchema = createBodySchema.partial();
+
+const STANDARD_FIELD_KEYS = new Set([
+  'description',
+  'assignee',
+  'category',
+  'parent',
+  'startDate',
+  'dueDate',
+  'estimatedHours',
+  'doneRatio',
+  'repository',
+]);
+
+function normalizeStandardFields(
+  fields: Array<{ fieldKey: string; enabled: boolean; required: boolean }> | undefined,
+) {
+  if (!fields) return undefined;
+  const seen = new Set<string>();
+  return fields.map((field) => {
+    if (!STANDARD_FIELD_KEYS.has(field.fieldKey)) {
+      throw AppError.badRequest('Invalid standard field');
+    }
+    if (seen.has(field.fieldKey)) {
+      throw AppError.badRequest('Duplicate standard field');
+    }
+    seen.add(field.fieldKey);
+    return {
+      fieldKey: field.fieldKey,
+      enabled: field.enabled,
+      required: field.enabled ? field.required : false,
+    };
+  });
+}
 
 router.use(authenticate);
 
@@ -32,7 +70,7 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const trackers = await prisma.tracker.findMany({
       orderBy: { position: 'asc' },
-      include: { defaultStatus: true },
+      include: { defaultStatus: true, standardFields: true },
     });
     sendSuccess(res, trackers);
   } catch (err) {
@@ -46,7 +84,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     if (!id) return next(AppError.badRequest('ID が無効です'));
     const tracker = await prisma.tracker.findUnique({
       where: { id },
-      include: { defaultStatus: true },
+      include: { defaultStatus: true, standardFields: true },
     });
     if (!tracker) {
       return next(AppError.notFound('作業分類が見つかりません'));
@@ -64,6 +102,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response, next: NextFun
       return next(AppError.badRequest(zodMessage(parsed.error)));
     }
     const { name, defaultStatusId, description } = parsed.data;
+    const standardFields = normalizeStandardFields(parsed.data.standardFields);
 
     if (defaultStatusId) {
       const status = await prisma.issueStatus.findUnique({ where: { id: defaultStatusId } });
@@ -81,8 +120,11 @@ router.post('/', requireAdmin, async (req: Request, res: Response, next: NextFun
         position,
         defaultStatusId: defaultStatusId ?? null,
         description: description ?? null,
+        ...(standardFields
+          ? { standardFields: { create: standardFields } }
+          : {}),
       },
-      include: { defaultStatus: true },
+      include: { defaultStatus: true, standardFields: true },
     });
     sendSuccess(res, tracker, 201);
   } catch (err) {
@@ -112,22 +154,38 @@ router.put('/:id', requireAdmin, async (req: Request, res: Response, next: NextF
         return next(AppError.badRequest('指定したデフォルトステータスが存在しません'));
       }
     }
+    const standardFields = normalizeStandardFields(parsed.data.standardFields);
 
-    const tracker = await prisma.tracker.update({
-      where: { id },
-      data: {
-        ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
-        ...(parsed.data.defaultStatusId !== undefined
-          ? { defaultStatusId: parsed.data.defaultStatusId }
-          : {}),
-        ...(parsed.data.description !== undefined
-          ? { description: parsed.data.description }
-          : {}),
-        ...(parsed.data.position !== undefined
-          ? { position: parsed.data.position }
-          : {}),
-      },
-      include: { defaultStatus: true },
+    const tracker = await prisma.$transaction(async (tx) => {
+      const updated = await tx.tracker.update({
+        where: { id },
+        data: {
+          ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+          ...(parsed.data.defaultStatusId !== undefined
+            ? { defaultStatusId: parsed.data.defaultStatusId }
+            : {}),
+          ...(parsed.data.description !== undefined
+            ? { description: parsed.data.description }
+            : {}),
+          ...(parsed.data.position !== undefined
+            ? { position: parsed.data.position }
+            : {}),
+        },
+      });
+
+      if (standardFields) {
+        await tx.trackerStandardField.deleteMany({ where: { trackerId: id } });
+        if (standardFields.length) {
+          await tx.trackerStandardField.createMany({
+            data: standardFields.map((field) => ({ trackerId: id, ...field })),
+          });
+        }
+      }
+
+      return tx.tracker.findUniqueOrThrow({
+        where: { id: updated.id },
+        include: { defaultStatus: true, standardFields: true },
+      });
     });
     sendSuccess(res, tracker);
   } catch (err) {

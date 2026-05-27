@@ -319,7 +319,7 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
             className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
           />
           <label htmlFor="isPublic" className="text-sm text-slate-700">
-            {t('projects.isPublic')}
+            {t('projects.isPublicToNonMembers')}
           </label>
         </div>
         <div>

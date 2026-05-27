@@ -202,8 +202,21 @@ model Tracker {
   projectTrackers ProjectTracker[]
   workflows       WorkflowTransition[]
   customFieldTrackers CustomFieldTracker[]
+  standardFields  TrackerStandardField[]
 
   @@map("trackers")
+}
+
+model TrackerStandardField {
+  id        String  @id @default(uuid())
+  trackerId String  @map("tracker_id")
+  tracker   Tracker @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+  fieldKey  String  @map("field_key")
+  enabled   Boolean @default(true)
+  required  Boolean @default(false)
+
+  @@unique([trackerId, fieldKey])
+  @@map("tracker_standard_fields")
 }
 
 model ProjectTracker {

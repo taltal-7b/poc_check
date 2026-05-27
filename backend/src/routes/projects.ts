@@ -1540,7 +1540,7 @@ router.get(
         createdAt: true,
         updatedAt: true,
         enabledModules: { select: { name: true } },
-        projectTrackers: { include: { tracker: true } },
+        projectTrackers: { include: { tracker: { include: { standardFields: true } } } },
         projectCustomFields: {
           include: {
             customField: {
@@ -1656,7 +1656,7 @@ router.post(
         where: { id: p.id },
         include: {
           enabledModules: true,
-          projectTrackers: { include: { tracker: true } },
+          projectTrackers: { include: { tracker: { include: { standardFields: true } } } },
           projectCustomFields: { include: { customField: true } },
         },
       });
@@ -1748,7 +1748,7 @@ router.put(
         where: { id: current.id },
         include: {
           enabledModules: true,
-          projectTrackers: { include: { tracker: true } },
+          projectTrackers: { include: { tracker: { include: { standardFields: true } } } },
           projectCustomFields: { include: { customField: true } },
         },
       });
@@ -1920,7 +1920,7 @@ router.post(
         where: { id: p.id },
         include: {
           enabledModules: true,
-          projectTrackers: { include: { tracker: true } },
+          projectTrackers: { include: { tracker: { include: { standardFields: true } } } },
         },
       });
     });

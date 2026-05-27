@@ -28,7 +28,6 @@ export default function MainLayout() {
 
   const navLinks = [
     { to: '/projects', label: t('nav.projects') },
-    { to: '/my/page', label: t('nav.myPage') },
     { to: '/activity', label: t('nav.activity') },
   ];
 
