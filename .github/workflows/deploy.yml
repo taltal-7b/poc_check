@@ -117,8 +117,8 @@ jobs:
           FRONTEND_PORT: ${{ secrets.FRONTEND_PORT }}
           BACKEND_BIND: ${{ secrets.BACKEND_BIND }}
           BACKEND_PORT: ${{ secrets.BACKEND_PORT }}
-          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME || github.actor }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || github.token }}
         run: |
           set -euo pipefail
           SSH_PORT="${DEPLOY_PORT:-22}"
@@ -155,7 +155,24 @@ jobs:
           if [ -n "$GHCR_USERNAME" ] && [ -n "$GHCR_TOKEN" ]; then
             printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
           fi
-          docker compose pull
+          pull_with_retry() {
+            attempt=1
+            max_attempts=5
+            delay=10
+            while [ "$attempt" -le "$max_attempts" ]; do
+              if docker compose pull; then
+                return 0
+              fi
+              if [ "$attempt" -eq "$max_attempts" ]; then
+                return 1
+              fi
+              echo "docker compose pull failed; retrying in ${delay}s (${attempt}/${max_attempts})"
+              sleep "$delay"
+              attempt=$((attempt + 1))
+              delay=$((delay * 2))
+            done
+          }
+          pull_with_retry
           docker compose up -d --remove-orphans
           docker image prune -f
           REMOTE
