@@ -114,6 +114,7 @@ def main() -> int:
     print(f"report_script={report_script}")
     print("next_step=Restart Cursor if hooks do not reload automatically.")
     print("run_report=python3 scripts/daily_report.py --date YYYY-MM-DD")
+    print("import_codex=python3 .cursor/hooks/chat_timestamp_logger.py --event importCodexSessions --date YYYY-MM-DD")
     return 0
 
 

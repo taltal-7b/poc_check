@@ -129,21 +129,6 @@ export default function IssueNewPage() {
   const createMutation = useCreateIssue();
   const uploadMutation = useUploadAttachments();
 
-  const trackers = useMemo(
-    () =>
-      (project?.projectTrackers ?? [])
-        .map((pt) => pt.tracker)
-        .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)),
-    [project?.projectTrackers],
-  );
-  const currentTracker = useMemo(() => trackers.find((tr) => tr.id === trackerId), [trackers, trackerId]);
-  const fieldEnabled = (key: StandardFieldKey) => isStandardFieldEnabled(currentTracker, key);
-  const fieldRequired = (key: StandardFieldKey) => isStandardFieldRequired(currentTracker, key);
-  const statuses = statusesQuery.data?.data ?? [];
-  const members = membersQuery.data?.data ?? [];
-  const categories = categoriesQuery.data?.data ?? [];
-  const projectIssues = (projectIssuesQuery.data?.data ?? []) as Issue[];
-
   const [trackerId, setTrackerId] = useState('');
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
@@ -164,6 +149,22 @@ export default function IssueNewPage() {
   const [formError, setFormError] = useState('');
   const didDefaultAssignee = useRef(false);
   const canCreateIssue = Boolean(project?.permissions?.canCreateIssue);
+
+  const trackers = useMemo(
+    () =>
+      (project?.projectTrackers ?? [])
+        .map((pt) => pt.tracker)
+        .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)),
+    [project?.projectTrackers],
+  );
+  const currentTracker = useMemo(() => trackers.find((tr) => tr.id === trackerId), [trackers, trackerId]);
+  const fieldEnabled = (key: StandardFieldKey) => isStandardFieldEnabled(currentTracker, key);
+  const fieldRequired = (key: StandardFieldKey) => isStandardFieldRequired(currentTracker, key);
+  const statuses = statusesQuery.data?.data ?? [];
+  const members = membersQuery.data?.data ?? [];
+  const categories = categoriesQuery.data?.data ?? [];
+  const projectIssues = (projectIssuesQuery.data?.data ?? []) as Issue[];
+
   const customFieldsQuery = useIssueCustomFields(project?.id ?? '', trackerId);
 
   const assigneeOptions = useMemo(() => {

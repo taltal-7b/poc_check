@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -11,6 +13,7 @@ from typing import Iterable
 DEFAULT_INPUT_FILE = Path("logs/chat_events.jsonl")
 DEFAULT_INPUT_DIR = Path("logs/chat_events")
 DEFAULT_OUTPUT_DIR = Path("reports")
+CODEX_IMPORT_SCRIPT = Path(".cursor/hooks/chat_timestamp_logger.py")
 
 
 @dataclass
@@ -71,6 +74,28 @@ def resolve_input_path(day: date, override: str | None) -> Path:
     if daily_path.exists():
         return daily_path
     return DEFAULT_INPUT_FILE
+
+
+def import_codex_events(day: date) -> None:
+    if not CODEX_IMPORT_SCRIPT.exists():
+        return
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                str(CODEX_IMPORT_SCRIPT),
+                "--event",
+                "importCodexSessions",
+                "--date",
+                day.isoformat(),
+            ],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return
 
 
 def event_date(event: Event) -> date | None:
@@ -187,9 +212,13 @@ def main() -> int:
     parser.add_argument("--input", default=None, help="Input JSONL path (optional)")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Output directory")
     parser.add_argument("--gap-minutes", type=int, default=30, help="Idle gap threshold in minutes")
+    parser.add_argument("--skip-codex-import", action="store_true", help="Skip importing Codex extension sessions")
     args = parser.parse_args()
 
     day = date.fromisoformat(args.date)
+    if not args.skip_codex_import and not args.input:
+        import_codex_events(day)
+
     input_path = resolve_input_path(day, args.input)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
