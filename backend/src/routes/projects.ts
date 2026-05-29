@@ -16,6 +16,9 @@ import { z } from 'zod';
 
 const router = Router({ mergeParams: true });
 
+const PROJECT_STATUS_ACTIVE = 1;
+const PROJECT_STATUS_ARCHIVED = 5;
+
 const DEFAULT_ENABLED_MODULES = [
   'issue_tracking',
   'time_tracking',
@@ -44,6 +47,12 @@ async function resolveProjectRef(ref: string) {
     },
   });
   return project;
+}
+
+function assertProjectReadable(project: { status: number }) {
+  if (project.status === PROJECT_STATUS_ARCHIVED) {
+    throw AppError.forbidden('アーカイブされたプロジェクトの情報は参照できません');
+  }
 }
 
 async function userCanAccessProject(
@@ -1420,6 +1429,7 @@ router.post(
     const project = await resolveProjectRef(req.params.id);
     if (!project) throw AppError.notFound('プロジェクトが見つかりません');
 
+    assertProjectReadable(project);
     const canUseAiActions = await userIsProjectMember(req.user?.userId, project.id);
     if (!canUseAiActions) throw AppError.forbidden();
 
@@ -1441,6 +1451,7 @@ router.post(
     const project = await resolveProjectRef(req.params.id);
     if (!project) throw AppError.notFound('プロジェクトが見つかりません');
 
+    assertProjectReadable(project);
     const canUseAiActions = await userIsProjectMember(req.user?.userId, project.id);
     if (!canUseAiActions) throw AppError.forbidden();
     const issueTrackingEnabled = await prisma.enabledModule.count({
@@ -1468,6 +1479,7 @@ router.post(
     const project = await resolveProjectRef(req.params.id);
     if (!project) throw AppError.notFound('プロジェクトが見つかりません');
 
+    assertProjectReadable(project);
     const canUseAiActions = await userIsProjectMember(req.user?.userId, project.id);
     if (!canUseAiActions) throw AppError.forbidden();
     const issueTrackingEnabled = await prisma.enabledModule.count({
@@ -1501,6 +1513,7 @@ router.post(
     const project = await resolveProjectRef(req.params.id);
     if (!project) throw AppError.notFound('プロジェクトが見つかりません');
 
+    assertProjectReadable(project);
     const canUseAiActions = await userIsProjectMember(req.user?.userId, project.id);
     if (!canUseAiActions) throw AppError.forbidden();
     const issueTrackingEnabled = await prisma.enabledModule.count({
@@ -1682,6 +1695,14 @@ router.put(
       throw AppError.badRequest(parsed.error.flatten().formErrors.join('; ') || '入力が不正です');
     }
     const body = parsed.data;
+
+    if (current.status !== PROJECT_STATUS_ACTIVE) {
+      const keys = Object.keys(body);
+      const isReactivationOnly = keys.length === 1 && body.status === PROJECT_STATUS_ACTIVE;
+      if (!isReactivationOnly) {
+        throw AppError.forbidden('有効ではないプロジェクトは再開・解除以外の更新はできません');
+      }
+    }
 
     if (body.identifier && body.identifier !== current.identifier) {
       const taken = await prisma.project.findUnique({ where: { identifier: body.identifier } });

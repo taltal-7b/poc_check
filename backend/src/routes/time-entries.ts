@@ -10,6 +10,8 @@ import { hasAnyProjectPermission } from '../utils/project-permissions';
 
 const router = Router({ mergeParams: true });
 
+const PROJECT_STATUS_ARCHIVED = 5;
+
 const createBodySchema = z.object({
   projectId: z.string().uuid().optional(),
   userId: z.string().uuid().optional(),
@@ -21,6 +23,7 @@ const createBodySchema = z.object({
 });
 
 const updateBodySchema = z.object({
+  userId: z.string().uuid().optional(),
   issueId: z.string().uuid().nullable().optional(),
   hours: z.number().positive().optional(),
   activityId: z.string().min(1).optional(),
@@ -102,11 +105,20 @@ function isoWeekKey(d: Date): string {
   return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }
 
+async function projectIsArchived(projectId: string): Promise<boolean> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { status: true },
+  });
+  return project?.status === PROJECT_STATUS_ARCHIVED;
+}
+
 async function userCanEditTimeEntry(
   userId: string | undefined,
   isAdmin: boolean | undefined,
   entry: { userId: string; projectId: string },
 ): Promise<boolean> {
+  if (await projectIsArchived(entry.projectId)) return false;
   if (isAdmin) return true;
   if (!userId) return false;
   if (entry.userId === userId) {
@@ -120,6 +132,7 @@ async function userCanDeleteTimeEntry(
   isAdmin: boolean | undefined,
   entry: { userId: string; projectId: string },
 ): Promise<boolean> {
+  if (await projectIsArchived(entry.projectId)) return false;
   if (isAdmin) return true;
   if (!userId) return false;
   if (entry.userId === userId) {
@@ -393,6 +406,10 @@ router.post(
       const project = await prisma.project.findUnique({ where: { id: projectId } });
       if (!project) throw AppError.notFound('プロジェクトが見つかりません');
 
+      if (project.status === PROJECT_STATUS_ARCHIVED) {
+        throw AppError.forbidden('アーカイブされたプロジェクトの情報は更新できません');
+      }
+
       const isOwnEntry = targetUserId === req.user!.userId;
       const canCreateTimeEntry = await hasAnyProjectPermission(
         req.user?.userId,
@@ -467,6 +484,20 @@ router.put(
       }
       if (body.spentOn !== undefined) data.spentOn = body.spentOn;
       if (body.issueId !== undefined) data.issue = body.issueId ? { connect: { id: body.issueId } } : { disconnect: true };
+      if (body.userId !== undefined) {
+        const isOwnEntry = body.userId === req.user!.userId;
+        const canChangeUser = await hasAnyProjectPermission(
+          req.user?.userId,
+          req.user?.admin,
+          existing.projectId,
+          isOwnEntry ? ['log_time', 'edit_time_entries'] : ['edit_time_entries'],
+        );
+        if (!canChangeUser) throw AppError.forbidden();
+
+        const targetUser = await prisma.user.findUnique({ where: { id: body.userId } });
+        if (!targetUser) throw AppError.badRequest('ユーザーが存在しません');
+        data.user = { connect: { id: body.userId } };
+      }
 
       if (body.activityId) {
         const activity = await prisma.enumeration.findFirst({

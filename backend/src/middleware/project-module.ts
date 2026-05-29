@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 
+const PROJECT_STATUS_ARCHIVED = 5;
+
 function param(req: Request, key: string): string | undefined {
   const v = req.params[key];
   if (typeof v === 'string' && v.length > 0) return v;
@@ -22,11 +24,16 @@ export function requireProjectModule(moduleName: string) {
           OR: [{ id: ref }, { identifier: ref }],
         },
         select: {
+          status: true,
           enabledModules: { select: { name: true } },
         },
       });
       if (!project) {
         return next(AppError.notFound('プロジェクトが見つかりません'));
+      }
+
+      if (project.status === PROJECT_STATUS_ARCHIVED) {
+        return next(AppError.forbidden('Archived projects can only be accessed from settings'));
       }
 
       const enabled = project.enabledModules.some((m) => m.name === moduleName);

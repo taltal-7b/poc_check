@@ -19,14 +19,20 @@ const tabs = [
   { key: 'settings', suffix: 'settings', labelKey: 'nav.settings', moduleKey: null },
 ] as const;
 
+const STATUS_ARCHIVED = 5;
+
 export default function ProjectSubNav({ identifier }: { identifier: string }) {
   const { t } = useTranslation();
   const location = useLocation();
   const base = `/projects/${identifier}`;
   const projectQuery = useProject(identifier);
-  const enabledModules = new Set((projectQuery.data?.data.enabledModules ?? []).map((m) => m.name));
-  const visibleTabs = projectQuery.isLoading || !projectQuery.data?.data
+  const project = projectQuery.data?.data;
+  const enabledModules = new Set((project?.enabledModules ?? []).map((m) => m.name));
+  const settingsTab = tabs.find((tab) => tab.key === 'settings');
+  const visibleTabs = projectQuery.isLoading || !project
     ? tabs
+    : project.status === STATUS_ARCHIVED
+      ? settingsTab ? [settingsTab] : []
     : tabs.filter((tab) => !tab.moduleKey || enabledModules.has(tab.moduleKey));
 
   return (

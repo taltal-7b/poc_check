@@ -53,6 +53,12 @@ export default function AppSelect({
     onChange(options[next].value);
   };
 
+  const commitValue = (nextValue: string) => {
+    onChange(nextValue);
+    setOpen(false);
+    requestAnimationFrame(() => rootRef.current?.querySelector('button')?.blur());
+  };
+
   return (
     <div ref={rootRef} className="relative">
       <button
@@ -78,7 +84,11 @@ export default function AppSelect({
             else moveSelection(-1);
           } else if (event.key === 'Escape') {
             setOpen(false);
-          } else if (event.key === 'Enter' || event.key === ' ') {
+          } else if (event.key === 'Enter') {
+            event.preventDefault();
+            if (open && selected) commitValue(selected.value);
+            else setOpen(true);
+          } else if (event.key === ' ') {
             event.preventDefault();
             setOpen((current) => !current);
           }
@@ -102,9 +112,9 @@ export default function AppSelect({
                 <li key={option.value || '__empty'} id={optionId} role="option" aria-selected={isSelected}>
                   <button
                     type="button"
-                    onClick={() => {
-                      onChange(option.value);
-                      setOpen(false);
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      commitValue(option.value);
                     }}
                     style={{
                       backgroundColor: isSelected ? '#eff6ff' : '#ffffff',

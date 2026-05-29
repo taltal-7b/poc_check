@@ -2,6 +2,8 @@ import { prisma } from './db';
 import { AppError } from './errors';
 import { getUserGroupIds, hasAnyProjectPermission } from './project-permissions';
 
+const PROJECT_STATUS_ARCHIVED = 5;
+
 export type ProjectAccessUser = {
   userId: string;
   admin: boolean;
@@ -15,16 +17,17 @@ export async function resolveProjectRef(ref: string | undefined) {
   if (!ref) return null;
   return prisma.project.findFirst({
     where: { OR: [{ id: ref }, { identifier: ref }] },
-    select: { id: true, isPublic: true, createdByUserId: true },
+    select: { id: true, identifier: true, status: true, isPublic: true, createdByUserId: true },
   });
 }
 
 export async function userCanViewProject(
   user: ProjectAccessUser,
-  project: { id: string; isPublic: boolean },
+  project: { id: string; isPublic: boolean; status?: number },
   permissions: string[],
   options?: ProjectViewOptions,
 ): Promise<boolean> {
+  if (project.status === PROJECT_STATUS_ARCHIVED) return false;
   if (user?.admin) return true;
   if (options?.allowPublic !== false && project.isPublic) return true;
   if (!user?.userId) return false;
@@ -49,12 +52,18 @@ export async function readableProjectIds(
   permissions: string[],
   options?: ProjectViewOptions,
 ) {
-  if (user?.admin) return null as string[] | null;
+  if (user?.admin) {
+    const rows = await prisma.project.findMany({
+      where: { status: { not: PROJECT_STATUS_ARCHIVED } },
+      select: { id: true },
+    });
+    return rows.map((row) => row.id);
+  }
 
   if (!user?.userId) {
     if (options?.allowPublic === false) return [];
     const rows = await prisma.project.findMany({
-      where: { isPublic: true },
+      where: { isPublic: true, status: { not: PROJECT_STATUS_ARCHIVED } },
       select: { id: true },
     });
     return rows.map((row) => row.id);
@@ -77,7 +86,7 @@ export async function readableProjectIds(
         },
       ],
     },
-    select: { id: true, isPublic: true },
+    select: { id: true, isPublic: true, status: true },
   });
 
   const ids: string[] = [];
@@ -117,7 +126,7 @@ export async function userCanAccessAttachment(
   if (attachment.issueId) {
     const issue = await prisma.issue.findUnique({
       where: { id: attachment.issueId },
-      select: { project: { select: { id: true, isPublic: true } } },
+      select: { project: { select: { id: true, isPublic: true, status: true } } },
     });
     return issue ? userCanViewProject(user, issue.project, ['view_issues']) : false;
   }
@@ -125,7 +134,7 @@ export async function userCanAccessAttachment(
   if (attachment.documentId) {
     const document = await prisma.document.findUnique({
       where: { id: attachment.documentId },
-      select: { project: { select: { id: true, isPublic: true } } },
+      select: { project: { select: { id: true, isPublic: true, status: true } } },
     });
     return document ? userCanViewProject(user, document.project, ['view_documents']) : false;
   }
@@ -133,7 +142,7 @@ export async function userCanAccessAttachment(
   if (attachment.journalId) {
     const journal = await prisma.journal.findUnique({
       where: { id: attachment.journalId },
-      select: { issue: { select: { project: { select: { id: true, isPublic: true } } } } },
+      select: { issue: { select: { project: { select: { id: true, isPublic: true, status: true } } } } },
     });
     return journal ? userCanViewProject(user, journal.issue.project, ['view_issues']) : false;
   }
@@ -142,7 +151,7 @@ export async function userCanAccessAttachment(
     if (attachment.containerType === 'News') {
       const news = await prisma.news.findUnique({
         where: { id: attachment.containerId },
-        select: { project: { select: { id: true, isPublic: true } } },
+        select: { project: { select: { id: true, isPublic: true, status: true } } },
       });
       return news ? userCanViewProject(user, news.project, ['view_news']) : false;
     }
@@ -150,7 +159,7 @@ export async function userCanAccessAttachment(
     if (attachment.containerType === 'WikiPage') {
       const page = await prisma.wikiPage.findUnique({
         where: { id: attachment.containerId },
-        select: { wiki: { select: { project: { select: { id: true, isPublic: true } } } } },
+        select: { wiki: { select: { project: { select: { id: true, isPublic: true, status: true } } } } },
       });
       return page ? userCanViewProject(user, page.wiki.project, ['view_wiki_pages']) : false;
     }
@@ -158,7 +167,7 @@ export async function userCanAccessAttachment(
     if (attachment.containerType === 'Message') {
       const message = await prisma.message.findUnique({
         where: { id: attachment.containerId },
-        select: { board: { select: { project: { select: { id: true, isPublic: true } } } } },
+        select: { board: { select: { project: { select: { id: true, isPublic: true, status: true } } } } },
       });
       return message ? userCanViewProject(user, message.board.project, ['view_messages']) : false;
     }
@@ -184,7 +193,7 @@ export async function userCanAccessAttachment(
     if (issueCustomValue) {
       const issue = await prisma.issue.findUnique({
         where: { id: issueCustomValue.customizedId },
-        select: { project: { select: { id: true, isPublic: true } } },
+        select: { project: { select: { id: true, isPublic: true, status: true } } },
       });
       return issue ? userCanViewProject(user, issue.project, ['view_issues']) : false;
     }

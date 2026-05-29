@@ -171,7 +171,11 @@ export default function TimeEntriesPage() {
     () => activities.filter((a) => a.active !== false),
     [activities],
   );
-  const projectIssuesQuery = useProjectIssues(project?.id ?? '', { perPage: 1000 }, { enabled: !!project?.id });
+  const projectIssuesQuery = useProjectIssues(
+    project?.id ?? '',
+    { per_page: 100, sort: 'updatedAt', order: 'desc' },
+    { enabled: !!project?.id },
+  );
   const membersQuery = useMembers(project?.id ?? '');
   const projectIssues = useMemo<Issue[]>(
     () => (projectIssuesQuery.data?.data ?? []) as Issue[],
@@ -208,23 +212,27 @@ export default function TimeEntriesPage() {
     userId: '',
   });
   const [issueQuery, setIssueQuery] = useState('');
+  const [issuePickerOpen, setIssuePickerOpen] = useState(false);
   const [formError, setFormError] = useState('');
   const [editTarget, setEditTarget] = useState<TimeEntry | null>(null);
   const [editIssueQuery, setEditIssueQuery] = useState('');
+  const [editIssuePickerOpen, setEditIssuePickerOpen] = useState(false);
   const [editForm, setEditForm] = useState({
     hours: '',
     activityId: '',
     spentOn: today,
     comments: '',
     issueId: '',
+    userId: '',
   });
   const [editError, setEditError] = useState('');
 
   const filteredIssues = useMemo(() => {
     const q = issueQuery.trim().toLowerCase();
-    if (!q || form.issueId) return [];
+    if (form.issueId) return [];
     return projectIssues
       .filter((iss) => {
+        if (!q) return true;
         const number = String(iss.number ?? '');
         const subject = (iss.subject ?? '').toLowerCase();
         return number.includes(q) || subject.includes(q);
@@ -234,9 +242,10 @@ export default function TimeEntriesPage() {
 
   const filteredEditIssues = useMemo(() => {
     const q = editIssueQuery.trim().toLowerCase();
-    if (!q || editForm.issueId) return [];
+    if (editForm.issueId) return [];
     return projectIssues
       .filter((iss) => {
+        if (!q) return true;
         const number = String(iss.number ?? '');
         const subject = (iss.subject ?? '').toLowerCase();
         return number.includes(q) || subject.includes(q);
@@ -319,6 +328,7 @@ export default function TimeEntriesPage() {
   const openEdit = (row: TimeEntry) => {
     setEditTarget(row);
     setEditError('');
+    setEditIssuePickerOpen(false);
     setEditIssueQuery(row.issue ? `#${row.issue.number ?? ''} ${row.issue.subject ?? ''}`.trim() : '');
     setEditForm({
       hours: formatEstimatedEffort(Number(row.hours) || 0, 'hours'),
@@ -326,6 +336,7 @@ export default function TimeEntriesPage() {
       spentOn: row.spentOn ? format(parseISO(row.spentOn), 'yyyy-MM-dd') : today,
       comments: row.comments ?? '',
       issueId: row.issueId ?? '',
+      userId: row.userId,
     });
   };
 
@@ -335,6 +346,14 @@ export default function TimeEntriesPage() {
     const parsedHours = parseEstimatedEffort(editForm.hours, 'hours');
     if (!editForm.activityId) {
       setEditError(`${t('timeEntries.activity')} を選択してください`);
+      return;
+    }
+    if (!editForm.userId) {
+      setEditError('ユーザーを選択してください');
+      return;
+    }
+    if (!isUuid(editForm.userId)) {
+      setEditError('ユーザーIDが不正です。ユーザーを選び直してください');
       return;
     }
     if (editForm.issueId === '' && editIssueQuery.trim()) {
@@ -356,6 +375,7 @@ export default function TimeEntriesPage() {
     try {
       await updateEntry.mutateAsync({
         id: editTarget.id,
+        userId: editForm.userId,
         activityId: editForm.activityId,
         hours: parsedHours,
         spentOn: editForm.spentOn,
@@ -427,7 +447,7 @@ export default function TimeEntriesPage() {
       )}
 
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-        <label className="min-w-[9rem] text-sm">
+        <div className="min-w-[9rem] text-sm">
           <span className="mb-1 block text-gray-600">{t('timeEntries.spentOn')}</span>
           <AppSelect
             value={spentOnOperator}
@@ -445,30 +465,32 @@ export default function TimeEntriesPage() {
             ariaLabel={t('timeEntries.spentOn')}
             className="rounded border border-gray-300 px-2 py-1.5 text-sm"
           />
-        </label>
+        </div>
         {spentOnOperator === '><' && (
           <>
-            <label className="text-sm">
+            <div className="text-sm">
               <span className="mb-1 block text-gray-600">開始</span>
               <input
+                aria-label="開始"
                 type="date"
                 value={spentOnFrom}
                 onChange={(e) => setSpentOnFrom(e.target.value)}
                 className="rounded border border-gray-300 px-2 py-1.5 text-sm"
               />
-            </label>
-            <label className="text-sm">
+            </div>
+            <div className="text-sm">
               <span className="mb-1 block text-gray-600">終了</span>
               <input
+                aria-label="終了"
                 type="date"
                 value={spentOnTo}
                 onChange={(e) => setSpentOnTo(e.target.value)}
                 className="rounded border border-gray-300 px-2 py-1.5 text-sm"
               />
-            </label>
+            </div>
           </>
         )}
-        <label className="text-sm min-w-[14rem]">
+        <div className="text-sm min-w-[14rem]">
           <span className="mb-1 block text-gray-600">{t('issues.author')}</span>
           <AppSelect
             value={filterUserId}
@@ -477,8 +499,8 @@ export default function TimeEntriesPage() {
             ariaLabel={t('issues.author')}
             className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
           />
-        </label>
-        <label className="text-sm min-w-[12rem]">
+        </div>
+        <div className="text-sm min-w-[12rem]">
           <span className="mb-1 block text-gray-600">{t('timeEntries.activity')}</span>
           <AppSelect
             value={filterActivityId}
@@ -487,7 +509,7 @@ export default function TimeEntriesPage() {
             ariaLabel={t('timeEntries.activity')}
             className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
           />
-        </label>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -501,8 +523,14 @@ export default function TimeEntriesPage() {
                 </button>
               </th>
               <th className="px-4 py-3 font-medium">
+                <button type="button" onClick={() => toggleSort('issue')} className="inline-flex items-center hover:text-gray-900">
+                  {t('issues.title')}
+                  {sortIndicator('issue')}
+                </button>
+              </th>
+              <th className="px-4 py-3 font-medium">
                 <button type="button" onClick={() => toggleSort('user')} className="inline-flex items-center hover:text-gray-900">
-                  {t('issues.author')}
+                  {t('issues.assignee')}
                   {sortIndicator('user')}
                 </button>
               </th>
@@ -510,12 +538,6 @@ export default function TimeEntriesPage() {
                 <button type="button" onClick={() => toggleSort('activity')} className="inline-flex items-center hover:text-gray-900">
                   {t('timeEntries.activity')}
                   {sortIndicator('activity')}
-                </button>
-              </th>
-              <th className="px-4 py-3 font-medium">
-                <button type="button" onClick={() => toggleSort('issue')} className="inline-flex items-center hover:text-gray-900">
-                  {t('issues.title')}
-                  {sortIndicator('issue')}
                 </button>
               </th>
               <th className="px-4 py-3 font-medium">
@@ -553,10 +575,6 @@ export default function TimeEntriesPage() {
                     {row.spentOn ? format(parseISO(row.spentOn), 'yyyy-MM-dd') : '—'}
                   </td>
                   <td className="px-4 py-2">
-                    {row.user ? `${row.user.lastname} ${row.user.firstname}`.trim() || row.user.login : row.userId}
-                  </td>
-                  <td className="px-4 py-2">{row.activity?.name ?? row.activityId}</td>
-                  <td className="px-4 py-2">
                     {row.issue
                       ? (
                         <Link
@@ -568,6 +586,10 @@ export default function TimeEntriesPage() {
                       )
                       : '—'}
                   </td>
+                  <td className="px-4 py-2">
+                    {row.user ? `${row.user.lastname} ${row.user.firstname}`.trim() || row.user.login : row.userId}
+                  </td>
+                  <td className="px-4 py-2">{row.activity?.name ?? row.activityId}</td>
                   <td className="px-4 py-2">{formatEstimatedEffort(Number(row.hours), 'hours')}</td>
                   <td className="px-4 py-2 text-gray-600 max-w-xs truncate" title={row.comments ?? ''}>
                     {row.comments ?? '—'}
@@ -612,26 +634,32 @@ export default function TimeEntriesPage() {
           <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
             <DialogTitle className="text-lg font-semibold text-gray-900">{t('timeEntries.new')}</DialogTitle>
             <form className="mt-4 space-y-3">
-              <label className="block text-sm">
+              <div className="relative block text-sm">
                 <span className="text-gray-700">チケット</span>
                 <input
+                  aria-label="チケット"
                   value={issueQuery}
+                  onFocus={() => setIssuePickerOpen(true)}
+                  onBlur={() => window.setTimeout(() => setIssuePickerOpen(false), 100)}
                   onChange={(e) => {
                     setIssueQuery(e.target.value);
+                    setIssuePickerOpen(true);
                     setForm((f) => ({ ...f, issueId: '' }));
                   }}
                   placeholder="チケット番号・題名で検索"
                   className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 />
-                {filteredIssues.length > 0 && (
-                  <div className="mt-1 max-h-44 overflow-auto rounded border border-gray-200 bg-white">
+                {issuePickerOpen && filteredIssues.length > 0 && (
+                  <div className="absolute left-0 right-0 z-50 mt-1 max-h-44 overflow-auto rounded border border-gray-200 bg-white shadow-lg">
                     {filteredIssues.map((iss) => (
                       <button
                         key={iss.id}
                         type="button"
+                        onMouseDown={(event) => event.preventDefault()}
                         onClick={() => {
                           setForm((f) => ({ ...f, issueId: iss.id }));
                           setIssueQuery(`#${iss.number} ${iss.subject}`);
+                          setIssuePickerOpen(false);
                         }}
                         className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
                       >
@@ -640,9 +668,9 @@ export default function TimeEntriesPage() {
                     ))}
                   </div>
                 )}
-              </label>
+              </div>
               {canEditTimeEntries ? (
-                <label className="block text-sm">
+                <div className="block text-sm">
                   <span className="text-gray-700">ユーザー *</span>
                   <AppSelect
                     value={form.userId}
@@ -651,7 +679,7 @@ export default function TimeEntriesPage() {
                     ariaLabel="ユーザー"
                     className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
                   />
-                </label>
+                </div>
               ) : (
                 <div className="block text-sm">
                   <span className="text-gray-700">ユーザー</span>
@@ -661,19 +689,21 @@ export default function TimeEntriesPage() {
                 </div>
               )}
               <div className="grid gap-3">
-                <label className="block text-sm">
+                <div className="block text-sm">
                   <span className="text-gray-700">{t('timeEntries.spentOn')} *</span>
                   <input
+                    aria-label={t('timeEntries.spentOn')}
                     required
                     type="date"
                     value={form.spentOn}
                     onChange={(e) => setForm((f) => ({ ...f, spentOn: e.target.value }))}
                     className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
                   />
-                </label>
-                <label className="block text-sm">
+                </div>
+                <div className="block text-sm">
                   <span className="text-gray-700">{t('timeEntries.hours')} *</span>
                   <input
+                    aria-label={t('timeEntries.hours')}
                     required
                     type="text"
                     inputMode="text"
@@ -682,28 +712,29 @@ export default function TimeEntriesPage() {
                     placeholder="h:mm"
                     className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
                   />
-                </label>
+                </div>
               </div>
-              <label className="block text-sm">
+              <div className="block text-sm">
                 <span className="text-gray-700">{t('timeEntries.comment')}</span>
                 <textarea
+                  aria-label={t('timeEntries.comment')}
                   value={form.comments}
                   onChange={(e) => setForm((f) => ({ ...f, comments: e.target.value }))}
                   maxLength={255}
                   rows={3}
                   className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 />
-              </label>
-              <label className="block text-sm">
+              </div>
+              <div className="block text-sm">
                 <span className="text-gray-700">{t('timeEntries.activity')} *</span>
                 <AppSelect
                   value={form.activityId}
                   onChange={(value) => setForm((f) => ({ ...f, activityId: value }))}
-                  options={[{ value: '', label: '--- 選んでください ---' }, ...availableActivities.map((activity) => ({ value: activity.id, label: activity.name }))]}
+                  options={[{ value: '', label: '選択してください' }, ...availableActivities.map((activity) => ({ value: activity.id, label: activity.name }))]}
                   ariaLabel={t('timeEntries.activity')}
                   className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 />
-              </label>
+              </div>
               {formError && <p className="text-sm text-red-600">{formError}</p>}
               {createEntry.isError && <p className="text-sm text-red-600">{t('app.error')}</p>}
               <div className="flex justify-end gap-2 pt-2">
@@ -738,26 +769,32 @@ export default function TimeEntriesPage() {
           <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
             <DialogTitle className="text-lg font-semibold text-gray-900">{t('app.edit')}</DialogTitle>
             <form className="mt-4 space-y-3">
-              <label className="block text-sm">
+              <div className="relative block text-sm">
                 <span className="text-gray-700">チケット</span>
                 <input
+                  aria-label="チケット"
                   value={editIssueQuery}
+                  onFocus={() => setEditIssuePickerOpen(true)}
+                  onBlur={() => window.setTimeout(() => setEditIssuePickerOpen(false), 100)}
                   onChange={(e) => {
                     setEditIssueQuery(e.target.value);
+                    setEditIssuePickerOpen(true);
                     setEditForm((f) => ({ ...f, issueId: '' }));
                   }}
                   placeholder="チケット番号・題名で検索"
                   className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 />
-                {filteredEditIssues.length > 0 && (
-                  <div className="mt-1 max-h-44 overflow-auto rounded border border-gray-200 bg-white">
+                {editIssuePickerOpen && filteredEditIssues.length > 0 && (
+                  <div className="absolute left-0 right-0 z-50 mt-1 max-h-44 overflow-auto rounded border border-gray-200 bg-white shadow-lg">
                     {filteredEditIssues.map((iss) => (
                       <button
                         key={iss.id}
                         type="button"
+                        onMouseDown={(event) => event.preventDefault()}
                         onClick={() => {
                           setEditForm((f) => ({ ...f, issueId: iss.id }));
                           setEditIssueQuery(`#${iss.number} ${iss.subject}`);
+                          setEditIssuePickerOpen(false);
                         }}
                         className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
                       >
@@ -766,21 +803,42 @@ export default function TimeEntriesPage() {
                     ))}
                   </div>
                 )}
-              </label>
+              </div>
+              {canEditTimeEntries ? (
+                <div className="block text-sm">
+                  <span className="text-gray-700">ユーザー *</span>
+                  <AppSelect
+                    value={editForm.userId}
+                    onChange={(value) => setEditForm((f) => ({ ...f, userId: value }))}
+                    options={[{ value: '', label: '-' }, ...memberUserOptions]}
+                    ariaLabel="ユーザー"
+                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+              ) : (
+                <div className="block text-sm">
+                  <span className="text-gray-700">ユーザー</span>
+                  <div className="mt-1 w-full rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                    {editTarget?.user ? `${editTarget.user.lastname} ${editTarget.user.firstname}`.trim() || editTarget.user.login : currentUserLabel}
+                  </div>
+                </div>
+              )}
               <div className="grid gap-3">
-                <label className="block text-sm">
+                <div className="block text-sm">
                   <span className="text-gray-700">{t('timeEntries.spentOn')} *</span>
                   <input
+                    aria-label={t('timeEntries.spentOn')}
                     required
                     type="date"
                     value={editForm.spentOn}
                     onChange={(e) => setEditForm((f) => ({ ...f, spentOn: e.target.value }))}
                     className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
                   />
-                </label>
-                <label className="block text-sm">
+                </div>
+                <div className="block text-sm">
                   <span className="text-gray-700">{t('timeEntries.hours')} *</span>
                   <input
+                    aria-label={t('timeEntries.hours')}
                     required
                     type="text"
                     inputMode="text"
@@ -789,28 +847,29 @@ export default function TimeEntriesPage() {
                     placeholder="h:mm"
                     className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
                   />
-                </label>
+                </div>
               </div>
-              <label className="block text-sm">
+              <div className="block text-sm">
                 <span className="text-gray-700">{t('timeEntries.comment')}</span>
                 <textarea
+                  aria-label={t('timeEntries.comment')}
                   value={editForm.comments}
                   onChange={(e) => setEditForm((f) => ({ ...f, comments: e.target.value }))}
                   maxLength={255}
                   rows={3}
                   className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 />
-              </label>
-              <label className="block text-sm">
+              </div>
+              <div className="block text-sm">
                 <span className="text-gray-700">{t('timeEntries.activity')} *</span>
                 <AppSelect
                   value={editForm.activityId}
                   onChange={(value) => setEditForm((f) => ({ ...f, activityId: value }))}
-                  options={[{ value: '', label: '--- 選んでください ---' }, ...availableActivities.map((activity) => ({ value: activity.id, label: activity.name }))]}
+                  options={[{ value: '', label: '選択してください' }, ...availableActivities.map((activity) => ({ value: activity.id, label: activity.name }))]}
                   ariaLabel={t('timeEntries.activity')}
                   className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 />
-              </label>
+              </div>
               {editError && <p className="text-sm text-red-600">{editError}</p>}
               <div className="flex justify-end gap-2 pt-2">
                 <button

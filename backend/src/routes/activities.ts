@@ -7,13 +7,22 @@ import { getUserGroupIds, hasAnyProjectPermission } from '../utils/project-permi
 
 const router = Router();
 
+const PROJECT_STATUS_ARCHIVED = 5;
+
 async function getVisibleProjectIds(userId: string | undefined, isAdmin: boolean | undefined) {
-  if (isAdmin) return null as string[] | null;
+  if (isAdmin) {
+    const rows = await prisma.project.findMany({
+      where: { status: { not: PROJECT_STATUS_ARCHIVED } },
+      select: { id: true },
+    });
+    return rows.map((project) => project.id);
+  }
   if (!userId) return [];
 
   const groupIds = await getUserGroupIds(userId);
   const projects = await prisma.project.findMany({
     where: {
+      status: { not: PROJECT_STATUS_ARCHIVED },
       OR: [
         { isPublic: true },
         {

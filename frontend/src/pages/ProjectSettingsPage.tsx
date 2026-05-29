@@ -34,9 +34,10 @@ const MODULE_LABELS: Record<string, string> = {
 };
 
 const STATUS_ACTIVE = 1;
-const STATUS_ARCHIVED = 2;
+const STATUS_ARCHIVED = 5;
+const STATUS_CLOSED = 9;
 
-type ConfirmAction = 'save' | 'archive' | 'unarchive' | 'delete' | null;
+type ConfirmAction = 'save' | 'archive' | 'unarchive' | 'close' | 'reopen' | 'delete' | null;
 
 function normalizeSelectedKeys(selected: Record<string, boolean>): string[] {
   return Object.entries(selected)
@@ -156,7 +157,7 @@ export default function ProjectSettingsPage() {
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!project || !canManageProject || !hasChanges) return;
+    if (!project || !canManageProject || project.status !== STATUS_ACTIVE || !hasChanges) return;
     setConfirmAction('save');
   };
 
@@ -188,6 +189,16 @@ export default function ProjectSettingsPage() {
     setConfirmAction('unarchive');
   };
 
+  const handleClose = () => {
+    if (!project || !canManageProject) return;
+    setConfirmAction('close');
+  };
+
+  const handleReopen = () => {
+    if (!project || !canManageProject) return;
+    setConfirmAction('reopen');
+  };
+
   const handleDelete = () => {
     if (!project || !canManageProject) return;
     setConfirmAction('delete');
@@ -209,6 +220,22 @@ export default function ProjectSettingsPage() {
     );
   };
 
+  const executeClose = () => {
+    if (!project || !canManageProject) return;
+    updateMutation.mutate(
+      { id: project.id, status: STATUS_CLOSED },
+      { onSuccess: () => setConfirmAction(null) },
+    );
+  };
+
+  const executeReopen = () => {
+    if (!project || !canManageProject) return;
+    updateMutation.mutate(
+      { id: project.id, status: STATUS_ACTIVE },
+      { onSuccess: () => setConfirmAction(null) },
+    );
+  };
+
   const executeDelete = () => {
     if (!project || !canManageProject) return;
     deleteMutation.mutate(project.id, {
@@ -217,14 +244,17 @@ export default function ProjectSettingsPage() {
   };
 
   const toggleModule = (key: string) => {
+    if (!project || project.status !== STATUS_ACTIVE || !canManageProject) return;
     setEnabledModules((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const toggleTracker = (tid: string) => {
+    if (!project || project.status !== STATUS_ACTIVE || !canManageProject) return;
     setSelectedTrackerIds((prev) => ({ ...prev, [tid]: !prev[tid] }));
   };
 
   const toggleCustomField = (fieldId: string) => {
+    if (!project || project.status !== STATUS_ACTIVE || !canManageProject) return;
     setSelectedCustomFieldIds((prev) => ({ ...prev, [fieldId]: !prev[fieldId] }));
   };
 
@@ -236,6 +266,11 @@ export default function ProjectSettingsPage() {
     );
   }
 
+  const isActiveProject = project.status === STATUS_ACTIVE;
+  const isArchivedProject = project.status === STATUS_ARCHIVED;
+  const isClosedProject = project.status === STATUS_CLOSED;
+  const canEditProjectFields = canManageProject && isActiveProject;
+
   return (
     <div className="space-y-6">
       {identifier && <ProjectSubNav identifier={identifier} />}
@@ -246,13 +281,22 @@ export default function ProjectSettingsPage() {
           このプロジェクト設定を変更する権限がありません。
         </p>
       )}
+      {canManageProject && !isActiveProject && (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          {isArchivedProject
+            ? 'このプロジェクトはアーカイブされています。情報の参照・更新はできません。アーカイブ解除のみ可能です。'
+            : 'このプロジェクトはクローズされています。情報の参照は可能ですが、更新はできません。再開のみ可能です。'}
+        </p>
+      )}
       <form onSubmit={handleSave} className="space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <fieldset disabled={!canManageProject} className="space-y-6">
+        {!isArchivedProject && (
+        <fieldset disabled={!canEditProjectFields} className="space-y-6">
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">{t('projects.name')}</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
+            disabled={!canEditProjectFields}
             required
             className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
           />
@@ -262,6 +306,7 @@ export default function ProjectSettingsPage() {
           <input
             value={slug}
             onChange={(e) => setSlug(e.target.value)}
+            disabled={!canEditProjectFields}
             required
             className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
           />
@@ -271,6 +316,7 @@ export default function ProjectSettingsPage() {
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            disabled={!canEditProjectFields}
             rows={4}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
           />
@@ -281,6 +327,7 @@ export default function ProjectSettingsPage() {
             type="checkbox"
             checked={isPublic}
             onChange={(e) => setIsPublic(e.target.checked)}
+            disabled={!canEditProjectFields}
             className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
           />
           <label htmlFor="settings-isPublic" className="text-sm text-slate-700">
@@ -297,7 +344,7 @@ export default function ProjectSettingsPage() {
               ...projects.filter((p) => p.id !== project.id).map((p) => ({ value: p.id, label: `${p.name} (${p.identifier})` })),
             ]}
             ariaLabel={t('projects.parent')}
-            disabled={!canManageProject}
+            disabled={!canEditProjectFields}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
           />
         </div>
@@ -310,6 +357,7 @@ export default function ProjectSettingsPage() {
                   type="checkbox"
                   checked={!!enabledModules[m]}
                   onChange={() => toggleModule(m)}
+                  disabled={!canEditProjectFields}
                   className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                 />
                 <span className="text-sm">{MODULE_LABELS[m] ?? m}</span>
@@ -345,6 +393,7 @@ export default function ProjectSettingsPage() {
                   type="checkbox"
                   checked={!!selectedTrackerIds[tr.id]}
                   onChange={() => toggleTracker(tr.id)}
+                  disabled={!canEditProjectFields}
                   className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                 />
                 {tr.name}
@@ -362,6 +411,7 @@ export default function ProjectSettingsPage() {
                     type="checkbox"
                     checked={!!selectedCustomFieldIds[field.id]}
                     onChange={() => toggleCustomField(field.id)}
+                    disabled={!canEditProjectFields}
                     className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                   />
                   {field.name}
@@ -371,16 +421,19 @@ export default function ProjectSettingsPage() {
           </fieldset>
         )}
         </fieldset>
+        )}
         {canManageProject && (
         <div className="flex flex-wrap gap-3">
-          <button
-            type="submit"
-            disabled={updateMutation.isPending || !hasChanges}
-            className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60"
-          >
-            {updateMutation.isPending ? t('app.loading') : t('app.save')}
-          </button>
-          {project.status === STATUS_ARCHIVED ? (
+          {!isArchivedProject && (
+            <button
+              type="submit"
+              disabled={updateMutation.isPending || !hasChanges || !canEditProjectFields}
+              className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60"
+            >
+              {updateMutation.isPending ? t('app.loading') : t('app.save')}
+            </button>
+          )}
+          {isArchivedProject ? (
             <button
               type="button"
               onClick={handleUnarchive}
@@ -389,6 +442,7 @@ export default function ProjectSettingsPage() {
               {t('projects.unarchive')}
             </button>
           ) : (
+            isActiveProject && (
             <button
               type="button"
               onClick={handleArchive}
@@ -396,14 +450,36 @@ export default function ProjectSettingsPage() {
             >
               {t('projects.archive')}
             </button>
+            )
           )}
-          <button
-            type="button"
-            onClick={handleDelete}
-            className="rounded-lg border border-red-300 bg-red-50 px-5 py-2 text-sm font-semibold text-red-800 hover:bg-red-100"
-          >
-            {t('app.delete')}
-          </button>
+          {isClosedProject ? (
+            <button
+              type="button"
+              onClick={handleReopen}
+              className="rounded-lg border border-emerald-300 bg-emerald-50 px-5 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100"
+            >
+              {t('projects.reopen')}
+            </button>
+          ) : (
+            isActiveProject && (
+              <button
+                type="button"
+                onClick={handleClose}
+                className="rounded-lg border border-slate-300 bg-slate-50 px-5 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100"
+              >
+                {t('projects.close')}
+              </button>
+            )
+          )}
+          {isActiveProject && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              className="rounded-lg border border-red-300 bg-red-50 px-5 py-2 text-sm font-semibold text-red-800 hover:bg-red-100"
+            >
+              {t('app.delete')}
+            </button>
+          )}
         </div>
         )}
       </form>
@@ -418,6 +494,8 @@ export default function ProjectSettingsPage() {
               {confirmAction === 'save' && '変更内容を保存します。よろしいですか？'}
               {confirmAction === 'archive' && 'このプロジェクトをアーカイブします。よろしいですか？'}
               {confirmAction === 'unarchive' && 'このプロジェクトのアーカイブを解除します。よろしいですか？'}
+              {confirmAction === 'close' && 'このプロジェクトをクローズします。よろしいですか？'}
+              {confirmAction === 'reopen' && 'このプロジェクトを再開します。よろしいですか？'}
               {confirmAction === 'delete' && 'このプロジェクトを削除します。よろしいですか？'}
             </p>
             <div className="mt-5 flex justify-end gap-3">
@@ -427,6 +505,8 @@ export default function ProjectSettingsPage() {
                   if (confirmAction === 'save') executeSave();
                   if (confirmAction === 'archive') executeArchive();
                   if (confirmAction === 'unarchive') executeUnarchive();
+                  if (confirmAction === 'close') executeClose();
+                  if (confirmAction === 'reopen') executeReopen();
                   if (confirmAction === 'delete') executeDelete();
                 }}
                 disabled={updateMutation.isPending || deleteMutation.isPending}

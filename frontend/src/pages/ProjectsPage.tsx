@@ -1,9 +1,8 @@
-import { useMemo, useState, type MouseEvent } from 'react';
+import { useMemo, type MouseEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
-import { Pencil, Rss, Trash2 } from 'lucide-react';
-import { useProjects, useDeleteProject, useMyProjects } from '../api/hooks';
+import { Pencil, Rss } from 'lucide-react';
+import { useMyProjects, useProjects } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 import { openAuthenticatedAtom } from '../utils/atom';
 import type { Project } from '../types';
@@ -11,8 +10,8 @@ import type { Project } from '../types';
 type Tab = 'active' | 'member' | 'archived' | 'closed' | 'all';
 
 const STATUS_ACTIVE = 1;
-const STATUS_ARCHIVED = 2;
-const STATUS_CLOSED = 3;
+const STATUS_ARCHIVED = 5;
+const STATUS_CLOSED = 9;
 
 function isTab(value: string | null): value is Tab {
   return value === 'active' || value === 'member' || value === 'archived' || value === 'closed' || value === 'all';
@@ -38,9 +37,6 @@ export default function ProjectsPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentTab = searchParams.get('tab');
   const tab: Tab = isTab(currentTab) ? currentTab : 'active';
-  const [deleteConfirm, setDeleteConfirm] = useState<Project | null>(null);
-
-  const deleteMutation = useDeleteProject();
 
   const params = useMemo(() => {
     if (tab === 'all' || tab === 'member') return undefined;
@@ -106,22 +102,6 @@ export default function ProjectsPage() {
     return project.createdByUserId === user.id;
   };
 
-  const handleDelete = async () => {
-    if (!deleteConfirm) return;
-    await deleteMutation.mutateAsync(deleteConfirm.id);
-    closeDeleteConfirm();
-  };
-
-  const openDeleteConfirm = (project: Project) => {
-    deleteMutation.reset();
-    setDeleteConfirm(project);
-  };
-
-  const closeDeleteConfirm = () => {
-    deleteMutation.reset();
-    setDeleteConfirm(null);
-  };
-
   const tabs: { key: Tab; label: string }[] = [
     { key: 'active', label: t('projects.status.active') },
     { key: 'member', label: '参加中' },
@@ -149,7 +129,7 @@ export default function ProjectsPage() {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1" style={depth > 1 ? { paddingLeft: `${(depth - 1) * 16}px` } : undefined}>
               <Link
-                to={`/projects/${project.identifier}`}
+                to={project.status === STATUS_ARCHIVED ? `/projects/${project.identifier}/settings` : `/projects/${project.identifier}`}
                 className={depth > 0 ? 'block truncate text-sm font-medium text-slate-800 hover:text-primary-600' : 'text-base font-semibold text-slate-900 hover:text-primary-600'}
               >
                 {project.name}
@@ -157,9 +137,7 @@ export default function ProjectsPage() {
               <p className={depth > 0 ? 'mt-0.5 truncate font-mono text-xs text-slate-400' : 'mt-1 font-mono text-xs text-slate-500'}>{project.identifier}</p>
               {depth === 0 && project.description && <p className="mt-2 line-clamp-3 text-sm text-slate-600">{project.description}</p>}
             </div>
-            <span
-              className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${statusBadgeClass(project.status)}`}
-            >
+            <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${statusBadgeClass(project.status)}`}>
               {statusLabel(t, project.status)}
             </span>
           </div>
@@ -167,19 +145,12 @@ export default function ProjectsPage() {
           {canManage && (
             <div className={depth > 0 ? 'mt-2 flex items-center gap-2' : 'mt-3 flex items-center gap-2 border-t border-slate-200 pt-3'} style={depth > 1 ? { paddingLeft: `${(depth - 1) * 16}px` } : undefined}>
               <Link
-                to={`/projects/${project.identifier}/edit`}
+                to={`/projects/${project.identifier}/settings`}
                 className="inline-flex h-8 w-auto items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 <Pencil className="h-4 w-4" />
                 {t('app.edit')}
               </Link>
-              <button
-                type="button"
-                onClick={() => openDeleteConfirm(project)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
             </div>
           )}
 
@@ -239,47 +210,16 @@ export default function ProjectsPage() {
 
       {tab !== 'member' && (
         <div className="flex justify-end pt-2">
-        <a
-          href={atomUrl}
-          onClick={openAtom}
-          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-        >
-          <Rss className="h-4 w-4" />
-          Atom
-        </a>
+          <a
+            href={atomUrl}
+            onClick={openAtom}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            <Rss className="h-4 w-4" />
+            Atom
+          </a>
         </div>
       )}
-
-      <Dialog open={!!deleteConfirm} onClose={closeDeleteConfirm} className="relative z-50">
-        <div className="fixed inset-0 bg-black/30" aria-hidden />
-        <div className="fixed inset-0 flex items-center justify-center p-4">
-          <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <DialogTitle className="text-lg font-semibold text-slate-900">確認</DialogTitle>
-            <p className="mt-2 text-sm text-slate-600">
-              <span className="font-semibold text-slate-800">{deleteConfirm?.name}</span>
-              {' '}を削除します。よろしいですか？
-            </p>
-            {deleteMutation.isError && <p className="mt-4 text-sm text-red-600">{t('app.error')}</p>}
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={closeDeleteConfirm}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                {t('app.cancel')}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleDelete()}
-                disabled={deleteMutation.isPending}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                {t('app.delete')}
-              </button>
-            </div>
-          </DialogPanel>
-        </div>
-      </Dialog>
     </div>
   );
 }

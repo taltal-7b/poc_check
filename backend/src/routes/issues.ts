@@ -15,6 +15,8 @@ import { z } from 'zod';
 
 const router = Router({ mergeParams: true });
 
+const PROJECT_STATUS_ARCHIVED = 5;
+
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 function dispatchIssueNotification(
@@ -540,8 +542,9 @@ async function assertAssignableToProject(
 async function userCanAccessProject(
   userId: string | undefined,
   isAdmin: boolean | undefined,
-  project: { id: string; isPublic: boolean },
+  project: { id: string; isPublic: boolean; status?: number },
 ): Promise<boolean> {
+  if (project.status === PROJECT_STATUS_ARCHIVED) return false;
   if (isAdmin) return true;
   if (!userId) return project.isPublic;
   const can = await hasAnyProjectPermission(userId, isAdmin, project.id, ['view_issues']);
@@ -607,10 +610,16 @@ async function resolveProjectId(ref: string | undefined): Promise<string | undef
 }
 
 async function getVisibleProjectIds(userId: string | undefined, isAdmin: boolean | undefined) {
-  if (isAdmin) return null as string[] | null;
+  if (isAdmin) {
+    const rows = await prisma.project.findMany({
+      where: { status: { not: PROJECT_STATUS_ARCHIVED } },
+      select: { id: true },
+    });
+    return rows.map((p) => p.id);
+  }
   if (!userId) {
     const pub = await prisma.project.findMany({
-      where: { isPublic: true },
+      where: { isPublic: true, status: { not: PROJECT_STATUS_ARCHIVED } },
       select: { id: true },
     });
     return pub.map((p) => p.id);
@@ -618,6 +627,7 @@ async function getVisibleProjectIds(userId: string | undefined, isAdmin: boolean
   const groupIds = await getUserGroupIds(userId);
   const rows = await prisma.project.findMany({
     where: {
+      status: { not: PROJECT_STATUS_ARCHIVED },
       OR: [
         { isPublic: true },
         {
@@ -629,7 +639,7 @@ async function getVisibleProjectIds(userId: string | undefined, isAdmin: boolean
         },
       ],
     },
-    select: { id: true, isPublic: true },
+    select: { id: true, isPublic: true, status: true },
   });
   const visible: string[] = [];
   for (const p of rows) {
@@ -1475,6 +1485,14 @@ router.post(
       if (!canEdit) throw AppError.forbidden('チケットを編集する権限がありません');
 
       const effectiveProjectId = changes.projectId ?? oldIssue.projectId;
+      if (changes.projectId !== undefined && changes.projectId !== oldIssue.projectId) {
+        const targetProject = await prisma.project.findUnique({ where: { id: changes.projectId } });
+        if (!targetProject) throw AppError.badRequest('繝励Ο繧ｸ繧ｧ繧ｯ繝医′蟄伜惠縺励∪縺帙ｓ');
+        const canAccessTarget = await userCanAccessProject(req.user?.userId, req.user?.admin, targetProject);
+        if (!canAccessTarget) throw AppError.forbidden();
+        const canCreateInTarget = await userCanCreateIssue(req.user?.userId, req.user?.admin, targetProject);
+        if (!canCreateInTarget) throw AppError.forbidden('繝√こ繝・ヨ繧剃ｽ懈・縺吶ｋ讓ｩ髯舌′縺ゅｊ縺ｾ縺帙ｓ');
+      }
       if (changes.parentId !== undefined || changes.projectId !== undefined) {
         const effectiveParentId = changes.parentId !== undefined ? changes.parentId : oldIssue.parentId;
         await assertValidIssueParent(id, effectiveProjectId, effectiveParentId);
@@ -2142,6 +2160,14 @@ router.put(
     const st = await prisma.issueStatus.findUnique({ where: { id: nextStatusId } });
     const effectiveProjectId = body.projectId ?? oldIssue.projectId;
     const effectiveTrackerId = body.trackerId ?? oldIssue.trackerId;
+    if (body.projectId !== undefined && body.projectId !== oldIssue.projectId) {
+      const targetProject = await prisma.project.findUnique({ where: { id: body.projectId } });
+      if (!targetProject) throw AppError.badRequest('繝励Ο繧ｸ繧ｧ繧ｯ繝医′蟄伜惠縺励∪縺帙ｓ');
+      const canAccessTarget = await userCanAccessProject(req.user?.userId, req.user?.admin, targetProject);
+      if (!canAccessTarget) throw AppError.forbidden();
+      const canCreateInTarget = await userCanCreateIssue(req.user?.userId, req.user?.admin, targetProject);
+      if (!canCreateInTarget) throw AppError.forbidden('繝√こ繝・ヨ繧剃ｽ懈・縺吶ｋ讓ｩ髯舌′縺ゅｊ縺ｾ縺帙ｓ');
+    }
     if (body.parentId !== undefined || body.projectId !== undefined) {
       const effectiveParentId = body.parentId !== undefined ? body.parentId : oldIssue.parentId;
       await assertValidIssueParent(oldIssue.id, effectiveProjectId, effectiveParentId);

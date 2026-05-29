@@ -56,6 +56,8 @@ const AdminStatusesPage = lazy(() => import('./pages/admin/StatusesPage'));
 const AdminCustomFieldsPage = lazy(() => import('./pages/admin/CustomFieldsPage'));
 const AdminEnumerationsPage = lazy(() => import('./pages/admin/EnumerationsPage'));
 
+const PROJECT_STATUS_ARCHIVED = 5;
+
 function RouteLoading() {
   return <div className="flex min-h-screen items-center justify-center">読み込み中...</div>;
 }
@@ -94,8 +96,29 @@ function ProjectModuleRoute({
   if (!projectId) return <Navigate to="/projects" replace />;
   if (isLoading) return <div className="flex items-center justify-center min-h-screen">読み込み中...</div>;
 
-  const enabled = !!data?.data.enabledModules?.some((m) => m.name === moduleKey);
+  const project = data?.data;
+  if (project?.status === PROJECT_STATUS_ARCHIVED) {
+    return <Navigate to={`/projects/${project.identifier ?? projectId}/settings`} replace />;
+  }
+
+  const enabled = !!project?.enabledModules?.some((m) => m.name === moduleKey);
   if (!enabled) return <Navigate to={`/projects/${projectId}`} replace />;
+
+  return <>{children}</>;
+}
+
+function ProjectSettingsOnlyRoute({ children }: { children: React.ReactNode }) {
+  const { identifier } = useParams<{ identifier?: string }>();
+  const projectId = identifier ?? '';
+  const { data, isLoading } = useProject(projectId);
+
+  if (!projectId) return <Navigate to="/projects" replace />;
+  if (isLoading) return <div className="flex items-center justify-center min-h-screen">読み込み中...</div>;
+
+  const project = data?.data;
+  if (project?.status === PROJECT_STATUS_ARCHIVED) {
+    return <Navigate to={`/projects/${project.identifier ?? projectId}/settings`} replace />;
+  }
 
   return <>{children}</>;
 }
@@ -144,13 +167,13 @@ export default function App() {
         <Route index element={<MyPagePage />} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/new" element={<AdminRoute><ProjectNewPage /></AdminRoute>} />
-        <Route path="projects/:identifier/edit" element={<ProjectNewPage isEdit />} />
-        <Route path="projects/:identifier" element={<ProjectDetailPage />} />
+        <Route path="projects/:identifier/edit" element={<ProjectSettingsOnlyRoute><ProjectNewPage isEdit /></ProjectSettingsOnlyRoute>} />
+        <Route path="projects/:identifier" element={<ProjectSettingsOnlyRoute><ProjectDetailPage /></ProjectSettingsOnlyRoute>} />
         <Route path="projects/:identifier/settings" element={<ProjectSettingsPage />} />
         <Route path="projects/:identifier/issues" element={<ProjectModuleRoute moduleKey="issue_tracking"><IssuesPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/issues/board" element={<ProjectModuleRoute moduleKey="issue_tracking"><IssueBoardPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/issues/new" element={<ProjectModuleRoute moduleKey="issue_tracking"><IssueCreateRoute><IssueNewPage /></IssueCreateRoute></ProjectModuleRoute>} />
-        <Route path="projects/:identifier/issues/:issueId" element={<IssueDetailPage />} />
+        <Route path="projects/:identifier/issues/:issueId" element={<ProjectSettingsOnlyRoute><IssueDetailPage /></ProjectSettingsOnlyRoute>} />
         <Route path="projects/:identifier/time_entries" element={<ProjectModuleRoute moduleKey="time_tracking"><TimeEntriesPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/wiki" element={<ProjectModuleRoute moduleKey="wiki"><WikiPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/wiki/:title" element={<ProjectModuleRoute moduleKey="wiki"><WikiPage /></ProjectModuleRoute>} />
@@ -175,8 +198,8 @@ export default function App() {
         <Route path="projects/:identifier/files" element={<ProjectModuleRoute moduleKey="files"><FilesPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/gantt" element={<ProjectModuleRoute moduleKey="gantt"><GanttPage /></ProjectModuleRoute>} />
         <Route path="projects/:identifier/calendar" element={<ProjectModuleRoute moduleKey="calendar"><CalendarPage /></ProjectModuleRoute>} />
-        <Route path="projects/:identifier/members" element={<MembersPage />} />
-        <Route path="projects/:identifier/activity" element={<ActivityPage />} />
+        <Route path="projects/:identifier/members" element={<ProjectSettingsOnlyRoute><MembersPage /></ProjectSettingsOnlyRoute>} />
+        <Route path="projects/:identifier/activity" element={<ProjectSettingsOnlyRoute><ActivityPage /></ProjectSettingsOnlyRoute>} />
 
         <Route path="issues" element={<IssuesPage />} />
         <Route path="issues/:issueId" element={<IssueDetailPage />} />
