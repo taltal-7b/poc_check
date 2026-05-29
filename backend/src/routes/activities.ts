@@ -8,11 +8,12 @@ import { getUserGroupIds, hasAnyProjectPermission } from '../utils/project-permi
 const router = Router();
 
 const PROJECT_STATUS_ARCHIVED = 5;
+const LEGACY_PROJECT_STATUS_ARCHIVED = 2;
 
 async function getVisibleProjectIds(userId: string | undefined, isAdmin: boolean | undefined) {
   if (isAdmin) {
     const rows = await prisma.project.findMany({
-      where: { status: { not: PROJECT_STATUS_ARCHIVED } },
+      where: { status: { notIn: [PROJECT_STATUS_ARCHIVED, LEGACY_PROJECT_STATUS_ARCHIVED] } },
       select: { id: true },
     });
     return rows.map((project) => project.id);
@@ -22,7 +23,7 @@ async function getVisibleProjectIds(userId: string | undefined, isAdmin: boolean
   const groupIds = await getUserGroupIds(userId);
   const projects = await prisma.project.findMany({
     where: {
-      status: { not: PROJECT_STATUS_ARCHIVED },
+      status: { notIn: [PROJECT_STATUS_ARCHIVED, LEGACY_PROJECT_STATUS_ARCHIVED] },
       OR: [
         { isPublic: true },
         {

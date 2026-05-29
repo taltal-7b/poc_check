@@ -12,20 +12,22 @@ type Tab = 'active' | 'member' | 'archived' | 'closed' | 'all';
 const STATUS_ACTIVE = 1;
 const STATUS_ARCHIVED = 5;
 const STATUS_CLOSED = 9;
+const LEGACY_STATUS_ARCHIVED = 2;
+const LEGACY_STATUS_CLOSED = 3;
 
 function isTab(value: string | null): value is Tab {
   return value === 'active' || value === 'member' || value === 'archived' || value === 'closed' || value === 'all';
 }
 
 function statusLabel(t: (k: string) => string, status: number) {
-  if (status === STATUS_ARCHIVED) return t('projects.status.archived');
-  if (status === STATUS_CLOSED) return t('projects.status.closed');
+  if (status === STATUS_ARCHIVED || status === LEGACY_STATUS_ARCHIVED) return t('projects.status.archived');
+  if (status === STATUS_CLOSED || status === LEGACY_STATUS_CLOSED) return t('projects.status.closed');
   return t('projects.status.active');
 }
 
 function statusBadgeClass(status: number) {
-  if (status === STATUS_ARCHIVED) return 'bg-amber-100 text-amber-800 ring-amber-600/20';
-  if (status === STATUS_CLOSED) return 'bg-slate-200 text-slate-700 ring-slate-600/10';
+  if (status === STATUS_ARCHIVED || status === LEGACY_STATUS_ARCHIVED) return 'bg-amber-100 text-amber-800 ring-amber-600/20';
+  if (status === STATUS_CLOSED || status === LEGACY_STATUS_CLOSED) return 'bg-slate-200 text-slate-700 ring-slate-600/10';
   return 'bg-emerald-100 text-emerald-800 ring-emerald-600/20';
 }
 
@@ -129,7 +131,7 @@ export default function ProjectsPage() {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1" style={depth > 1 ? { paddingLeft: `${(depth - 1) * 16}px` } : undefined}>
               <Link
-                to={project.status === STATUS_ARCHIVED ? `/projects/${project.identifier}/settings` : `/projects/${project.identifier}`}
+                to={project.status === STATUS_ARCHIVED || project.status === LEGACY_STATUS_ARCHIVED ? `/projects/${project.identifier}/settings` : `/projects/${project.identifier}`}
                 className={depth > 0 ? 'block truncate text-sm font-medium text-slate-800 hover:text-primary-600' : 'text-base font-semibold text-slate-900 hover:text-primary-600'}
               >
                 {project.name}

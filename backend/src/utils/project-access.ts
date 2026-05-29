@@ -3,6 +3,7 @@ import { AppError } from './errors';
 import { getUserGroupIds, hasAnyProjectPermission } from './project-permissions';
 
 const PROJECT_STATUS_ARCHIVED = 5;
+const LEGACY_PROJECT_STATUS_ARCHIVED = 2;
 
 export type ProjectAccessUser = {
   userId: string;
@@ -27,7 +28,7 @@ export async function userCanViewProject(
   permissions: string[],
   options?: ProjectViewOptions,
 ): Promise<boolean> {
-  if (project.status === PROJECT_STATUS_ARCHIVED) return false;
+  if (project.status === PROJECT_STATUS_ARCHIVED || project.status === LEGACY_PROJECT_STATUS_ARCHIVED) return false;
   if (user?.admin) return true;
   if (options?.allowPublic !== false && project.isPublic) return true;
   if (!user?.userId) return false;
@@ -54,7 +55,7 @@ export async function readableProjectIds(
 ) {
   if (user?.admin) {
     const rows = await prisma.project.findMany({
-      where: { status: { not: PROJECT_STATUS_ARCHIVED } },
+      where: { status: { notIn: [PROJECT_STATUS_ARCHIVED, LEGACY_PROJECT_STATUS_ARCHIVED] } },
       select: { id: true },
     });
     return rows.map((row) => row.id);
@@ -63,7 +64,7 @@ export async function readableProjectIds(
   if (!user?.userId) {
     if (options?.allowPublic === false) return [];
     const rows = await prisma.project.findMany({
-      where: { isPublic: true, status: { not: PROJECT_STATUS_ARCHIVED } },
+      where: { isPublic: true, status: { notIn: [PROJECT_STATUS_ARCHIVED, LEGACY_PROJECT_STATUS_ARCHIVED] } },
       select: { id: true },
     });
     return rows.map((row) => row.id);
@@ -72,6 +73,7 @@ export async function readableProjectIds(
   const groupIds = await getUserGroupIds(user.userId);
   const candidates = await prisma.project.findMany({
     where: {
+      status: { notIn: [PROJECT_STATUS_ARCHIVED, LEGACY_PROJECT_STATUS_ARCHIVED] },
       OR: [
         { isPublic: true },
         {

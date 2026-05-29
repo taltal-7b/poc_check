@@ -11,6 +11,7 @@ import { hasAnyProjectPermission } from '../utils/project-permissions';
 const router = Router({ mergeParams: true });
 
 const PROJECT_STATUS_ARCHIVED = 5;
+const LEGACY_PROJECT_STATUS_ARCHIVED = 2;
 
 const createBodySchema = z.object({
   projectId: z.string().uuid().optional(),
@@ -110,7 +111,7 @@ async function projectIsArchived(projectId: string): Promise<boolean> {
     where: { id: projectId },
     select: { status: true },
   });
-  return project?.status === PROJECT_STATUS_ARCHIVED;
+  return project?.status === PROJECT_STATUS_ARCHIVED || project?.status === LEGACY_PROJECT_STATUS_ARCHIVED;
 }
 
 async function userCanEditTimeEntry(
@@ -406,7 +407,7 @@ router.post(
       const project = await prisma.project.findUnique({ where: { id: projectId } });
       if (!project) throw AppError.notFound('プロジェクトが見つかりません');
 
-      if (project.status === PROJECT_STATUS_ARCHIVED) {
+      if (project.status === PROJECT_STATUS_ARCHIVED || project.status === LEGACY_PROJECT_STATUS_ARCHIVED) {
         throw AppError.forbidden('アーカイブされたプロジェクトの情報は更新できません');
       }
 

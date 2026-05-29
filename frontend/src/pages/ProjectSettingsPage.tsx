@@ -36,6 +36,8 @@ const MODULE_LABELS: Record<string, string> = {
 const STATUS_ACTIVE = 1;
 const STATUS_ARCHIVED = 5;
 const STATUS_CLOSED = 9;
+const LEGACY_STATUS_ARCHIVED = 2;
+const LEGACY_STATUS_CLOSED = 3;
 
 type ConfirmAction = 'save' | 'archive' | 'unarchive' | 'close' | 'reopen' | 'delete' | null;
 
@@ -44,6 +46,12 @@ function normalizeSelectedKeys(selected: Record<string, boolean>): string[] {
     .filter(([, v]) => v)
     .map(([k]) => k)
     .sort();
+}
+
+function normalizeProjectStatus(status: number) {
+  if (status === LEGACY_STATUS_ARCHIVED) return STATUS_ARCHIVED;
+  if (status === LEGACY_STATUS_CLOSED) return STATUS_CLOSED;
+  return status;
 }
 
 export default function ProjectSettingsPage() {
@@ -157,7 +165,7 @@ export default function ProjectSettingsPage() {
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!project || !canManageProject || project.status !== STATUS_ACTIVE || !hasChanges) return;
+    if (!project || !canManageProject || normalizeProjectStatus(project.status) !== STATUS_ACTIVE || !hasChanges) return;
     setConfirmAction('save');
   };
 
@@ -244,17 +252,17 @@ export default function ProjectSettingsPage() {
   };
 
   const toggleModule = (key: string) => {
-    if (!project || project.status !== STATUS_ACTIVE || !canManageProject) return;
+    if (!project || normalizeProjectStatus(project.status) !== STATUS_ACTIVE || !canManageProject) return;
     setEnabledModules((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const toggleTracker = (tid: string) => {
-    if (!project || project.status !== STATUS_ACTIVE || !canManageProject) return;
+    if (!project || normalizeProjectStatus(project.status) !== STATUS_ACTIVE || !canManageProject) return;
     setSelectedTrackerIds((prev) => ({ ...prev, [tid]: !prev[tid] }));
   };
 
   const toggleCustomField = (fieldId: string) => {
-    if (!project || project.status !== STATUS_ACTIVE || !canManageProject) return;
+    if (!project || normalizeProjectStatus(project.status) !== STATUS_ACTIVE || !canManageProject) return;
     setSelectedCustomFieldIds((prev) => ({ ...prev, [fieldId]: !prev[fieldId] }));
   };
 
@@ -266,9 +274,10 @@ export default function ProjectSettingsPage() {
     );
   }
 
-  const isActiveProject = project.status === STATUS_ACTIVE;
-  const isArchivedProject = project.status === STATUS_ARCHIVED;
-  const isClosedProject = project.status === STATUS_CLOSED;
+  const projectStatus = normalizeProjectStatus(project.status);
+  const isActiveProject = projectStatus === STATUS_ACTIVE;
+  const isArchivedProject = projectStatus === STATUS_ARCHIVED;
+  const isClosedProject = projectStatus === STATUS_CLOSED;
   const canEditProjectFields = canManageProject && isActiveProject;
 
   return (

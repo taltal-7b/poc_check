@@ -3,6 +3,7 @@ import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
 
 const PROJECT_STATUS_ARCHIVED = 5;
+const LEGACY_PROJECT_STATUS_ARCHIVED = 2;
 
 function param(req: Request, key: string): string | undefined {
   const v = req.params[key];
@@ -32,7 +33,7 @@ export function requireProjectModule(moduleName: string) {
         return next(AppError.notFound('プロジェクトが見つかりません'));
       }
 
-      if (project.status === PROJECT_STATUS_ARCHIVED) {
+      if (project.status === PROJECT_STATUS_ARCHIVED || project.status === LEGACY_PROJECT_STATUS_ARCHIVED) {
         return next(AppError.forbidden('Archived projects can only be accessed from settings'));
       }
 

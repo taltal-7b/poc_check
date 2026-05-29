@@ -52,6 +52,7 @@ function mutationErrorMessage(err: unknown, fallback: string) {
 
 const PASSWORD_MIN = 8;
 const PASSWORD_MAX = 128;
+const SYSTEM_ADMIN_LABEL = 'システム管理者';
 
 export default function UsersPage() {
   const { t } = useTranslation();
@@ -377,7 +378,7 @@ export default function UsersPage() {
       </div>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={form.admin} onChange={e => setForm(f => ({ ...f, admin: e.target.checked }))} />
-        {t('users.admin')}
+        {SYSTEM_ADMIN_LABEL}
       </label>
       {livePasswordError && <p className="text-sm text-red-600">{livePasswordError}</p>}
       {passwordError && <p className="text-sm text-red-600">{passwordError}</p>}
@@ -406,7 +407,7 @@ export default function UsersPage() {
                 <th className="px-3 py-2 text-left font-medium text-gray-600">{t('users.login')}</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-600">{t('users.name')}</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-600">{t('users.email')}</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-600">{t('users.admin')}</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-600">{SYSTEM_ADMIN_LABEL}</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-600">{t('issues.status')}</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-600">{t('users.createdAt')}</th>
                 <th className="px-3 py-2 text-right font-medium text-gray-600">{t('app.actions')}</th>
@@ -428,7 +429,7 @@ export default function UsersPage() {
                     <td className="px-3 py-2 text-gray-800">{userDisplayName(u)}</td>
                     <td className="px-3 py-2 text-gray-700">{u.mail}</td>
                     <td className="px-3 py-2">
-                      {u.admin ? <span className="rounded bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800">{t('users.admin')}</span> : <span className="text-gray-400">—</span>}
+                      {u.admin ? <span className="rounded bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800">{SYSTEM_ADMIN_LABEL}</span> : <span className="text-gray-400">—</span>}
                     </td>
                     <td className="px-3 py-2">
                       <StatusBadge status={u.status} t={t} />
