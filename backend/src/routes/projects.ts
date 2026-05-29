@@ -1445,6 +1445,32 @@ router.get(
   }),
 );
 
+router.get(
+  '/:id/issue_categories',
+  authenticate,
+  catchAsync(async (req, res) => {
+    const project = await resolveProjectRef(req.params.id);
+    if (!project) throw AppError.notFound('プロジェクトが見つかりません');
+
+    const ok = await userCanAccessProject(req.user?.userId, req.user?.admin, project);
+    if (!ok) throw AppError.forbidden();
+    assertProjectReadable(project);
+
+    const categories = await prisma.issueCategory.findMany({
+      where: { projectId: project.id },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        projectId: true,
+        assigneeId: true,
+      },
+    });
+
+    return sendSuccess(res, categories);
+  }),
+);
+
 router.post(
   '/:id/ai/progress-summary',
   authenticate,

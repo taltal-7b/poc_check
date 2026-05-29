@@ -11,7 +11,7 @@ import IssueCustomFieldInputs from '../components/IssueCustomFieldInputs';
 import WatchButton from '../components/WatchButton';
 import ProgressRangeInput from '../components/ProgressRangeInput';
 import ProjectSubNav from '../components/ProjectSubNav';
-import { useDeleteIssue, useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useUpdateJournal, useDeleteJournal, useTrackers, useStatuses, useMembers, useProjectIssues, useIssueCustomFields, useEnumerations } from '../api/hooks';
+import { useDeleteIssue, useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useUpdateJournal, useDeleteJournal, useTrackers, useStatuses, useMembers, useProjectIssues, useIssueCustomFields, useProjectIssueCategories } from '../api/hooks';
 import { AttachmentLink, AttachmentPreview } from '../components/AttachmentLink';
 import { useAuthStore } from '../stores/auth';
 import { openAuthenticatedAtom } from '../utils/atom';
@@ -243,7 +243,7 @@ export default function IssueDetailPage() {
   const trackersQuery = useTrackers();
   const statusesQuery = useStatuses();
   const membersQuery = useMembers(issue?.project?.id ?? '');
-  const categoriesQuery = useEnumerations('IssueCategory');
+  const categoriesQuery = useProjectIssueCategories(issue?.project?.id ?? '', { enabled: !!issue?.project?.id });
   const projectIssuesQuery = useProjectIssues(issue?.project?.id ?? '', { per_page: 100 }, { enabled: !!issue?.project?.id });
   const editCustomFieldsQuery = useIssueCustomFields(issue?.project?.id ?? '', form.trackerId);
   const trackers = trackersQuery.data?.data ?? [];
@@ -598,7 +598,7 @@ export default function IssueDetailPage() {
       return (detail as JournalDetail & { customFieldName?: string | null }).customFieldName || detail.propKey;
     }
     const map: Record<string, string> = {
-      subject: t('issues.subject'),
+      subject: 'チケット名',
       description: t('issues.description'),
       trackerId: t('issues.tracker'),
       statusId: t('issues.status'),
@@ -926,9 +926,20 @@ export default function IssueDetailPage() {
       {/* Header: subject + edit button */}
       <div className="mb-6 flex items-start justify-between gap-4">
         {isEditing ? (
-          <input type="text" value={form.subject} onChange={(e) => setField('subject', e.target.value)}
-            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-xl font-bold shadow-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-            autoFocus />
+          <div className="flex-1">
+            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+              チケット名
+            </label>
+            <input
+              type="text"
+              name="issue-subject"
+              autoComplete="on"
+              value={form.subject}
+              onChange={(e) => setField('subject', e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xl font-bold shadow-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+              autoFocus
+            />
+          </div>
         ) : (
           <h1 className="text-2xl font-bold text-slate-900">
             <span className="mr-2 text-slate-400">#{issue.number}</span>

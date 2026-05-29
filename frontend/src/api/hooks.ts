@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query';
 import api from './client';
 import { useAuthStore } from '../stores/auth';
-import type { ApiResponse, Project, ProjectAiBottleneckDetection, ProjectAiProgressSummary, ProjectAiTaskInstruction, ProjectAiWeeklyReport, Issue, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, IssueStatusUsage, MailNotificationPreference, MyWatcherItem, MyParticipatingProject, TotpSetup, TotpStatus, SearchResponse, ProjectFile, ProjectFilesPayload } from '../types';
+import type { ApiResponse, Project, ProjectAiBottleneckDetection, ProjectAiProgressSummary, ProjectAiTaskInstruction, ProjectAiWeeklyReport, Issue, IssueCategory, User, UserDetail, TimeEntry, WikiPage, News, Board, Message, Role, Group, GroupDetail, Tracker, IssueStatus, Enumeration, Activity, Query as SavedQuery, Document, Member, CustomField, IssueStatusUsage, MailNotificationPreference, MyWatcherItem, MyParticipatingProject, TotpSetup, TotpStatus, SearchResponse, ProjectFile, ProjectFilesPayload } from '../types';
 
 function get<T>(url: string, params?: Record<string, unknown>) {
   return api.get<ApiResponse<T>>(url, { params }).then(r => r.data);
@@ -190,6 +190,12 @@ export const useProjectAiBottleneckDetection = () =>
 export const useProjectAiTaskInstruction = () =>
   useMutation({
     mutationFn: (projectId: string) => post<ProjectAiTaskInstruction>(`/projects/${projectId}/ai/task-instruction`),
+  });
+export const useProjectIssueCategories = (projectId: string, options?: { enabled?: boolean }) =>
+  useQuery({
+    queryKey: ['projectIssueCategories', projectId],
+    queryFn: () => get<IssueCategory[]>(`/projects/${projectId}/issue_categories`),
+    enabled: (options?.enabled ?? true) && !!projectId,
   });
 
 // ========== Issues ==========

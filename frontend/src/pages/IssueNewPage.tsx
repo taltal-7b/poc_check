@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useCreateIssue, useUploadAttachments, useEnumerations, useProject, useStatuses, useMembers, useProjectIssues, useIssueCustomFields } from '../api/hooks';
+import { useCreateIssue, useUploadAttachments, useProject, useStatuses, useMembers, useProjectIssues, useIssueCustomFields, useProjectIssueCategories } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 import AppSelect from '../components/AppSelect';
 import ProjectSubNav from '../components/ProjectSubNav';
@@ -108,6 +108,14 @@ function apiErrorMessage(error: unknown, fallback: string): string {
   return typeof message === 'string' && message.trim() ? message : fallback;
 }
 
+function todayDateString() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export default function IssueNewPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -123,7 +131,7 @@ export default function IssueNewPage() {
 
   const statusesQuery = useStatuses();
   const membersQuery = useMembers(project?.id ?? '');
-  const categoriesQuery = useEnumerations('IssueCategory');
+  const categoriesQuery = useProjectIssueCategories(project?.id ?? '', { enabled: !!project?.id });
   const projectIssuesQuery = useProjectIssues(project?.id ?? '', { perPage: 1000 }, { enabled: !!project?.id });
 
   const createMutation = useCreateIssue();
@@ -136,7 +144,7 @@ export default function IssueNewPage() {
   const [priority, setPriority] = useState(2);
   const [assigneeValue, setAssigneeValue] = useState('');
   const [categoryId, setCategoryId] = useState('');
-  const [startDate, setStartDate] = useState('');
+  const [startDate, setStartDate] = useState(() => todayDateString());
   const [dueDate, setDueDate] = useState('');
   const [estimatedHours, setEstimatedHours] = useState('');
   const [estimatedHoursUnit, setEstimatedHoursUnit] = useState<EstimatedEffortUnit>('hours');
@@ -147,6 +155,7 @@ export default function IssueNewPage() {
   const [attachFiles, setAttachFiles] = useState<File[]>([]);
   const [customFieldAttachments, setCustomFieldAttachments] = useState<Array<{ value: string; label: string }>>([]);
   const [formError, setFormError] = useState('');
+  const [successIssue, setSuccessIssue] = useState<{ id: string; number: number } | null>(null);
   const didDefaultAssignee = useRef(false);
   const canCreateIssue = Boolean(project?.permissions?.canCreateIssue);
 
@@ -263,10 +272,35 @@ export default function IssueNewPage() {
     });
   }, [customFieldsQuery.data]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const resetForNextIssue = () => {
+    setSubject('');
+    setDescription('');
+    setDueDate('');
+    setEstimatedHours('');
+    setEstimatedHoursUnit('hours');
+    setDoneRatio(0);
+    setRepository('');
+    setParentId('');
+    setAttachFiles([]);
+    setCustomFieldAttachments([]);
+    setStartDate(todayDateString());
+    setCustomFields(() => {
+      const next: Record<string, string | string[]> = {};
+      for (const field of customFieldsQuery.data?.data ?? []) {
+        if (field.multiple) next[field.id] = [];
+        else next[field.id] = field.defaultValue ?? '';
+      }
+      return next;
+    });
+  };
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setFormError('');
+    setSuccessIssue(null);
     if (!project) return;
+    const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const shouldContinue = submitter?.value === 'continue';
     const latest = await projectQuery.refetch();
     const latestCanCreate = Boolean(latest.data?.data?.permissions?.canCreateIssue);
     if (!latestCanCreate) return;
@@ -299,8 +333,7 @@ export default function IssueNewPage() {
       setFormError(customFieldValidationError);
       return;
     }
-    createMutation.mutate(
-      {
+    const payload = {
         projectId: project.id,
         trackerId,
         subject: subject.trim(),
@@ -316,22 +349,30 @@ export default function IssueNewPage() {
         ...(fieldEnabled('doneRatio') ? { doneRatio } : {}),
         ...(fieldEnabled('repository') ? { repository: repository.trim() || null } : {}),
         customFields,
-      },
-      {
-        onSuccess: async (res) => {
-          const issue = res.data;
-          if (issue?.id && attachFiles.length > 0) {
-            try {
-              await uploadMutation.mutateAsync({ files: attachFiles, issueId: issue.id });
-            } catch {
-              // navigate even if upload fails
-            }
-          }
-          if (issue?.id) navigate(`/projects/${project.identifier}/issues/${issue.id}`);
-        },
-        onError: (error) => setFormError(apiErrorMessage(error, 'チケットの作成に失敗しました')),
-      },
-    );
+      };
+
+    try {
+      const res = await createMutation.mutateAsync(payload);
+      const issue = res.data;
+      if (issue?.id && attachFiles.length > 0) {
+        try {
+          await uploadMutation.mutateAsync({ files: attachFiles, issueId: issue.id });
+        } catch {
+          // navigate even if upload fails
+        }
+      }
+      if (!issue?.id) return;
+      if (shouldContinue) {
+        resetForNextIssue();
+        setSuccessIssue({ id: issue.id, number: issue.number });
+        navigate(`/projects/${project.identifier}/issues/new`, { replace: true });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      navigate(`/projects/${project.identifier}/issues/${issue.id}`);
+    } catch (error) {
+      setFormError(apiErrorMessage(error, 'チケットの作成に失敗しました'));
+    }
   };
 
   const isPending = createMutation.isPending || uploadMutation.isPending;
@@ -359,6 +400,18 @@ export default function IssueNewPage() {
         <p className="mb-6 text-sm text-slate-500">
           {project.name} <span className="font-mono">({project.identifier})</span>
         </p>
+        {successIssue && (
+          <p className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700" role="status">
+            チケット
+            <Link
+              to={`/projects/${project.identifier}/issues/${successIssue.id}`}
+              className="font-medium text-green-800 underline hover:text-green-900"
+            >
+              #{successIssue.number}
+            </Link>
+            が作成されました。
+          </p>
+        )}
         <form onSubmit={handleSubmit} className="space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">
@@ -375,9 +428,11 @@ export default function IssueNewPage() {
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">
-            {t('issues.subject')}<RequiredMark />
+            チケット名<RequiredMark />
           </label>
           <input
+            name="issue-subject"
+            autoComplete="on"
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             required
@@ -571,13 +626,26 @@ export default function IssueNewPage() {
               {formError}
             </p>
           )}
-          <button
-            type="submit"
-            disabled={isPending || !!dateValidationError || !canCreateIssue || !trackerId}
-            className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60"
-          >
-            {isPending ? t('app.loading') : t('app.create')}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              name="submitMode"
+              value="create"
+              disabled={isPending || !!dateValidationError || !canCreateIssue || !trackerId}
+              className="rounded-lg bg-primary-600 px-5 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60"
+            >
+              {isPending ? t('app.loading') : t('app.create')}
+            </button>
+            <button
+              type="submit"
+              name="submitMode"
+              value="continue"
+              disabled={isPending || !!dateValidationError || !canCreateIssue || !trackerId}
+              className="rounded-lg border border-primary-200 bg-white px-5 py-2 text-sm font-semibold text-primary-700 hover:bg-primary-50 disabled:opacity-60"
+            >
+              連続作成
+            </button>
+          </div>
         </div>
         </form>
       </div>
