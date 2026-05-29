@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import ProjectSubNav from '../components/ProjectSubNav';
 import {
   addMonths,
-  differenceInCalendarDays,
   eachDayOfInterval,
   endOfMonth,
   endOfWeek,
@@ -19,7 +18,7 @@ import {
   subMonths,
 } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CircleArrowLeft, CircleArrowRight, Diamond } from 'lucide-react';
 import { useAllProjectIssues, useStatuses } from '../api/hooks';
 import type { Issue, IssueStatus } from '../types';
 
@@ -46,19 +45,55 @@ type DayEntry = {
   type: 'start' | 'end' | 'both';
 };
 
-type WeekBar = {
-  issue: Issue;
-  startCol: number;
-  endCol: number;
-  lane: number;
-  startsInWeek: boolean;
-  endsInWeek: boolean;
-};
+function addDayEntry(map: Map<string, DayEntry[]>, date: Date, entry: DayEntry) {
+  const key = format(date, 'yyyy-MM-dd');
+  if (!map.has(key)) map.set(key, []);
+  map.get(key)!.push(entry);
+}
 
-function clampDate(date: Date, min: Date, max: Date) {
-  if (differenceInCalendarDays(date, min) < 0) return min;
-  if (differenceInCalendarDays(date, max) > 0) return max;
-  return date;
+function formatDateLabel(value: string | null | undefined) {
+  const date = parseDateOnly(value);
+  return date ? format(date, 'yyyy/MM/dd') : '-';
+}
+
+function userName(user: Issue['assignee']) {
+  if (!user) return '-';
+  const fullName = [user.lastname, user.firstname].filter(Boolean).join(' ').trim();
+  return fullName || user.login || '-';
+}
+
+function assigneeName(issue: Issue) {
+  if (issue.assigneeGroup) return issue.assigneeGroup.name;
+  return userName(issue.assignee);
+}
+
+function priorityLabel(priority: number | null | undefined) {
+  switch (priority) {
+    case 1:
+      return '低め';
+    case 2:
+      return '通常';
+    case 3:
+      return '高め';
+    case 4:
+      return '急いで';
+    case 5:
+      return '今すぐ';
+    default:
+      return '-';
+  }
+}
+
+function entryTypeOrder(type: DayEntry['type']) {
+  if (type === 'start') return 0;
+  if (type === 'both') return 1;
+  return 2;
+}
+
+function iconForType(type: DayEntry['type']) {
+  if (type === 'start') return <CircleArrowRight size={15} strokeWidth={2.4} />;
+  if (type === 'end') return <CircleArrowLeft size={15} strokeWidth={2.4} />;
+  return <Diamond size={14} strokeWidth={2.2} />;
 }
 
 export default function CalendarPage() {
@@ -112,69 +147,31 @@ export default function CalendarPage() {
   const dayMap = useMemo(() => {
     const map = new Map<string, DayEntry[]>();
     for (const issue of issues) {
-      const s = parseDateOnly(issue.startDate);
-      const d = parseDateOnly(issue.dueDate);
-      if (!s && !d) continue;
-      if (s && d) continue;
+      const start = parseDateOnly(issue.startDate);
+      const due = parseDateOnly(issue.dueDate);
+      if (!start && !due) continue;
 
-      if (s) {
-        const key = format(s, 'yyyy-MM-dd');
-        if (!map.has(key)) map.set(key, []);
-        map.get(key)!.push({ issue, type: 'start' });
+      if (start && due && isSameDay(start, due)) {
+        addDayEntry(map, start, { issue, type: 'both' });
+        continue;
       }
-      if (d) {
-        const key = format(d, 'yyyy-MM-dd');
-        if (!map.has(key)) map.set(key, []);
-        map.get(key)!.push({ issue, type: 'end' });
-      }
+
+      if (start) addDayEntry(map, start, { issue, type: 'start' });
+      if (due) addDayEntry(map, due, { issue, type: 'end' });
+    }
+
+    for (const entries of map.values()) {
+      entries.sort(
+        (a, b) =>
+          entryTypeOrder(a.type) - entryTypeOrder(b.type) ||
+          (a.issue.number ?? 0) - (b.issue.number ?? 0) ||
+          a.issue.subject.localeCompare(b.issue.subject, 'ja'),
+      );
     }
     return map;
   }, [issues]);
 
-  const weekBars = useMemo(() => {
-    return weeks.map((week) => {
-      const weekStart = week[0];
-      const weekEnd = week[6];
-      const segments = issues.flatMap((issue) => {
-        const start = parseDateOnly(issue.startDate);
-        const due = parseDateOnly(issue.dueDate);
-        if (!start || !due) return [];
-
-        const rangeStart = differenceInCalendarDays(start, due) <= 0 ? start : due;
-        const rangeEnd = differenceInCalendarDays(start, due) <= 0 ? due : start;
-        if (differenceInCalendarDays(rangeEnd, weekStart) < 0 || differenceInCalendarDays(rangeStart, weekEnd) > 0) {
-          return [];
-        }
-
-        const clippedStart = clampDate(rangeStart, weekStart, weekEnd);
-        const clippedEnd = clampDate(rangeEnd, weekStart, weekEnd);
-        return [{
-          issue,
-          startCol: differenceInCalendarDays(clippedStart, weekStart),
-          endCol: differenceInCalendarDays(clippedEnd, weekStart),
-          startsInWeek: isSameDay(clippedStart, rangeStart),
-          endsInWeek: isSameDay(clippedEnd, rangeEnd),
-        }];
-      }).sort((a, b) => a.startCol - b.startCol || a.endCol - b.endCol || (a.issue.number ?? 0) - (b.issue.number ?? 0));
-
-      const laneEndCols: number[] = [];
-      const bars: WeekBar[] = segments.map((segment) => {
-        const lane = laneEndCols.findIndex((endCol) => endCol < segment.startCol);
-        const nextLane = lane === -1 ? laneEndCols.length : lane;
-        laneEndCols[nextLane] = segment.endCol;
-        return { ...segment, lane: nextLane };
-      });
-      return { bars, laneCount: laneEndCols.length };
-    });
-  }, [issues, weeks]);
-
   const weekdayNames = ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日'];
-
-  const iconForType = (type: DayEntry['type']) => {
-    if (type === 'start') return '⊙';
-    if (type === 'end') return '⊘';
-    return '◇';
-  };
 
   if (!identifier) return <p className="text-gray-500">{t('app.noData')}</p>;
 
@@ -224,13 +221,12 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-        {/* Weekday header */}
+      <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="grid grid-cols-7 text-center text-xs font-semibold border-b border-gray-200">
           {weekdayNames.map((name, idx) => {
             let cls = 'py-2 bg-gray-50 text-gray-600';
-            if (idx === 0) cls = 'py-2 bg-red-50 text-red-500';
-            if (idx === 6) cls = 'py-2 bg-blue-50 text-blue-500';
+            if (idx === 0) cls = 'py-2 bg-red-50 text-red-500 rounded-tl-lg';
+            if (idx === 6) cls = 'py-2 bg-blue-50 text-blue-500 rounded-tr-lg';
             return (
               <div key={name} className={cls}>
                 {name}
@@ -239,109 +235,115 @@ export default function CalendarPage() {
           })}
         </div>
 
-        {/* Calendar weeks */}
         {weeks.map((week, wi) => {
-          const rowBars = weekBars[wi]?.bars ?? [];
-          const laneCount = weekBars[wi]?.laneCount ?? 0;
-          const rowMinHeight = Math.max(110, 48 + laneCount * 24);
+          const maxEntries = Math.max(
+            0,
+            ...week.map((day) => dayMap.get(format(day, 'yyyy-MM-dd'))?.length ?? 0),
+          );
+          const rowMinHeight = Math.max(110, 36 + maxEntries * 52);
+
           return (
-          <div key={wi} className="relative grid grid-cols-7" style={{ minHeight: rowMinHeight }}>
-            {rowBars.map((bar) => {
-              const left = `calc(${(bar.startCol / 7) * 100}% + 5px)`;
-              const width = `calc(${((bar.endCol - bar.startCol + 1) / 7) * 100}% - 10px)`;
-              const top = 34 + bar.lane * 24;
-              const progress = Math.max(0, Math.min(100, bar.issue.doneRatio ?? 0));
-              return (
-                <Link
-                  key={`${bar.issue.id}-${wi}-${bar.startCol}-${bar.endCol}`}
-                  to={`/projects/${identifier}/issues/${bar.issue.id}`}
-                  className={`absolute z-20 flex h-5 items-center overflow-hidden border border-primary-700/20 bg-primary-500 text-[11px] font-medium leading-none text-white shadow-sm hover:bg-primary-600 ${
-                    bar.startsInWeek ? 'rounded-l' : ''
-                  } ${bar.endsInWeek ? 'rounded-r' : ''}`}
-                  style={{ left, width, top }}
-                  title={`#${bar.issue.number} ${bar.issue.subject}`}
-                >
-                  <span
-                    className="absolute inset-y-0 left-0 bg-primary-700/45"
-                    style={{ width: `${progress}%` }}
-                    aria-hidden
-                  />
-                  <span className="relative min-w-0 truncate px-2">
-                    #{bar.issue.number}: {bar.issue.subject}
-                  </span>
-                </Link>
-              );
-            })}
-            {week.map((day) => {
-              const key = format(day, 'yyyy-MM-dd');
-              const isCurrentMonth = isSameMonth(day, cursor);
-              const isTo = isSameDay(day, today);
-              const dow = getDay(day);
-              const entries = dayMap.get(key) ?? [];
+            <div key={wi} className="relative grid grid-cols-7" style={{ minHeight: rowMinHeight }}>
+              {week.map((day) => {
+                const key = format(day, 'yyyy-MM-dd');
+                const isCurrentMonth = isSameMonth(day, cursor);
+                const isTo = isSameDay(day, today);
+                const dow = getDay(day);
+                const entries = dayMap.get(key) ?? [];
 
-              let cellBg = 'bg-white';
-              if (dow === 0) cellBg = isCurrentMonth ? 'bg-red-50/40' : 'bg-red-50/20';
-              else if (dow === 6) cellBg = isCurrentMonth ? 'bg-blue-50/40' : 'bg-blue-50/20';
-              else if (!isCurrentMonth) cellBg = 'bg-gray-50/60';
+                let cellBg = 'bg-white';
+                if (dow === 0) cellBg = isCurrentMonth ? 'bg-red-50/40' : 'bg-red-50/20';
+                else if (dow === 6) cellBg = isCurrentMonth ? 'bg-blue-50/40' : 'bg-blue-50/20';
+                else if (!isCurrentMonth) cellBg = 'bg-gray-50/60';
 
-              return (
-                <div
-                  key={key}
-                  className={`border-b border-r border-gray-100 p-1.5 ${cellBg} ${isTo ? 'ring-2 ring-inset ring-primary-300 !bg-primary-50/50' : ''}`}
-                  style={{ minHeight: rowMinHeight }}
-                >
-                  <div className="relative z-10 mb-1">
-                    <span
-                      className={
-                        isTo
-                          ? 'inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary-600 text-white text-xs font-bold'
-                          : `text-sm font-medium ${
-                              !isCurrentMonth
-                                ? 'text-gray-400'
-                                : dow === 0
-                                  ? 'text-red-500'
-                                  : dow === 6
-                                    ? 'text-blue-500'
-                                    : 'text-gray-700'
-                            }`
-                      }
-                    >
-                      {format(day, 'd')}
-                    </span>
+                return (
+                  <div
+                    key={key}
+                    className={`relative z-0 border-b border-r border-gray-100 p-1.5 hover:z-30 ${cellBg} ${
+                      isTo ? 'ring-2 ring-inset ring-primary-300 !bg-primary-50/50' : ''
+                    }`}
+                    style={{ minHeight: rowMinHeight }}
+                  >
+                    <div className="relative z-0 mb-1">
+                      <span
+                        className={
+                          isTo
+                            ? 'inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary-600 text-white text-xs font-bold'
+                            : `text-sm font-medium ${
+                                !isCurrentMonth
+                                  ? 'text-gray-400'
+                                  : dow === 0
+                                    ? 'text-red-500'
+                                    : dow === 6
+                                      ? 'text-blue-500'
+                                      : 'text-gray-700'
+                              }`
+                        }
+                      >
+                        {format(day, 'd')}
+                      </span>
+                    </div>
+
+                    {entries.length > 0 && (
+                      <ul className="relative z-10 space-y-1">
+                        {entries.map((entry) => (
+                          <li key={`${entry.issue.id}-${entry.type}`} className="group relative z-20 hover:z-40">
+                            <Link
+                              to={`/projects/${identifier}/issues/${entry.issue.id}`}
+                              className="flex min-h-[42px] items-start gap-1 rounded border border-yellow-200 bg-yellow-50 px-1.5 py-1 text-[11px] leading-tight text-slate-900 shadow-sm hover:border-yellow-300 hover:bg-yellow-100"
+                              aria-label={`#${entry.issue.number} ${entry.issue.subject}`}
+                            >
+                              <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-slate-700">
+                                {iconForType(entry.type)}
+                              </span>
+                              <span className="min-w-0 text-primary-700 hover:underline">
+                                <span>{entry.issue.tracker?.name ?? 'チケット'} #{entry.issue.number}:</span>
+                                {' '}
+                                <span className="font-medium">{entry.issue.subject}</span>
+                              </span>
+                            </Link>
+                            <div className="pointer-events-none absolute left-0 top-full z-[100] mt-1 hidden w-64 border border-slate-500 bg-white p-2 text-xs leading-tight text-slate-900 shadow-lg group-hover:block">
+                              <div className="mb-2 text-primary-700">
+                                {entry.issue.tracker?.name ?? 'チケット'} #{entry.issue.number}: {entry.issue.subject}
+                              </div>
+                              <dl className="space-y-0.5">
+                                <div className="flex gap-1">
+                                  <dt className="shrink-0">プロジェクト:</dt>
+                                  <dd className="min-w-0 truncate">{entry.issue.project?.name ?? identifier}</dd>
+                                </div>
+                                <div className="flex gap-1">
+                                  <dt className="shrink-0">ステータス:</dt>
+                                  <dd>{entry.issue.status?.name ?? '-'}</dd>
+                                </div>
+                                <div className="flex gap-1">
+                                  <dt className="shrink-0">開始日:</dt>
+                                  <dd>{formatDateLabel(entry.issue.startDate)}</dd>
+                                </div>
+                                <div className="flex gap-1">
+                                  <dt className="shrink-0">期日:</dt>
+                                  <dd>{formatDateLabel(entry.issue.dueDate)}</dd>
+                                </div>
+                                <div className="flex gap-1">
+                                  <dt className="shrink-0">担当者:</dt>
+                                  <dd className="min-w-0 truncate">{assigneeName(entry.issue)}</dd>
+                                </div>
+                                <div className="flex gap-1">
+                                  <dt className="shrink-0">優先度:</dt>
+                                  <dd>{priorityLabel(entry.issue.priority)}</dd>
+                                </div>
+                              </dl>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
-
-                  {laneCount > 0 && <div aria-hidden style={{ height: laneCount * 24 + 2 }} />}
-
-                  {entries.length > 0 && (
-                    <ul className="relative z-10 space-y-0.5">
-                      {entries.map((entry) => (
-                        <li key={`${entry.issue.id}-${entry.type}`}>
-                          <Link
-                            to={`/projects/${identifier}/issues/${entry.issue.id}`}
-                            className="group flex items-start gap-1 rounded px-1 py-0.5 text-[11px] leading-tight hover:bg-amber-50 transition-colors"
-                            title={`#${entry.issue.number} ${entry.issue.subject} (${entry.issue.tracker?.name ?? ''})`}
-                          >
-                            <span className="shrink-0 text-gray-400 mt-px">{iconForType(entry.type)}</span>
-                            <span className="text-primary-700 group-hover:underline min-w-0">
-                              <span className="text-gray-500">{entry.issue.project?.name ?? identifier}</span>
-                              {' - '}
-                              <span className="text-gray-400">{entry.issue.tracker?.name}</span>
-                              {' '}
-                              <span className="font-medium">#{entry.issue.number}: {entry.issue.subject}</span>
-                            </span>
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
           );
         })}
       </div>
-
     </div>
   );
 }

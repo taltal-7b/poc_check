@@ -93,6 +93,13 @@ export interface IssueStatus {
   position: number;
 }
 
+export interface IssueCategory {
+  id: string;
+  projectId: string;
+  name: string;
+  assigneeId: string | null;
+}
+
 export interface Issue {
   id: string;
   number: number;
