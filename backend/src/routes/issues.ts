@@ -16,6 +16,7 @@ import { z } from 'zod';
 const router = Router({ mergeParams: true });
 
 const PROJECT_STATUS_ARCHIVED = 5;
+const LEGACY_PROJECT_STATUS_ARCHIVED = 2;
 
 type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
@@ -544,7 +545,7 @@ async function userCanAccessProject(
   isAdmin: boolean | undefined,
   project: { id: string; isPublic: boolean; status?: number },
 ): Promise<boolean> {
-  if (project.status === PROJECT_STATUS_ARCHIVED) return false;
+  if (project.status === PROJECT_STATUS_ARCHIVED || project.status === LEGACY_PROJECT_STATUS_ARCHIVED) return false;
   if (isAdmin) return true;
   if (!userId) return project.isPublic;
   const can = await hasAnyProjectPermission(userId, isAdmin, project.id, ['view_issues']);
@@ -612,14 +613,14 @@ async function resolveProjectId(ref: string | undefined): Promise<string | undef
 async function getVisibleProjectIds(userId: string | undefined, isAdmin: boolean | undefined) {
   if (isAdmin) {
     const rows = await prisma.project.findMany({
-      where: { status: { not: PROJECT_STATUS_ARCHIVED } },
+      where: { status: { notIn: [PROJECT_STATUS_ARCHIVED, LEGACY_PROJECT_STATUS_ARCHIVED] } },
       select: { id: true },
     });
     return rows.map((p) => p.id);
   }
   if (!userId) {
     const pub = await prisma.project.findMany({
-      where: { isPublic: true, status: { not: PROJECT_STATUS_ARCHIVED } },
+      where: { isPublic: true, status: { notIn: [PROJECT_STATUS_ARCHIVED, LEGACY_PROJECT_STATUS_ARCHIVED] } },
       select: { id: true },
     });
     return pub.map((p) => p.id);
@@ -627,7 +628,7 @@ async function getVisibleProjectIds(userId: string | undefined, isAdmin: boolean
   const groupIds = await getUserGroupIds(userId);
   const rows = await prisma.project.findMany({
     where: {
-      status: { not: PROJECT_STATUS_ARCHIVED },
+      status: { notIn: [PROJECT_STATUS_ARCHIVED, LEGACY_PROJECT_STATUS_ARCHIVED] },
       OR: [
         { isPublic: true },
         {

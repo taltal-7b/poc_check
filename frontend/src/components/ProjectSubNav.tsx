@@ -20,6 +20,7 @@ const tabs = [
 ] as const;
 
 const STATUS_ARCHIVED = 5;
+const LEGACY_STATUS_ARCHIVED = 2;
 
 export default function ProjectSubNav({ identifier }: { identifier: string }) {
   const { t } = useTranslation();
@@ -31,7 +32,7 @@ export default function ProjectSubNav({ identifier }: { identifier: string }) {
   const settingsTab = tabs.find((tab) => tab.key === 'settings');
   const visibleTabs = projectQuery.isLoading || !project
     ? tabs
-    : project.status === STATUS_ARCHIVED
+    : project.status === STATUS_ARCHIVED || project.status === LEGACY_STATUS_ARCHIVED
       ? settingsTab ? [settingsTab] : []
     : tabs.filter((tab) => !tab.moduleKey || enabledModules.has(tab.moduleKey));
 

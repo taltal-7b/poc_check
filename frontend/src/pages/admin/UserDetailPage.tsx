@@ -17,6 +17,8 @@ import {
 
 type TabKey = 'general' | 'groups' | 'projects';
 
+const SYSTEM_ADMIN_LABEL = 'システム管理者';
+
 function displayName(user: { login: string; lastname: string; firstname: string }) {
   const fullName = `${user.lastname} ${user.firstname}`.trim();
   return fullName ? `${user.login} (${fullName})` : user.login;
@@ -257,7 +259,7 @@ export default function UserDetailPage() {
               <dd className="text-gray-900">{user.mail}</dd>
             </div>
             <div>
-              <dt className="text-gray-500">{t('users.admin')}</dt>
+              <dt className="text-gray-500">{SYSTEM_ADMIN_LABEL}</dt>
               <dd className="text-gray-900">{user.admin ? t('app.yes') : t('app.no')}</dd>
             </div>
             <div>

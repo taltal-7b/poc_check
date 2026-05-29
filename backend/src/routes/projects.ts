@@ -18,6 +18,9 @@ const router = Router({ mergeParams: true });
 
 const PROJECT_STATUS_ACTIVE = 1;
 const PROJECT_STATUS_ARCHIVED = 5;
+const PROJECT_STATUS_CLOSED = 9;
+const LEGACY_PROJECT_STATUS_ARCHIVED = 2;
+const LEGACY_PROJECT_STATUS_CLOSED = 3;
 
 const DEFAULT_ENABLED_MODULES = [
   'issue_tracking',
@@ -49,8 +52,28 @@ async function resolveProjectRef(ref: string) {
   return project;
 }
 
+function normalizeProjectStatus(status: number): number {
+  if (status === LEGACY_PROJECT_STATUS_ARCHIVED) return PROJECT_STATUS_ARCHIVED;
+  if (status === LEGACY_PROJECT_STATUS_CLOSED) return PROJECT_STATUS_CLOSED;
+  return status;
+}
+
+function projectStatusFilter(status: number) {
+  if (status === PROJECT_STATUS_ARCHIVED) {
+    return { in: [PROJECT_STATUS_ARCHIVED, LEGACY_PROJECT_STATUS_ARCHIVED] };
+  }
+  if (status === PROJECT_STATUS_CLOSED) {
+    return { in: [PROJECT_STATUS_CLOSED, LEGACY_PROJECT_STATUS_CLOSED] };
+  }
+  return status;
+}
+
+function withNormalizedProjectStatus<T extends { status: number }>(project: T): T {
+  return { ...project, status: normalizeProjectStatus(project.status) };
+}
+
 function assertProjectReadable(project: { status: number }) {
-  if (project.status === PROJECT_STATUS_ARCHIVED) {
+  if (normalizeProjectStatus(project.status) === PROJECT_STATUS_ARCHIVED) {
     throw AppError.forbidden('アーカイブされたプロジェクトの情報は参照できません');
   }
 }
@@ -1216,7 +1239,7 @@ router.get(
 
     const and: Array<Record<string, unknown>> = [];
     if (statusFilter !== undefined && !Number.isNaN(statusFilter)) {
-      and.push({ status: statusFilter });
+      and.push({ status: projectStatusFilter(statusFilter) });
     }
 
     if (!req.user!.admin) {
@@ -1264,7 +1287,7 @@ router.get(
       }),
     ]);
 
-    return sendPaginated(res, rows, {
+    return sendPaginated(res, rows.map(withNormalizedProjectStatus), {
       total,
       page,
       perPage,
@@ -1289,7 +1312,7 @@ router.get(
 
     const and: Array<Record<string, unknown>> = [];
     if (statusFilter !== undefined && !Number.isNaN(statusFilter)) {
-      and.push({ status: statusFilter });
+      and.push({ status: projectStatusFilter(statusFilter) });
     }
 
     if (!feedUser.admin) {
@@ -1604,7 +1627,7 @@ router.get(
       canUseAiActions,
     };
 
-    return sendSuccess(res, { ...project, permissions });
+    return sendSuccess(res, { ...withNormalizedProjectStatus(project), permissions });
   }),
 );
 
@@ -1696,7 +1719,7 @@ router.put(
     }
     const body = parsed.data;
 
-    if (current.status !== PROJECT_STATUS_ACTIVE) {
+    if (normalizeProjectStatus(current.status) !== PROJECT_STATUS_ACTIVE) {
       const keys = Object.keys(body);
       const isReactivationOnly = keys.length === 1 && body.status === PROJECT_STATUS_ACTIVE;
       if (!isReactivationOnly) {

@@ -57,6 +57,7 @@ const AdminCustomFieldsPage = lazy(() => import('./pages/admin/CustomFieldsPage'
 const AdminEnumerationsPage = lazy(() => import('./pages/admin/EnumerationsPage'));
 
 const PROJECT_STATUS_ARCHIVED = 5;
+const LEGACY_PROJECT_STATUS_ARCHIVED = 2;
 
 function RouteLoading() {
   return <div className="flex min-h-screen items-center justify-center">読み込み中...</div>;
@@ -97,7 +98,7 @@ function ProjectModuleRoute({
   if (isLoading) return <div className="flex items-center justify-center min-h-screen">読み込み中...</div>;
 
   const project = data?.data;
-  if (project?.status === PROJECT_STATUS_ARCHIVED) {
+  if (project?.status === PROJECT_STATUS_ARCHIVED || project?.status === LEGACY_PROJECT_STATUS_ARCHIVED) {
     return <Navigate to={`/projects/${project.identifier ?? projectId}/settings`} replace />;
   }
 
@@ -116,7 +117,7 @@ function ProjectSettingsOnlyRoute({ children }: { children: React.ReactNode }) {
   if (isLoading) return <div className="flex items-center justify-center min-h-screen">読み込み中...</div>;
 
   const project = data?.data;
-  if (project?.status === PROJECT_STATUS_ARCHIVED) {
+  if (project?.status === PROJECT_STATUS_ARCHIVED || project?.status === LEGACY_PROJECT_STATUS_ARCHIVED) {
     return <Navigate to={`/projects/${project.identifier ?? projectId}/settings`} replace />;
   }
 

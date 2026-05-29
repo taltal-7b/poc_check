@@ -38,7 +38,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
 
 export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
   if (!req.user?.admin) {
-    return next(AppError.forbidden('管理者権限が必要です'));
+    return next(AppError.forbidden('システム管理者権限が必要です'));
   }
   next();
 }
