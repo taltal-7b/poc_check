@@ -285,6 +285,8 @@ function issueOrderBy(sort: string, order: Prisma.SortOrder): Prisma.IssueOrderB
       ];
     case 'priority':
       return [{ priority: order }, { number: 'desc' }];
+    case 'estimatedHours':
+      return [{ estimatedHours: order }, { number: 'desc' }];
     case 'createdAt':
       return [{ createdAt: order }, { number: 'desc' }];
     case 'dueDate':
