@@ -157,6 +157,7 @@ export default function IssueNewPage() {
   const [formError, setFormError] = useState('');
   const [successIssue, setSuccessIssue] = useState<{ id: string; number: number } | null>(null);
   const didDefaultAssignee = useRef(false);
+  const previousTrackerIdRef = useRef<string | null>(null);
   const canCreateIssue = Boolean(project?.permissions?.canCreateIssue);
 
   const trackers = useMemo(
@@ -247,8 +248,20 @@ export default function IssueNewPage() {
   }, [trackers, trackerId]);
 
   useEffect(() => {
-    if (statuses.length && !statusId) setStatusId(statuses[0].id);
-  }, [statuses, statusId]);
+    if (!statuses.length) {
+      setStatusId('');
+      previousTrackerIdRef.current = trackerId || null;
+      return;
+    }
+    const trackerChanged = previousTrackerIdRef.current !== trackerId;
+    previousTrackerIdRef.current = trackerId || null;
+    const defaultStatusId = currentTracker?.defaultStatusId;
+    const nextStatusId =
+      defaultStatusId && statuses.some((status) => status.id === defaultStatusId)
+        ? defaultStatusId
+        : statuses[0].id;
+    if (!statusId || trackerChanged) setStatusId(nextStatusId);
+  }, [currentTracker?.defaultStatusId, statuses, statusId, trackerId]);
 
   useEffect(() => {
     if (didDefaultAssignee.current || assigneeValue || !currentUser?.id) return;

@@ -110,8 +110,9 @@ export default function ProjectSettingsPage() {
     });
     setEnabledModules(mods);
     const tr: Record<string, boolean> = {};
+    const projectTrackerIds = new Set(project.projectTrackers?.map((row) => row.trackerId) ?? []);
     trackers.forEach((x) => {
-      tr[x.id] = true;
+      tr[x.id] = projectTrackerIds.has(x.id);
     });
     setSelectedTrackerIds(tr);
     const cf: Record<string, boolean> = {};
