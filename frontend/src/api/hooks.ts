@@ -177,7 +177,8 @@ export const useUpdateProject = () => {
 export const useDeleteProject = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (id: string) => del(`/projects/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }) }); };
 export const useProjectAiProgressSummary = () =>
   useMutation({
-    mutationFn: (projectId: string) => post<ProjectAiProgressSummary>(`/projects/${projectId}/ai/progress-summary`),
+    mutationFn: ({ projectId, scope }: { projectId: string; scope: 'project' | 'assigned' }) =>
+      post<ProjectAiProgressSummary>(`/projects/${projectId}/ai/progress-summary`, { scope }),
   });
 export const useProjectAiWeeklyReport = () =>
   useMutation({

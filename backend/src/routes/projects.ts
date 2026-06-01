@@ -21,6 +21,11 @@ const PROJECT_STATUS_ARCHIVED = 5;
 const PROJECT_STATUS_CLOSED = 9;
 const LEGACY_PROJECT_STATUS_ARCHIVED = 2;
 const LEGACY_PROJECT_STATUS_CLOSED = 3;
+const progressSummaryBodySchema = z.object({
+  scope: z.enum(['project', 'assigned']).optional().default('project'),
+});
+
+type ProgressSummaryScope = z.infer<typeof progressSummaryBodySchema>['scope'];
 
 const DEFAULT_ENABLED_MODULES = [
   'issue_tracking',
@@ -257,8 +262,25 @@ function parseStoredWeeklyCustomValue(value: string | null): string[] {
     .filter(Boolean);
 }
 
-async function buildProjectProgressSummaryInput(projectId: string): Promise<{ input: string; issueCount: number; issueLimit: number }> {
+async function buildProjectProgressSummaryInput(
+  projectId: string,
+  scope: ProgressSummaryScope,
+  userId: string,
+): Promise<{ input: string; issueCount: number; issueLimit: number; scope: ProgressSummaryScope }> {
   const issueLimit = config.AI_PROGRESS_SUMMARY_ISSUE_LIMIT;
+  const groupIds = scope === 'assigned' ? await getUserGroupIds(userId) : [];
+  const issueWhere = {
+    projectId,
+    status: { isClosed: false },
+    ...(scope === 'assigned'
+      ? {
+        OR: [
+          { assigneeId: userId },
+          ...(groupIds.length ? [{ assigneeGroupId: { in: groupIds } }] : []),
+        ],
+      }
+      : {}),
+  };
 
   const [project, members, issueCount, issues] = await Promise.all([
     prisma.project.findUniqueOrThrow({
@@ -269,23 +291,25 @@ async function buildProjectProgressSummaryInput(projectId: string): Promise<{ in
         description: true,
       },
     }),
-    prisma.member.findMany({
-      where: { projectId },
-      orderBy: { createdAt: 'asc' },
-      select: {
-        user: { select: { login: true, firstname: true, lastname: true } },
-        group: { select: { name: true } },
-        memberRoles: {
-          select: { role: { select: { name: true } } },
-          orderBy: { role: { position: 'asc' } },
+    scope === 'project'
+      ? prisma.member.findMany({
+        where: { projectId },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          user: { select: { login: true, firstname: true, lastname: true } },
+          group: { select: { name: true } },
+          memberRoles: {
+            select: { role: { select: { name: true } } },
+            orderBy: { role: { position: 'asc' } },
+          },
         },
-      },
-    }),
+      })
+      : Promise.resolve([]),
     prisma.issue.count({
-      where: { projectId, status: { isClosed: false } },
+      where: issueWhere,
     }),
     prisma.issue.findMany({
-      where: { projectId, status: { isClosed: false } },
+      where: issueWhere,
       orderBy: [{ priority: 'desc' }, { dueDate: 'asc' }, { updatedAt: 'desc' }],
       take: issueLimit,
       select: {
@@ -320,7 +344,9 @@ async function buildProjectProgressSummaryInput(projectId: string): Promise<{ in
     }),
   ]);
 
-  const memberLines = members.length
+  const memberLines = scope !== 'project'
+    ? []
+    : members.length
     ? members.map((member) => {
       const name = member.user
         ? `${member.user.lastname} ${member.user.firstname} (${member.user.login})`
@@ -369,7 +395,7 @@ async function buildProjectProgressSummaryInput(projectId: string): Promise<{ in
     : ['未完了チケットなし'];
 
   const omittedCount = Math.max(0, issueCount - issues.length);
-  const input = [
+  const inputLines = [
     '# プロジェクト',
     `- タイトル: ${project.name}`,
     `- 識別子: ${project.identifier}`,
@@ -380,13 +406,18 @@ async function buildProjectProgressSummaryInput(projectId: string): Promise<{ in
     ...memberLines,
     '',
     '# 未完了チケット',
+    `- 分析範囲: ${scope === 'assigned' ? '担当チケットのみ' : 'プロジェクト全体'}`,
     `- 対象件数: ${issues.length} / ${issueCount}`,
     omittedCount ? `- 環境変数の上限により ${omittedCount} 件を省略` : '',
     '',
     ...issueLines,
-  ].filter((line) => line !== '').join('\n');
+  ];
+  const input = (scope === 'assigned'
+    ? inputLines.filter((_, index) => index !== 6)
+    : inputLines
+  ).filter((line) => line !== '').join('\n');
 
-  return { input: limitInputChars(input), issueCount, issueLimit };
+  return { input: limitInputChars(input), issueCount, issueLimit, scope };
 }
 
 async function buildProjectWeeklyReportInput(projectId: string): Promise<{
@@ -1482,13 +1513,15 @@ router.post(
     const canUseAiActions = await userIsProjectMember(req.user?.userId, project.id);
     if (!canUseAiActions) throw AppError.forbidden();
 
-    const { input, issueCount, issueLimit } = await buildProjectProgressSummaryInput(project.id);
+    const { scope } = progressSummaryBodySchema.parse(req.body ?? {});
+    const { input, issueCount, issueLimit } = await buildProjectProgressSummaryInput(project.id, scope, req.user!.userId);
     const summary = await createOpenAiProjectProgressSummary(input);
 
     return sendSuccess(res, {
       summary,
       issueCount,
       issueLimit,
+      scope,
     });
   }),
 );

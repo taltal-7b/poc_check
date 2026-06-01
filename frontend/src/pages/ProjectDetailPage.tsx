@@ -13,6 +13,12 @@ const aiActionOptions = [
 ] as const;
 
 type AiActionKey = (typeof aiActionOptions)[number]['key'];
+type ProgressSummaryScope = 'project' | 'assigned';
+
+const progressSummaryScopeOptions = [
+  { key: 'project', label: 'プロジェクト全体を分析' },
+  { key: 'assigned', label: '担当チケットのみを分析' },
+] as const;
 
 function errorMessage(error: unknown, fallback: string): string {
   if (
@@ -33,6 +39,7 @@ export default function ProjectDetailPage() {
   const { t } = useTranslation();
   const { identifier } = useParams<{ identifier: string }>();
   const [selectedAiAction, setSelectedAiAction] = useState<AiActionKey | null>(null);
+  const [selectedProgressSummaryScope, setSelectedProgressSummaryScope] = useState<ProgressSummaryScope | null>(null);
   const [aiActionMessage, setAiActionMessage] = useState('');
   const id = identifier ?? '';
   const { data, isLoading, isError } = useProject(id);
@@ -52,6 +59,11 @@ export default function ProjectDetailPage() {
   const openIssueCount = issuesQuery.data?.pagination?.total ?? '—';
   const canUseAiActions = Boolean(project?.permissions?.canUseAiActions);
   const isAiPending = progressSummary.isPending || weeklyReport.isPending || bottleneckDetection.isPending || taskInstruction.isPending;
+  const canRunAiAction = Boolean(
+    selectedAiAction &&
+    !isAiPending &&
+    (selectedAiAction !== 'progress-summary' || selectedProgressSummaryScope),
+  );
   const shouldShowAiResult = Boolean(
     isAiPending ||
     progressSummary.data ||
@@ -67,6 +79,7 @@ export default function ProjectDetailPage() {
 
   const runAiAction = () => {
     if (!selectedAiAction) return;
+    if (selectedAiAction === 'progress-summary' && !selectedProgressSummaryScope) return;
     setAiActionMessage('');
     progressSummary.reset();
     weeklyReport.reset();
@@ -74,7 +87,7 @@ export default function ProjectDetailPage() {
     taskInstruction.reset();
 
     if (selectedAiAction === 'progress-summary') {
-      progressSummary.mutate(id);
+      progressSummary.mutate({ projectId: id, scope: selectedProgressSummaryScope });
       return;
     }
 
@@ -98,6 +111,7 @@ export default function ProjectDetailPage() {
 
   const clearAiAction = () => {
     setSelectedAiAction(null);
+    setSelectedProgressSummaryScope(null);
     setAiActionMessage('');
     progressSummary.reset();
     weeklyReport.reset();
@@ -148,7 +162,7 @@ export default function ProjectDetailPage() {
                   <button
                     type="button"
                     onClick={runAiAction}
-                    disabled={!selectedAiAction || isAiPending}
+                    disabled={!canRunAiAction}
                     className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     実行
@@ -171,7 +185,10 @@ export default function ProjectDetailPage() {
                     <button
                       key={key}
                       type="button"
-                      onClick={() => setSelectedAiAction(key)}
+                      onClick={() => {
+                        setSelectedAiAction(key);
+                        if (key !== 'progress-summary') setSelectedProgressSummaryScope(null);
+                      }}
                       aria-pressed={isSelected}
                       className={`min-h-20 rounded-lg border p-4 text-left text-sm font-medium leading-5 transition-all ${
                         isSelected
@@ -184,6 +201,31 @@ export default function ProjectDetailPage() {
                   );
                 })}
               </div>
+
+              {selectedAiAction === 'progress-summary' && (
+                <div className="mt-4 border-t border-slate-200 pt-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {progressSummaryScopeOptions.map(({ key, label }) => {
+                      const isSelected = selectedProgressSummaryScope === key;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setSelectedProgressSummaryScope(key)}
+                          aria-pressed={isSelected}
+                          className={`min-h-16 rounded-lg border p-4 text-left text-sm font-medium leading-5 transition-all ${
+                            isSelected
+                              ? 'border-primary-500 bg-primary-50 text-primary-800 shadow-sm'
+                              : 'border-slate-200 bg-white text-slate-700 hover:border-primary-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {shouldShowAiResult && (
                 <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -208,6 +250,9 @@ export default function ProjectDetailPage() {
                   ) : progressSummary.data ? (
                     <div className="space-y-3">
                       <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                        <span>
+                          分析範囲: {progressSummary.data.data.scope === 'assigned' ? '担当チケットのみ' : 'プロジェクト全体'}
+                        </span>
                         <span>未完了チケット: {progressSummary.data.data.issueCount}</span>
                         <span>取得上限: {progressSummary.data.data.issueLimit}</span>
                       </div>

@@ -45,6 +45,7 @@ export interface ProjectAiProgressSummary {
   summary: string;
   issueCount: number;
   issueLimit: number;
+  scope: 'project' | 'assigned';
 }
 
 export interface ProjectAiWeeklyReport {
