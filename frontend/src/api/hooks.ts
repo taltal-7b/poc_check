@@ -182,15 +182,18 @@ export const useProjectAiProgressSummary = () =>
   });
 export const useProjectAiWeeklyReport = () =>
   useMutation({
-    mutationFn: (projectId: string) => post<ProjectAiWeeklyReport>(`/projects/${projectId}/ai/weekly-report`),
+    mutationFn: ({ projectId, scope, periodStart, periodEnd }: { projectId: string; scope: 'project' | 'assigned'; periodStart: string; periodEnd: string }) =>
+      post<ProjectAiWeeklyReport>(`/projects/${projectId}/ai/weekly-report`, { scope, periodStart, periodEnd }),
   });
 export const useProjectAiBottleneckDetection = () =>
   useMutation({
-    mutationFn: (projectId: string) => post<ProjectAiBottleneckDetection>(`/projects/${projectId}/ai/bottleneck-detection`),
+    mutationFn: ({ projectId, scope }: { projectId: string; scope: 'project' | 'assigned' }) =>
+      post<ProjectAiBottleneckDetection>(`/projects/${projectId}/ai/bottleneck-detection`, { scope }),
   });
 export const useProjectAiTaskInstruction = () =>
   useMutation({
-    mutationFn: (projectId: string) => post<ProjectAiTaskInstruction>(`/projects/${projectId}/ai/task-instruction`),
+    mutationFn: ({ projectId, scope }: { projectId: string; scope: 'project' | 'assigned' }) =>
+      post<ProjectAiTaskInstruction>(`/projects/${projectId}/ai/task-instruction`, { scope }),
   });
 export const useProjectIssueCategories = (projectId: string, options?: { enabled?: boolean }) =>
   useQuery({

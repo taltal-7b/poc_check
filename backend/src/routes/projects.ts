@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { Prisma } from '@prisma/client';
 import { config } from '../config';
 import { prisma } from '../utils/db';
 import { AppError } from '../utils/errors';
@@ -24,8 +25,22 @@ const LEGACY_PROJECT_STATUS_CLOSED = 3;
 const progressSummaryBodySchema = z.object({
   scope: z.enum(['project', 'assigned']).optional().default('project'),
 });
+const weeklyReportBodySchema = z.object({
+  scope: z.enum(['project', 'assigned']).optional().default('project'),
+  periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+const bottleneckDetectionBodySchema = z.object({
+  scope: z.enum(['project', 'assigned']).optional().default('project'),
+});
+const taskInstructionBodySchema = z.object({
+  scope: z.enum(['project', 'assigned']).optional().default('project'),
+});
 
 type ProgressSummaryScope = z.infer<typeof progressSummaryBodySchema>['scope'];
+type WeeklyReportScope = z.infer<typeof weeklyReportBodySchema>['scope'];
+type BottleneckDetectionScope = z.infer<typeof bottleneckDetectionBodySchema>['scope'];
+type TaskInstructionScope = z.infer<typeof taskInstructionBodySchema>['scope'];
 
 const DEFAULT_ENABLED_MODULES = [
   'issue_tracking',
@@ -262,6 +277,24 @@ function parseStoredWeeklyCustomValue(value: string | null): string[] {
     .filter(Boolean);
 }
 
+function parseWeeklyReportDateRange(periodStart?: string, periodEnd?: string): { periodStartDate: Date; periodEndDate: Date } {
+  const defaultEnd = new Date();
+  const defaultStart = new Date(defaultEnd.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const startSource = periodStart ?? formatDate(defaultStart);
+  const endSource = periodEnd ?? formatDate(defaultEnd);
+  const periodStartDate = new Date(`${startSource}T00:00:00.000`);
+  const periodEndDate = new Date(`${endSource}T23:59:59.999`);
+
+  if (Number.isNaN(periodStartDate.getTime()) || Number.isNaN(periodEndDate.getTime())) {
+    throw AppError.badRequest('週次レポートの対象期間が不正です');
+  }
+  if (periodStartDate > periodEndDate) {
+    throw AppError.badRequest('週次レポートの開始日は終了日以前にしてください');
+  }
+
+  return { periodStartDate, periodEndDate };
+}
+
 async function buildProjectProgressSummaryInput(
   projectId: string,
   scope: ProgressSummaryScope,
@@ -420,23 +453,42 @@ async function buildProjectProgressSummaryInput(
   return { input: limitInputChars(input), issueCount, issueLimit, scope };
 }
 
-async function buildProjectWeeklyReportInput(projectId: string): Promise<{
+async function buildProjectWeeklyReportInput(
+  projectId: string,
+  scope: WeeklyReportScope,
+  userId: string,
+  periodStart?: string,
+  periodEnd?: string,
+): Promise<{
   input: string;
   issueCount: number;
   issueLimit: number;
   periodStart: string;
   periodEnd: string;
+  scope: WeeklyReportScope;
 }> {
   const issueLimit = config.AI_WEEKLY_REPORT_ISSUE_LIMIT;
-  const periodEndDate = new Date();
-  const periodStartDate = new Date(periodEndDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const { periodStartDate, periodEndDate } = parseWeeklyReportDateRange(periodStart, periodEnd);
+  const groupIds = scope === 'assigned' ? await getUserGroupIds(userId) : [];
 
   const issueWhere = {
     projectId,
-    OR: [
-      { createdAt: { gte: periodStartDate, lte: periodEndDate } },
-      { updatedAt: { gte: periodStartDate, lte: periodEndDate } },
-      { dueDate: { gte: periodStartDate, lte: periodEndDate } },
+    AND: [
+      ...(scope === 'assigned'
+        ? [{
+          OR: [
+            { assigneeId: userId },
+            ...(groupIds.length ? [{ assigneeGroupId: { in: groupIds } }] : []),
+          ],
+        }]
+        : []),
+      {
+        OR: [
+          { createdAt: { gte: periodStartDate, lte: periodEndDate } },
+          { updatedAt: { gte: periodStartDate, lte: periodEndDate } },
+          { dueDate: { gte: periodStartDate, lte: periodEndDate } },
+        ],
+      },
     ],
   };
 
@@ -462,18 +514,20 @@ async function buildProjectWeeklyReportInput(projectId: string): Promise<{
         },
       },
     }),
-    prisma.member.findMany({
-      where: { projectId },
-      orderBy: { createdAt: 'asc' },
-      select: {
-        user: { select: { login: true, firstname: true, lastname: true } },
-        group: { select: { name: true } },
-        memberRoles: {
-          select: { role: { select: { name: true } } },
-          orderBy: { role: { position: 'asc' } },
+    scope === 'project'
+      ? prisma.member.findMany({
+        where: { projectId },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          user: { select: { login: true, firstname: true, lastname: true } },
+          group: { select: { name: true } },
+          memberRoles: {
+            select: { role: { select: { name: true } } },
+            orderBy: { role: { position: 'asc' } },
+          },
         },
-      },
-    }),
+      })
+      : Promise.resolve([]),
     prisma.issue.count({ where: issueWhere }),
     prisma.issue.findMany({
       where: issueWhere,
@@ -541,7 +595,20 @@ async function buildProjectWeeklyReportInput(projectId: string): Promise<{
       },
     }),
     prisma.timeEntry.findMany({
-      where: { projectId, spentOn: { gte: periodStartDate, lte: periodEndDate } },
+      where: {
+        projectId,
+        spentOn: { gte: periodStartDate, lte: periodEndDate },
+        ...(scope === 'assigned'
+          ? {
+            issue: {
+              OR: [
+                { assigneeId: userId },
+                ...(groupIds.length ? [{ assigneeGroupId: { in: groupIds } }] : []),
+              ],
+            },
+          }
+          : {}),
+      },
       select: {
         hours: true,
         user: { select: { login: true, firstname: true, lastname: true } },
@@ -670,7 +737,9 @@ async function buildProjectWeeklyReportInput(projectId: string): Promise<{
     ...(hoursByActivity.size ? Array.from(hoursByActivity.entries()).map(([name, hours]) => `  - ${name}: ${hours.toFixed(2)}h`) : ['  - なし']),
   ];
 
-  const memberLines = members.length
+  const memberLines = scope !== 'project'
+    ? []
+    : members.length
     ? members.map((member) => {
       const name = member.user ? formatUserName(member.user) : `グループ: ${member.group?.name ?? '不明'}`;
       const roles = member.memberRoles.map((row) => row.role.name).join(', ') || 'ロールなし';
@@ -760,7 +829,7 @@ async function buildProjectWeeklyReportInput(projectId: string): Promise<{
     : ['対象チケットなし'];
 
   const omittedCount = Math.max(0, issueCount - issues.length);
-  const input = [
+  const inputLines = [
     '# 週次レポート対象期間',
     `- 開始: ${formatDateTime(periodStartDate)}`,
     `- 終了: ${formatDateTime(periodEndDate)}`,
@@ -792,7 +861,11 @@ async function buildProjectWeeklyReportInput(projectId: string): Promise<{
     ...hourLines,
     '',
     ...issueLines,
-  ].filter((line) => line !== '').join('\n');
+  ];
+  const input = (scope === 'assigned'
+    ? inputLines.filter((_, index) => index !== 19)
+    : inputLines
+  ).filter((line) => line !== '').join('\n');
 
   return {
     input: limitWeeklyReportInputChars(input),
@@ -800,22 +873,50 @@ async function buildProjectWeeklyReportInput(projectId: string): Promise<{
     issueLimit,
     periodStart: periodStartDate.toISOString(),
     periodEnd: periodEndDate.toISOString(),
+    scope,
   };
 }
 
-async function buildProjectBottleneckDetectionInput(projectId: string): Promise<{
+async function buildProjectBottleneckDetectionInput(
+  projectId: string,
+  scope: BottleneckDetectionScope,
+  userId: string,
+): Promise<{
   input: string;
   overdueOpenIssueCount: number;
   lateClosedIssueCount: number;
   overdueOpenIssueLimit: number;
   lateClosedIssueLimit: number;
+  scope: BottleneckDetectionScope;
 }> {
   const now = new Date();
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
   const overdueOpenIssueLimit = config.AI_BOTTLENECK_DETECTION_OPEN_ISSUE_LIMIT;
   const lateClosedIssueLimit = config.AI_BOTTLENECK_DETECTION_CLOSED_ISSUE_LIMIT;
-  const overdueOpenWhere = { projectId, dueDate: { lt: todayStart }, status: { isClosed: false } };
+  const groupIds = scope === 'assigned' ? await getUserGroupIds(userId) : [];
+  const assignedIssueWhere = scope === 'assigned'
+    ? {
+      OR: [
+        { assigneeId: userId },
+        ...(groupIds.length ? [{ assigneeGroupId: { in: groupIds } }] : []),
+      ],
+    }
+    : {};
+  const overdueOpenWhere = {
+    projectId,
+    dueDate: { lt: todayStart },
+    status: { isClosed: false },
+    ...assignedIssueWhere,
+  };
+  const assignedLateClosedSql = scope === 'assigned'
+    ? Prisma.sql`
+      AND (
+        i.assignee_id = ${userId}
+        ${groupIds.length ? Prisma.sql`OR i.assignee_group_id IN (${Prisma.join(groupIds)})` : Prisma.empty}
+      )
+    `
+    : Prisma.empty;
 
   const issueSelect = {
     number: true,
@@ -863,18 +964,20 @@ async function buildProjectBottleneckDetectionInput(projectId: string): Promise<
         _count: { select: { members: true, issues: true } },
       },
     }),
-    prisma.member.findMany({
-      where: { projectId },
-      orderBy: { createdAt: 'asc' },
-      select: {
-        user: { select: { login: true, firstname: true, lastname: true } },
-        group: { select: { name: true } },
-        memberRoles: {
-          select: { role: { select: { name: true } } },
-          orderBy: { role: { position: 'asc' } },
+    scope === 'project'
+      ? prisma.member.findMany({
+        where: { projectId },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          user: { select: { login: true, firstname: true, lastname: true } },
+          group: { select: { name: true } },
+          memberRoles: {
+            select: { role: { select: { name: true } } },
+            orderBy: { role: { position: 'asc' } },
+          },
         },
-      },
-    }),
+      })
+      : Promise.resolve([]),
     prisma.issue.count({ where: overdueOpenWhere }),
     prisma.issue.findMany({
       where: overdueOpenWhere,
@@ -891,6 +994,7 @@ async function buildProjectBottleneckDetectionInput(projectId: string): Promise<
         AND i.closed_on IS NOT NULL
         AND s.is_closed = true
         AND DATE(i.closed_on) > DATE(i.due_date)
+        ${assignedLateClosedSql}
       ORDER BY i.closed_on DESC, i.due_date DESC
     `,
   ]);
@@ -950,7 +1054,9 @@ async function buildProjectBottleneckDetectionInput(projectId: string): Promise<
         .map(([name, count]) => `  - ${name}: ${count}件`)
       : ['  - なし']),
   ];
-  const memberLines = members.length
+  const memberLines = scope !== 'project'
+    ? []
+    : members.length
     ? members.map((member) => {
       const name = member.user ? formatUserName(member.user) : `グループ: ${member.group?.name ?? '不明'}`;
       const roles = member.memberRoles.map((row) => row.role.name).join(', ') || 'ロールなし';
@@ -1000,7 +1106,7 @@ async function buildProjectBottleneckDetectionInput(projectId: string): Promise<
 
   const omittedOpenCount = Math.max(0, overdueOpenIssueCount - overdueOpenIssues.length);
   const omittedClosedCount = Math.max(0, lateClosedIssueCount - lateClosedIssues.length);
-  const input = [
+  const inputLines = [
     '# ボトルネック検知対象',
     `- 実行日時: ${formatDateTime(now)}`,
     '- 条件:',
@@ -1034,7 +1140,11 @@ async function buildProjectBottleneckDetectionInput(projectId: string): Promise<
     '',
     '# 期日超過後に完了したチケット',
     ...issueLines(lateClosedIssues, 'closed'),
-  ].filter((line) => line !== '').join('\n');
+  ];
+  const input = (scope === 'assigned'
+    ? inputLines.filter((_, index) => index !== 16)
+    : inputLines
+  ).filter((line) => line !== '').join('\n');
 
   return {
     input: limitBottleneckDetectionInputChars(input),
@@ -1042,13 +1152,15 @@ async function buildProjectBottleneckDetectionInput(projectId: string): Promise<
     lateClosedIssueCount,
     overdueOpenIssueLimit,
     lateClosedIssueLimit,
+    scope,
   };
 }
 
-async function buildProjectTaskInstructionInput(projectId: string): Promise<{
+async function buildProjectTaskInstructionInput(projectId: string, scope: TaskInstructionScope, userId: string): Promise<{
   input: string;
   issueCount: number;
   issueLimit: number;
+  scope: TaskInstructionScope;
 }> {
   const now = new Date();
   const todayStart = new Date(now);
@@ -1059,7 +1171,19 @@ async function buildProjectTaskInstructionInput(projectId: string): Promise<{
   staleBefore.setDate(staleBefore.getDate() - 14);
   const issueLimit = config.AI_TASK_INSTRUCTION_ISSUE_LIMIT;
 
-  const issueWhere = { projectId, status: { isClosed: false } };
+  const groupIds = scope === 'assigned' ? await getUserGroupIds(userId) : [];
+  const issueWhere = {
+    projectId,
+    status: { isClosed: false },
+    ...(scope === 'assigned'
+      ? {
+        OR: [
+          { assigneeId: userId },
+          ...(groupIds.length ? [{ assigneeGroupId: { in: groupIds } }] : []),
+        ],
+      }
+      : {}),
+  };
   const issueSelect = {
     number: true,
     subject: true,
@@ -1107,18 +1231,20 @@ async function buildProjectTaskInstructionInput(projectId: string): Promise<{
         _count: { select: { members: true, issues: true } },
       },
     }),
-    prisma.member.findMany({
-      where: { projectId },
-      orderBy: { createdAt: 'asc' },
-      select: {
-        user: { select: { login: true, firstname: true, lastname: true } },
-        group: { select: { name: true } },
-        memberRoles: {
-          select: { role: { select: { name: true } } },
-          orderBy: { role: { position: 'asc' } },
+    scope === 'project'
+      ? prisma.member.findMany({
+        where: { projectId },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          user: { select: { login: true, firstname: true, lastname: true } },
+          group: { select: { name: true } },
+          memberRoles: {
+            select: { role: { select: { name: true } } },
+            orderBy: { role: { position: 'asc' } },
+          },
         },
-      },
-    }),
+      })
+      : Promise.resolve([]),
     prisma.issue.count({ where: issueWhere }),
     prisma.issue.findMany({
       where: issueWhere,
@@ -1173,7 +1299,9 @@ async function buildProjectTaskInstructionInput(projectId: string): Promise<{
         .map(([name, count]) => `  - ${name}: ${count}件`)
       : ['  - なし']),
   ];
-  const memberLines = members.length
+  const memberLines = scope === 'assigned'
+    ? []
+    : members.length
     ? members.map((member) => {
       const name = member.user ? formatUserName(member.user) : `グループ: ${member.group?.name ?? '不明'}`;
       const roles = member.memberRoles.map((row) => row.role.name).join(', ') || 'ロールなし';
@@ -1222,7 +1350,7 @@ async function buildProjectTaskInstructionInput(projectId: string): Promise<{
     : ['未完了チケットなし'];
 
   const omittedCount = Math.max(0, issueCount - issues.length);
-  const input = [
+  const inputLines = [
     '# タスク指示対象',
     `- 実行日時: ${formatDateTime(now)}`,
     '- 目的: プロジェクト内の未完了チケット状況から、次に実行すべきタスク指示を出す',
@@ -1252,9 +1380,13 @@ async function buildProjectTaskInstructionInput(projectId: string): Promise<{
     '',
     '# 未完了チケット詳細',
     ...issueLines,
-  ].filter((line) => line !== '').join('\n');
+  ];
+  const input = (scope === 'assigned'
+    ? inputLines.filter((_, index) => index !== 14)
+    : inputLines
+  ).filter((line) => line !== '').join('\n');
 
-  return { input: limitTaskInstructionInputChars(input), issueCount, issueLimit };
+  return { input: limitTaskInstructionInputChars(input), issueCount, issueLimit, scope };
 }
 
 router.get(
@@ -1541,7 +1673,14 @@ router.post(
     });
     if (!issueTrackingEnabled) throw AppError.forbidden('このプロジェクトではチケットトラッキングが無効です');
 
-    const { input, issueCount, issueLimit, periodStart, periodEnd } = await buildProjectWeeklyReportInput(project.id);
+    const { scope, periodStart: requestedPeriodStart, periodEnd: requestedPeriodEnd } = weeklyReportBodySchema.parse(req.body ?? {});
+    const { input, issueCount, issueLimit, periodStart, periodEnd } = await buildProjectWeeklyReportInput(
+      project.id,
+      scope,
+      req.user!.userId,
+      requestedPeriodStart,
+      requestedPeriodEnd,
+    );
     const report = await createOpenAiProjectWeeklyReport(input);
 
     return sendSuccess(res, {
@@ -1550,6 +1689,7 @@ router.post(
       issueLimit,
       periodStart,
       periodEnd,
+      scope,
     });
   }),
 );
@@ -1569,13 +1709,14 @@ router.post(
     });
     if (!issueTrackingEnabled) throw AppError.forbidden('このプロジェクトではチケットトラッキングが無効です');
 
+    const { scope } = bottleneckDetectionBodySchema.parse(req.body ?? {});
     const {
       input,
       overdueOpenIssueCount,
       lateClosedIssueCount,
       overdueOpenIssueLimit,
       lateClosedIssueLimit,
-    } = await buildProjectBottleneckDetectionInput(project.id);
+    } = await buildProjectBottleneckDetectionInput(project.id, scope, req.user!.userId);
     const report = await createOpenAiProjectBottleneckDetection(input);
 
     return sendSuccess(res, {
@@ -1584,6 +1725,7 @@ router.post(
       lateClosedIssueCount,
       overdueOpenIssueLimit,
       lateClosedIssueLimit,
+      scope,
     });
   }),
 );
@@ -1603,13 +1745,15 @@ router.post(
     });
     if (!issueTrackingEnabled) throw AppError.forbidden('このプロジェクトではチケットトラッキングが無効です');
 
-    const { input, issueCount, issueLimit } = await buildProjectTaskInstructionInput(project.id);
+    const { scope } = taskInstructionBodySchema.parse(req.body ?? {});
+    const { input, issueCount, issueLimit } = await buildProjectTaskInstructionInput(project.id, scope, req.user!.userId);
     const instructions = await createOpenAiProjectTaskInstruction(input);
 
     return sendSuccess(res, {
       instructions,
       issueCount,
       issueLimit,
+      scope,
     });
   }),
 );

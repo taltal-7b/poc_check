@@ -38,6 +38,7 @@ const ISSUE_SORT_KEYS = [
   'assignee',
   'priority',
   'estimatedHours',
+  'spentHours',
   'createdAt',
   'dueDate',
   'updatedAt',
@@ -209,6 +210,10 @@ export default function IssuesPage() {
     return map;
   }, [issues]);
   const visibleIssueRows = useMemo(() => {
+    if (sort !== 'parent') {
+      return issues.map((issue) => ({ issue, depth: 0 }));
+    }
+
     const issueIds = new Set(issues.map((issue) => issue.id));
     const rows: { issue: Issue; depth: number }[] = [];
     const appendedIds = new Set<string>();
@@ -232,7 +237,7 @@ export default function IssuesPage() {
       appendIssue(issue, 0, new Set());
     }
     return rows;
-  }, [expandedIssueIds, issueChildrenByParent, issues]);
+  }, [expandedIssueIds, issueChildrenByParent, issues, sort]);
   const visibleIssues = useMemo(() => visibleIssueRows.map((row) => row.issue), [visibleIssueRows]);
   const selectedCount = selectedIds.size;
   const selectedVisibleCount = visibleIssues.filter((issue) => selectedIds.has(issue.id)).length;
@@ -614,7 +619,7 @@ export default function IssuesPage() {
   return (
     <div className="space-y-6">
       {identifier && <ProjectSubNav identifier={identifier} />}
-      <div className="mx-auto max-w-7xl space-y-6">
+      <div className="mx-auto w-full space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-slate-900">{t('issues.title')}</h1>
         {(canShowProjectCreateButton || (!identifier && isAuthenticated)) && (
@@ -842,7 +847,7 @@ export default function IssuesPage() {
                 <th className="w-32 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('assignee', t('issues.assignee'))}</th>
                 <th className="w-24 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('priority', t('issues.priority'))}</th>
                 <th className="w-24 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('estimatedHours', t('issues.estimatedHours'))}</th>
-                <th className="w-24 px-2 py-3 text-left font-semibold text-slate-700">実績工数</th>
+                <th className="w-24 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('spentHours', '実績工数')}</th>
                 <th className="w-20 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('createdAt', '登録日')}</th>
                 <th className="w-20 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('dueDate', t('issues.dueDate'))}</th>
                 <th className="w-20 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('updatedAt', '更新日')}</th>
@@ -858,7 +863,7 @@ export default function IssuesPage() {
                   ? `${issue.parent.number ? `#${issue.parent.number} ` : ''}${issue.parent.subject}`.trim()
                   : EMPTY_MARK;
                 const children = issueChildrenByParent.get(issue.id) ?? [];
-                const hasChildren = children.length > 0;
+                const hasChildren = sort === 'parent' && children.length > 0;
                 const expanded = expandedIssueIds.has(issue.id);
                 return (
                   <tr key={issue.id} className="hover:bg-slate-50/80">

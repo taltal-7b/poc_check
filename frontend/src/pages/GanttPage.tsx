@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import ProjectSubNav from '../components/ProjectSubNav';
@@ -151,6 +151,7 @@ export default function GanttPage() {
 
   const issuesQuery = useProjectIssues(slug, { per_page: 100, page: 1 });
   const issues = useMemo(() => unwrapList<Issue>(issuesQuery.data), [issuesQuery.data]);
+  const loading = issuesQuery.isLoading;
 
   const [zoom, setZoom] = useState<Zoom>('day');
   const [rangeStartMonth, setRangeStartMonth] = useState(() => startOfMonth(new Date()));
@@ -211,7 +212,7 @@ export default function GanttPage() {
     return differenceInCalendarDays(today, cs) * dayWidth + dayWidth / 2;
   }, [chartStart, chartEnd, dayWidth]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return;
     if (todayOffset == null) {
@@ -220,13 +221,18 @@ export default function GanttPage() {
     }
     if (differenceInCalendarDays(startOfMonth(rangeStartMonth), startOfMonth(new Date())) !== 0) return;
 
-    const targetLeft = Math.max(0, todayOffset - scroller.clientWidth * 0.28);
-    scroller.scrollLeft = targetLeft;
-  }, [rangeStartMonth, todayOffset, timelinePx]);
+    const scrollToToday = () => {
+      const targetLeft = Math.max(0, todayOffset - scroller.clientWidth * 0.28);
+      scroller.scrollLeft = targetLeft;
+    };
+
+    scrollToToday();
+    const frame = window.requestAnimationFrame(scrollToToday);
+    return () => window.cancelAnimationFrame(frame);
+  }, [loading, rangeStartMonth, issueRows.length, todayOffset, timelinePx]);
 
   if (!identifier) return <p className="text-gray-500">{t('app.noData')}</p>;
 
-  const loading = issuesQuery.isLoading;
   const projectRowIdx = 0;
   const totalRows = 1 + issueRows.length;
   const chartH = totalRows * ROW_H + 4;

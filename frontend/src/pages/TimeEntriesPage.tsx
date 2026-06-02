@@ -1,10 +1,11 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import ProjectSubNav from '../components/ProjectSubNav';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { format, parseISO } from 'date-fns';
-import { Pencil, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Pencil, Trash2 } from 'lucide-react';
 import AppSelect from '../components/AppSelect';
 import {
   useProject,
@@ -36,6 +37,7 @@ type SpentOnOperator =
 
 type TimeEntrySortKey = 'spentOn' | 'user' | 'activity' | 'issue' | 'hours' | 'comments';
 type SortDirection = 'asc' | 'desc';
+const EMPTY_MARK = '\uFF0D';
 
 function formatDateKey(date: Date): string {
   return format(date, 'yyyy-MM-dd');
@@ -413,18 +415,32 @@ export default function TimeEntriesPage() {
     setSortDirection('asc');
   };
 
-  const sortIndicator = (key: TimeEntrySortKey): string => {
-    if (sortKey !== key) return '';
-    return sortDirection === 'asc' ? ' ▲' : ' ▼';
+  const sortIndicator = (key: TimeEntrySortKey) => {
+    if (sortKey !== key) return null;
+    return sortDirection === 'asc'
+      ? <ArrowUp className="h-3.5 w-3.5" aria-hidden />
+      : <ArrowDown className="h-3.5 w-3.5" aria-hidden />;
   };
+
+  const sortableHeader = (key: TimeEntrySortKey, label: ReactNode) => (
+    <button
+      type="button"
+      onClick={() => toggleSort(key)}
+      className="inline-flex items-center gap-1 hover:text-primary-700"
+    >
+      {label}
+      {sortIndicator(key)}
+    </button>
+  );
 
   return (
     <div className="space-y-6">
       {identifier && <ProjectSubNav identifier={identifier} />}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+      <div className="mx-auto w-full space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{t('timeEntries.title')}</h1>
-          <p className="mt-1 text-sm text-gray-600">
+          <h1 className="text-2xl font-bold text-slate-900">{t('timeEntries.title')}</h1>
+          <p className="mt-1 text-sm text-slate-600">
             {t('timeEntries.report')}: <span className="font-semibold text-primary-700">{formatEstimatedEffort(totalHours, 'hours')}</span>{' '}
             {t('timeEntries.hours')}
           </p>
@@ -433,7 +449,7 @@ export default function TimeEntriesPage() {
           <button
             type="button"
             onClick={() => setModalOpen(true)}
-            className="inline-flex justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+            className="inline-flex justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-700"
           >
             {t('timeEntries.new')}
           </button>
@@ -446,9 +462,9 @@ export default function TimeEntriesPage() {
         </p>
       )}
 
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="min-w-[9rem] text-sm">
-          <span className="mb-1 block text-gray-600">{t('timeEntries.spentOn')}</span>
+          <span className="mb-1 block text-xs font-medium text-slate-500">{t('timeEntries.spentOn')}</span>
           <AppSelect
             value={spentOnOperator}
             onChange={(value) => setSpentOnOperator(value as SpentOnOperator)}
@@ -463,144 +479,115 @@ export default function TimeEntriesPage() {
               { value: 'lm', label: '先月' },
             ]}
             ariaLabel={t('timeEntries.spentOn')}
-            className="rounded border border-gray-300 px-2 py-1.5 text-sm"
+            className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
           />
         </div>
         {spentOnOperator === '><' && (
           <>
             <div className="text-sm">
-              <span className="mb-1 block text-gray-600">開始</span>
+              <span className="mb-1 block text-xs font-medium text-slate-500">開始</span>
               <input
                 aria-label="開始"
                 type="date"
                 value={spentOnFrom}
                 onChange={(e) => setSpentOnFrom(e.target.value)}
-                className="rounded border border-gray-300 px-2 py-1.5 text-sm"
+                className="rounded-lg border border-slate-300 px-2 py-2 text-sm"
               />
             </div>
             <div className="text-sm">
-              <span className="mb-1 block text-gray-600">終了</span>
+              <span className="mb-1 block text-xs font-medium text-slate-500">終了</span>
               <input
                 aria-label="終了"
                 type="date"
                 value={spentOnTo}
                 onChange={(e) => setSpentOnTo(e.target.value)}
-                className="rounded border border-gray-300 px-2 py-1.5 text-sm"
+                className="rounded-lg border border-slate-300 px-2 py-2 text-sm"
               />
             </div>
           </>
         )}
         <div className="text-sm min-w-[14rem]">
-          <span className="mb-1 block text-gray-600">{t('issues.author')}</span>
+          <span className="mb-1 block text-xs font-medium text-slate-500">{t('issues.author')}</span>
           <AppSelect
             value={filterUserId}
             onChange={setFilterUserId}
             options={[{ value: '', label: '－' }, ...memberUserOptions]}
             ariaLabel={t('issues.author')}
-            className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+            className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
           />
         </div>
         <div className="text-sm min-w-[12rem]">
-          <span className="mb-1 block text-gray-600">{t('timeEntries.activity')}</span>
+          <span className="mb-1 block text-xs font-medium text-slate-500">{t('timeEntries.activity')}</span>
           <AppSelect
             value={filterActivityId}
             onChange={setFilterActivityId}
             options={[{ value: '', label: '-' }, ...availableActivities.map((activity) => ({ value: activity.id, label: activity.name }))]}
             ariaLabel={t('timeEntries.activity')}
-            className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+            className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
           />
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 text-left text-gray-600">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto overflow-y-hidden">
+        <table className="min-w-[980px] w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50">
             <tr>
-              <th className="px-4 py-3 font-medium">
-                <button type="button" onClick={() => toggleSort('spentOn')} className="inline-flex items-center hover:text-gray-900">
-                  {t('timeEntries.spentOn')}
-                  {sortIndicator('spentOn')}
-                </button>
-              </th>
-              <th className="px-4 py-3 font-medium">
-                <button type="button" onClick={() => toggleSort('issue')} className="inline-flex items-center hover:text-gray-900">
-                  {t('issues.title')}
-                  {sortIndicator('issue')}
-                </button>
-              </th>
-              <th className="px-4 py-3 font-medium">
-                <button type="button" onClick={() => toggleSort('user')} className="inline-flex items-center hover:text-gray-900">
-                  {t('issues.assignee')}
-                  {sortIndicator('user')}
-                </button>
-              </th>
-              <th className="px-4 py-3 font-medium">
-                <button type="button" onClick={() => toggleSort('activity')} className="inline-flex items-center hover:text-gray-900">
-                  {t('timeEntries.activity')}
-                  {sortIndicator('activity')}
-                </button>
-              </th>
-              <th className="px-4 py-3 font-medium">
-                <button type="button" onClick={() => toggleSort('hours')} className="inline-flex items-center hover:text-gray-900">
-                  {t('timeEntries.hours')}
-                  {sortIndicator('hours')}
-                </button>
-              </th>
-              <th className="px-4 py-3 font-medium">
-                <button type="button" onClick={() => toggleSort('comments')} className="inline-flex items-center hover:text-gray-900">
-                  {t('timeEntries.comment')}
-                  {sortIndicator('comments')}
-                </button>
-              </th>
-              <th className="px-4 py-3 text-center font-medium">{t('app.actions')}</th>
+              <th className="w-28 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('spentOn', t('timeEntries.spentOn'))}</th>
+              <th className="min-w-72 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('issue', t('issues.title'))}</th>
+              <th className="w-40 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('user', t('issues.assignee'))}</th>
+              <th className="w-40 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('activity', t('timeEntries.activity'))}</th>
+              <th className="w-24 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('hours', t('timeEntries.hours'))}</th>
+              <th className="min-w-56 px-2 py-3 text-left font-semibold text-slate-700">{sortableHeader('comments', t('timeEntries.comment'))}</th>
+              <th className="w-24 px-2 py-3 text-center font-semibold text-slate-700">{t('app.actions')}</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-slate-100">
             {isLoading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                   {t('app.loading')}
                 </td>
               </tr>
             ) : entries.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                   {t('app.noData')}
                 </td>
               </tr>
             ) : (
               sortedEntries.map((row) => (
-                <tr key={row.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 whitespace-nowrap">
-                    {row.spentOn ? format(parseISO(row.spentOn), 'yyyy-MM-dd') : '—'}
+                <tr key={row.id} className="hover:bg-slate-50/80">
+                  <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-500">
+                    {row.spentOn ? format(parseISO(row.spentOn), 'yyyy-MM-dd') : EMPTY_MARK}
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-2 py-2">
                     {row.issue
                       ? (
                         <Link
                           to={`/projects/${identifier}/issues/${row.issue.id}`}
-                          className="text-primary-600 hover:underline"
+                          className="font-medium text-slate-900 hover:text-primary-700"
                         >
                           {`#${row.issue.number ?? ''} ${row.issue.subject ?? ''}`.trim()}
                         </Link>
                       )
-                      : '—'}
+                      : EMPTY_MARK}
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="max-w-40 truncate px-2 py-2 text-slate-700">
                     {row.user ? `${row.user.lastname} ${row.user.firstname}`.trim() || row.user.login : row.userId}
                   </td>
-                  <td className="px-4 py-2">{row.activity?.name ?? row.activityId}</td>
-                  <td className="px-4 py-2">{formatEstimatedEffort(Number(row.hours), 'hours')}</td>
-                  <td className="px-4 py-2 text-gray-600 max-w-xs truncate" title={row.comments ?? ''}>
-                    {row.comments ?? '—'}
+                  <td className="max-w-40 truncate px-2 py-2 text-slate-700">{row.activity?.name ?? row.activityId}</td>
+                  <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-600">{formatEstimatedEffort(Number(row.hours), 'hours')}</td>
+                  <td className="max-w-xs truncate px-2 py-2 text-slate-600" title={row.comments ?? ''}>
+                    {row.comments ?? EMPTY_MARK}
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-2 py-2">
                     <div className="flex items-center justify-center gap-2">
                       {canEditRow(row) && (
                         <button
                           type="button"
                           onClick={() => openEdit(row)}
-                          className="rounded p-1 text-blue-600 hover:bg-blue-50"
+                          className="rounded p-1 text-primary-600 hover:bg-primary-50"
                           title={t('app.edit')}
                           aria-label={t('app.edit')}
                         >
@@ -618,7 +605,7 @@ export default function TimeEntriesPage() {
                           <Trash2 className="h-4 w-4" />
                         </button>
                       )}
-                      {!canEditRow(row) && !canDeleteRow(row) && <span className="text-gray-400">-</span>}
+                      {!canEditRow(row) && !canDeleteRow(row) && <span className="text-slate-400">-</span>}
                     </div>
                   </td>
                 </tr>
@@ -626,6 +613,8 @@ export default function TimeEntriesPage() {
             )}
           </tbody>
         </table>
+        </div>
+      </div>
       </div>
 
       <Dialog open={modalOpen} onClose={() => setModalOpen(false)} className="relative z-50">

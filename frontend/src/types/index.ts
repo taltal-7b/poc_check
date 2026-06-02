@@ -54,6 +54,7 @@ export interface ProjectAiWeeklyReport {
   issueLimit: number;
   periodStart: string;
   periodEnd: string;
+  scope: 'project' | 'assigned';
 }
 
 export interface ProjectAiBottleneckDetection {
@@ -62,12 +63,14 @@ export interface ProjectAiBottleneckDetection {
   lateClosedIssueCount: number;
   overdueOpenIssueLimit: number;
   lateClosedIssueLimit: number;
+  scope: 'project' | 'assigned';
 }
 
 export interface ProjectAiTaskInstruction {
   instructions: string;
   issueCount: number;
   issueLimit: number;
+  scope: 'project' | 'assigned';
 }
 
 export interface Tracker {

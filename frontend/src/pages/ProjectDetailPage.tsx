@@ -13,12 +13,44 @@ const aiActionOptions = [
 ] as const;
 
 type AiActionKey = (typeof aiActionOptions)[number]['key'];
-type ProgressSummaryScope = 'project' | 'assigned';
+type AiIssueScope = 'project' | 'assigned';
 
-const progressSummaryScopeOptions = [
-  { key: 'project', label: 'プロジェクト全体を分析' },
-  { key: 'assigned', label: '担当チケットのみを分析' },
+const aiIssueScopeOptions = [
+  { key: 'project', label: 'プロジェクト全体を要約' },
+  { key: 'assigned', label: '担当チケットのみを要約' },
 ] as const;
+
+const weeklyReportScopeLabels: Record<AiIssueScope, string> = {
+  project: 'プロジェクト全体の週次レポート生成',
+  assigned: '担当チケットの週次レポート生成',
+};
+
+const bottleneckDetectionScopeLabels: Record<AiIssueScope, string> = {
+  project: 'プロジェクト全体のボトルネックを分析',
+  assigned: '担当チケット内のボトルネックを分析',
+};
+
+const taskInstructionScopeLabels: Record<AiIssueScope, string> = {
+  project: 'プロジェクト全体のAIタスク指示',
+  assigned: '担当チケットからAIタスク指示',
+};
+
+function dateInputValue(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function initialWeeklyDateRange(): { periodStart: string; periodEnd: string } {
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - 7);
+  return {
+    periodStart: dateInputValue(start),
+    periodEnd: dateInputValue(end),
+  };
+}
 
 function errorMessage(error: unknown, fallback: string): string {
   if (
@@ -39,7 +71,11 @@ export default function ProjectDetailPage() {
   const { t } = useTranslation();
   const { identifier } = useParams<{ identifier: string }>();
   const [selectedAiAction, setSelectedAiAction] = useState<AiActionKey | null>(null);
-  const [selectedProgressSummaryScope, setSelectedProgressSummaryScope] = useState<ProgressSummaryScope | null>(null);
+  const [selectedProgressSummaryScope, setSelectedProgressSummaryScope] = useState<AiIssueScope | null>(null);
+  const [selectedWeeklyReportScope, setSelectedWeeklyReportScope] = useState<AiIssueScope | null>(null);
+  const [selectedBottleneckDetectionScope, setSelectedBottleneckDetectionScope] = useState<AiIssueScope | null>(null);
+  const [selectedTaskInstructionScope, setSelectedTaskInstructionScope] = useState<AiIssueScope | null>(null);
+  const [weeklyReportDateRange, setWeeklyReportDateRange] = useState(initialWeeklyDateRange);
   const [aiActionMessage, setAiActionMessage] = useState('');
   const id = identifier ?? '';
   const { data, isLoading, isError } = useProject(id);
@@ -59,10 +95,18 @@ export default function ProjectDetailPage() {
   const openIssueCount = issuesQuery.data?.pagination?.total ?? '—';
   const canUseAiActions = Boolean(project?.permissions?.canUseAiActions);
   const isAiPending = progressSummary.isPending || weeklyReport.isPending || bottleneckDetection.isPending || taskInstruction.isPending;
+  const hasValidWeeklyReportDateRange = Boolean(
+    weeklyReportDateRange.periodStart &&
+    weeklyReportDateRange.periodEnd &&
+    weeklyReportDateRange.periodStart <= weeklyReportDateRange.periodEnd,
+  );
   const canRunAiAction = Boolean(
     selectedAiAction &&
     !isAiPending &&
-    (selectedAiAction !== 'progress-summary' || selectedProgressSummaryScope),
+    (selectedAiAction !== 'progress-summary' || selectedProgressSummaryScope) &&
+    (selectedAiAction !== 'weekly-report' || (selectedWeeklyReportScope && hasValidWeeklyReportDateRange)) &&
+    (selectedAiAction !== 'bottleneck-detection' || selectedBottleneckDetectionScope) &&
+    (selectedAiAction !== 'task-instruction' || selectedTaskInstructionScope),
   );
   const shouldShowAiResult = Boolean(
     isAiPending ||
@@ -80,6 +124,9 @@ export default function ProjectDetailPage() {
   const runAiAction = () => {
     if (!selectedAiAction) return;
     if (selectedAiAction === 'progress-summary' && !selectedProgressSummaryScope) return;
+    if (selectedAiAction === 'weekly-report' && (!selectedWeeklyReportScope || !hasValidWeeklyReportDateRange)) return;
+    if (selectedAiAction === 'bottleneck-detection' && !selectedBottleneckDetectionScope) return;
+    if (selectedAiAction === 'task-instruction' && !selectedTaskInstructionScope) return;
     setAiActionMessage('');
     progressSummary.reset();
     weeklyReport.reset();
@@ -92,17 +139,22 @@ export default function ProjectDetailPage() {
     }
 
     if (selectedAiAction === 'weekly-report') {
-      weeklyReport.mutate(id);
+      weeklyReport.mutate({
+        projectId: id,
+        scope: selectedWeeklyReportScope,
+        periodStart: weeklyReportDateRange.periodStart,
+        periodEnd: weeklyReportDateRange.periodEnd,
+      });
       return;
     }
 
     if (selectedAiAction === 'bottleneck-detection') {
-      bottleneckDetection.mutate(id);
+      bottleneckDetection.mutate({ projectId: id, scope: selectedBottleneckDetectionScope });
       return;
     }
 
     if (selectedAiAction === 'task-instruction') {
-      taskInstruction.mutate(id);
+      taskInstruction.mutate({ projectId: id, scope: selectedTaskInstructionScope });
       return;
     }
 
@@ -112,6 +164,10 @@ export default function ProjectDetailPage() {
   const clearAiAction = () => {
     setSelectedAiAction(null);
     setSelectedProgressSummaryScope(null);
+    setSelectedWeeklyReportScope(null);
+    setSelectedBottleneckDetectionScope(null);
+    setSelectedTaskInstructionScope(null);
+    setWeeklyReportDateRange(initialWeeklyDateRange());
     setAiActionMessage('');
     progressSummary.reset();
     weeklyReport.reset();
@@ -188,6 +244,9 @@ export default function ProjectDetailPage() {
                       onClick={() => {
                         setSelectedAiAction(key);
                         if (key !== 'progress-summary') setSelectedProgressSummaryScope(null);
+                        if (key !== 'weekly-report') setSelectedWeeklyReportScope(null);
+                        if (key !== 'bottleneck-detection') setSelectedBottleneckDetectionScope(null);
+                        if (key !== 'task-instruction') setSelectedTaskInstructionScope(null);
                       }}
                       aria-pressed={isSelected}
                       className={`min-h-20 rounded-lg border p-4 text-left text-sm font-medium leading-5 transition-all ${
@@ -202,16 +261,40 @@ export default function ProjectDetailPage() {
                 })}
               </div>
 
-              {selectedAiAction === 'progress-summary' && (
+              {(selectedAiAction === 'progress-summary' || selectedAiAction === 'weekly-report' || selectedAiAction === 'bottleneck-detection' || selectedAiAction === 'task-instruction') && (
                 <div className="mt-4 border-t border-slate-200 pt-4">
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {progressSummaryScopeOptions.map(({ key, label }) => {
-                      const isSelected = selectedProgressSummaryScope === key;
+                    {aiIssueScopeOptions.map(({ key, label }) => {
+                      const buttonLabel = selectedAiAction === 'bottleneck-detection'
+                        ? bottleneckDetectionScopeLabels[key]
+                        : selectedAiAction === 'weekly-report'
+                          ? weeklyReportScopeLabels[key]
+                        : selectedAiAction === 'task-instruction'
+                          ? taskInstructionScopeLabels[key]
+                          : label;
+                      const selectedScope = selectedAiAction === 'weekly-report'
+                        ? selectedWeeklyReportScope
+                        : selectedAiAction === 'bottleneck-detection'
+                          ? selectedBottleneckDetectionScope
+                          : selectedAiAction === 'task-instruction'
+                            ? selectedTaskInstructionScope
+                            : selectedProgressSummaryScope;
+                      const isSelected = selectedScope === key;
                       return (
                         <button
                           key={key}
                           type="button"
-                          onClick={() => setSelectedProgressSummaryScope(key)}
+                          onClick={() => {
+                            if (selectedAiAction === 'weekly-report') {
+                              setSelectedWeeklyReportScope(key);
+                            } else if (selectedAiAction === 'bottleneck-detection') {
+                              setSelectedBottleneckDetectionScope(key);
+                            } else if (selectedAiAction === 'task-instruction') {
+                              setSelectedTaskInstructionScope(key);
+                            } else {
+                              setSelectedProgressSummaryScope(key);
+                            }
+                          }}
                           aria-pressed={isSelected}
                           className={`min-h-16 rounded-lg border p-4 text-left text-sm font-medium leading-5 transition-all ${
                             isSelected
@@ -219,11 +302,33 @@ export default function ProjectDetailPage() {
                               : 'border-slate-200 bg-white text-slate-700 hover:border-primary-300 hover:bg-slate-50'
                           }`}
                         >
-                          {label}
+                          {buttonLabel}
                         </button>
                       );
                     })}
                   </div>
+                  {selectedAiAction === 'weekly-report' && (
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <label className="block text-sm font-medium text-slate-700">
+                        開始日
+                        <input
+                          type="date"
+                          value={weeklyReportDateRange.periodStart}
+                          onChange={(e) => setWeeklyReportDateRange((current) => ({ ...current, periodStart: e.target.value }))}
+                          className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        />
+                      </label>
+                      <label className="block text-sm font-medium text-slate-700">
+                        終了日
+                        <input
+                          type="date"
+                          value={weeklyReportDateRange.periodEnd}
+                          onChange={(e) => setWeeklyReportDateRange((current) => ({ ...current, periodEnd: e.target.value }))}
+                          className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        />
+                      </label>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -264,6 +369,9 @@ export default function ProjectDetailPage() {
                   ) : weeklyReport.data ? (
                     <div className="space-y-3">
                       <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                        <span>
+                          分析範囲: {weeklyReport.data.data.scope === 'assigned' ? '担当チケットのみ' : 'プロジェクト全体'}
+                        </span>
                         <span>対象チケット: {weeklyReport.data.data.issueCount}</span>
                         <span>取得上限: {weeklyReport.data.data.issueLimit}</span>
                         <span>
@@ -278,6 +386,9 @@ export default function ProjectDetailPage() {
                   ) : bottleneckDetection.data ? (
                     <div className="space-y-3">
                       <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                        <span>
+                          分析範囲: {bottleneckDetection.data.data.scope === 'assigned' ? '担当チケットのみ' : 'プロジェクト全体'}
+                        </span>
                         <span>未完了・期日超過: {bottleneckDetection.data.data.overdueOpenIssueCount}</span>
                         <span>取得上限: {bottleneckDetection.data.data.overdueOpenIssueLimit}</span>
                         <span>期日超過後に完了: {bottleneckDetection.data.data.lateClosedIssueCount}</span>
@@ -291,6 +402,9 @@ export default function ProjectDetailPage() {
                   ) : taskInstruction.data ? (
                     <div className="space-y-3">
                       <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                        <span>
+                          分析範囲: {taskInstruction.data.data.scope === 'assigned' ? '担当チケットのみ' : 'プロジェクト全体'}
+                        </span>
                         <span>未完了チケット: {taskInstruction.data.data.issueCount}</span>
                         <span>取得上限: {taskInstruction.data.data.issueLimit}</span>
                       </div>

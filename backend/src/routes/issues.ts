@@ -287,6 +287,8 @@ function issueOrderBy(sort: string, order: Prisma.SortOrder): Prisma.IssueOrderB
       return [{ priority: order }, { number: 'desc' }];
     case 'estimatedHours':
       return [{ estimatedHours: order }, { number: 'desc' }];
+    case 'spentHours':
+      return [{ number: 'desc' }];
     case 'createdAt':
       return [{ createdAt: order }, { number: 'desc' }];
     case 'dueDate':
@@ -1112,6 +1114,110 @@ async function attachIssueSpentHours<T extends { id: string }>(issues: T[]): Pro
   }));
 }
 
+function likeContainsPattern(value: string): string {
+  return `%${value.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+}
+
+async function issueIdsBySpentHours(
+  where: Prisma.IssueWhereInput,
+  order: Prisma.SortOrder,
+  skip: number,
+  take: number,
+): Promise<string[]> {
+  const whereSql = issueWhereSql(where);
+  const directionSql = order === 'asc' ? Prisma.sql`ASC` : Prisma.sql`DESC`;
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT i.id
+    FROM issues i
+    LEFT JOIN time_entries te ON te.issue_id = i.id
+    WHERE ${whereSql}
+    GROUP BY i.id, i.number
+    ORDER BY COALESCE(SUM(te.hours), 0) ${directionSql}, i.number DESC
+    LIMIT ${take}
+    OFFSET ${skip}
+  `;
+  return rows.map((row) => row.id);
+}
+
+function issueWhereSql(where: Prisma.IssueWhereInput): Prisma.Sql {
+  const clauses: Prisma.Sql[] = [];
+
+  const projectId = where.projectId;
+  if (typeof projectId === 'string') {
+    clauses.push(Prisma.sql`i.project_id = ${projectId}`);
+  } else if (projectId && typeof projectId === 'object' && 'in' in projectId && Array.isArray(projectId.in)) {
+    clauses.push(projectId.in.length ? Prisma.sql`i.project_id IN (${Prisma.join(projectId.in)})` : Prisma.sql`FALSE`);
+  }
+
+  if (typeof where.statusId === 'string') clauses.push(Prisma.sql`i.status_id = ${where.statusId}`);
+  if (typeof where.trackerId === 'string') clauses.push(Prisma.sql`i.tracker_id = ${where.trackerId}`);
+  if (typeof where.assigneeGroupId === 'string') clauses.push(Prisma.sql`i.assignee_group_id = ${where.assigneeGroupId}`);
+  if (typeof where.authorId === 'string') clauses.push(Prisma.sql`i.author_id = ${where.authorId}`);
+  if (typeof where.priority === 'number') clauses.push(Prisma.sql`i.priority = ${where.priority}`);
+
+  const assigneeId = Array.isArray(where.OR) && typeof where.OR[0]?.assigneeId === 'string'
+    ? where.OR[0].assigneeId
+    : null;
+  if (assigneeId) {
+    clauses.push(Prisma.sql`(
+      i.assignee_id = ${assigneeId}
+      OR EXISTS (
+        SELECT 1
+        FROM group_users gu
+        WHERE gu.group_id = i.assignee_group_id
+          AND gu.user_id = ${assigneeId}
+      )
+    )`);
+  }
+
+  const isClosed = where.status && typeof where.status === 'object' && 'isClosed' in where.status
+    ? where.status.isClosed
+    : undefined;
+  if (typeof isClosed === 'boolean') {
+    clauses.push(Prisma.sql`EXISTS (
+      SELECT 1
+      FROM issue_statuses s
+      WHERE s.id = i.status_id
+        AND s.is_closed = ${isClosed}
+    )`);
+  }
+
+  const parentNumber = where.parent && typeof where.parent === 'object' && 'number' in where.parent
+    ? where.parent.number
+    : undefined;
+  if (typeof parentNumber === 'number') {
+    clauses.push(Prisma.sql`EXISTS (
+      SELECT 1
+      FROM issues parent_issue
+      WHERE parent_issue.id = i.parent_id
+        AND parent_issue.number = ${parentNumber}
+    )`);
+  }
+
+  if (typeof where.subject === 'object' && where.subject && 'contains' in where.subject && typeof where.subject.contains === 'string') {
+    clauses.push(Prisma.sql`LOWER(i.subject) LIKE LOWER(${likeContainsPattern(where.subject.contains)}) ESCAPE '\'`);
+  }
+
+  const q = Array.isArray(where.AND) && where.AND[0] && typeof where.AND[0] === 'object' && 'OR' in where.AND[0]
+    ? where.AND[0].OR
+    : null;
+  if (Array.isArray(q)) {
+    const subjectClause = q.find((item) => item && typeof item === 'object' && 'subject' in item)?.subject;
+    const numberClause = q.find((item) => item && typeof item === 'object' && 'number' in item)?.number;
+    if (
+      subjectClause &&
+      typeof subjectClause === 'object' &&
+      'contains' in subjectClause &&
+      typeof subjectClause.contains === 'string' &&
+      typeof numberClause === 'number'
+    ) {
+      clauses.push(Prisma.sql`(LOWER(i.subject) LIKE LOWER(${likeContainsPattern(subjectClause.contains)}) ESCAPE '\' OR i.number = ${numberClause})`);
+    }
+  }
+
+  return clauses.length ? Prisma.join(clauses, ' AND ') : Prisma.sql`TRUE`;
+}
+
 function exposeIssueChildCount<T extends { _count?: { children?: number } }>(
   issues: T[],
 ): Array<Omit<T, '_count'> & { childIssueCount: number }> {
@@ -1164,6 +1270,38 @@ router.get(
       const orderedRows = pageIds.flatMap((id) => {
         const row = rowMap.get(id);
         return row ? [{ ...row, treeDepth: depthById.get(id) ?? 0 }] : [];
+      });
+
+      return sendPaginated(res, await attachIssueSpentHours(exposeIssueChildCount(orderedRows)), {
+        total,
+        page,
+        perPage,
+        totalPages: Math.ceil(total / perPage) || 1,
+      });
+    }
+
+    if (sort === 'spentHours') {
+      const total = await prisma.issue.count({ where });
+      const pageIds = await issueIdsBySpentHours(where, order, skip, perPage);
+      const rows = pageIds.length
+        ? await prisma.issue.findMany({
+            where: { id: { in: pageIds } },
+            include: {
+              project: { select: { id: true, name: true, identifier: true } },
+              tracker: true,
+              status: true,
+              author: { select: { id: true, login: true, firstname: true, lastname: true } },
+              assignee: { select: { id: true, login: true, firstname: true, lastname: true } },
+              assigneeGroup: { select: { id: true, name: true } },
+              parent: { select: { id: true, number: true, subject: true } },
+              _count: { select: { children: true } },
+            },
+          })
+        : [];
+      const rowMap = new Map(rows.map((row) => [row.id, row]));
+      const orderedRows = pageIds.flatMap((id) => {
+        const row = rowMap.get(id);
+        return row ? [row] : [];
       });
 
       return sendPaginated(res, await attachIssueSpentHours(exposeIssueChildCount(orderedRows)), {
