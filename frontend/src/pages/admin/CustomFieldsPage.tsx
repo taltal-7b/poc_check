@@ -78,6 +78,10 @@ export default function CustomFieldsPage() {
     () => [...fields].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)),
     [fields],
   );
+  const nextPosition = useMemo(
+    () => fields.reduce((max, field) => Math.max(max, field.position), 0) + 1,
+    [fields],
+  );
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<CustomField | null>(null);
@@ -97,7 +101,7 @@ export default function CustomFieldsPage() {
     setFieldFormat('string');
     setIsRequired(false);
     setIsForAll(true);
-    setPosition(sortedFields.length + 1);
+    setPosition(nextPosition);
     setDefaultValue('');
     setPossibleValues('');
     setTrackerIds(new Set());

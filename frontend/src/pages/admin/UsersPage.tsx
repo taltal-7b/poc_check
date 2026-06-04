@@ -5,6 +5,8 @@ import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import {
   useAddGroupUser,
+  useAdminDisableTotp,
+  useAdminEnableTotp,
   useAddUserProject,
   useAllProjects,
   useGroups,
@@ -53,6 +55,12 @@ function mutationErrorMessage(err: unknown, fallback: string) {
 const PASSWORD_MIN = 8;
 const PASSWORD_MAX = 128;
 const SYSTEM_ADMIN_LABEL = 'システム管理者';
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validateEmail(mail: string) {
+  if (!mail) return '';
+  return EMAIL_PATTERN.test(mail) ? '' : 'メールアドレス形式で入力してください';
+}
 
 export default function UsersPage() {
   const { t } = useTranslation();
@@ -61,6 +69,8 @@ export default function UsersPage() {
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
   const deleteUser = useDeleteUser();
+  const adminEnableTotp = useAdminEnableTotp();
+  const adminDisableTotp = useAdminDisableTotp();
 
   const [addOpen, setAddOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
@@ -128,7 +138,8 @@ export default function UsersPage() {
   };
 
   const livePasswordError = getLivePasswordError(form.password, form.confirmPassword, !editUser);
-  const hasBlockingPasswordError = !!livePasswordError;
+  const liveEmailError = validateEmail(form.mail);
+  const hasBlockingPasswordError = !!livePasswordError || !!liveEmailError;
 
   const resetForm = () =>
     setForm({ login: '', firstname: '', lastname: '', mail: '', password: '', confirmPassword: '', admin: false, language: 'ja' });
@@ -157,6 +168,11 @@ export default function UsersPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    const emailError = validateEmail(form.mail);
+    if (emailError) {
+      setPasswordError('');
+      return;
+    }
     const validationError = validatePasswordPair(form.password, form.confirmPassword, true);
     if (validationError) {
       setPasswordError(validationError);
@@ -184,6 +200,11 @@ export default function UsersPage() {
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editUser) return;
+    const emailError = validateEmail(form.mail);
+    if (emailError) {
+      setPasswordError('');
+      return;
+    }
     if (form.password || form.confirmPassword) {
       const validationError = validatePasswordPair(form.password, form.confirmPassword, false);
       if (validationError) {
@@ -325,6 +346,34 @@ export default function UsersPage() {
     }
   };
 
+  const onEnableTotp = async () => {
+    if (!editUser) return;
+    setEditMessage('');
+    setEditError('');
+    try {
+      await adminEnableTotp.mutateAsync(editUser.id);
+      await userDetailQuery.refetch();
+      setEditMessage('二段階認証を有効化しました');
+    } catch (err: unknown) {
+      setEditError(mutationErrorMessage(err, t('app.error')));
+    }
+  };
+
+  const onDisableTotp = async () => {
+    if (!editUser) return;
+    setEditMessage('');
+    setEditError('');
+    try {
+      await adminDisableTotp.mutateAsync(editUser.id);
+      await userDetailQuery.refetch();
+      setEditMessage('二段階認証を無効化しました');
+    } catch (err: unknown) {
+      setEditError(mutationErrorMessage(err, t('app.error')));
+    }
+  };
+
+  const editTotpEnabled = userDetail?.totpEnabled ?? editUser?.totpEnabled ?? false;
+
   const formFields = (
     <div className="space-y-3">
       <div>
@@ -349,7 +398,16 @@ export default function UsersPage() {
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700">{t('users.email')}</label>
-        <input type="email" className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={form.mail} onChange={e => setForm(f => ({ ...f, mail: e.target.value }))} required />
+        <input
+          type="email"
+          className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+          value={form.mail}
+          onChange={e => {
+            setForm(f => ({ ...f, mail: e.target.value }));
+            if (passwordError) setPasswordError('');
+          }}
+          required
+        />
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700">{editUser ? t('auth.newPassword') : t('auth.password')}</label>
@@ -380,6 +438,38 @@ export default function UsersPage() {
         <input type="checkbox" checked={form.admin} onChange={e => setForm(f => ({ ...f, admin: e.target.checked }))} />
         {SYSTEM_ADMIN_LABEL}
       </label>
+      {editUser && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-slate-700">{t('myAccount.twoFactor')}</p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                現在{editTotpEnabled ? '有効' : '無効'}です
+              </p>
+            </div>
+            {editTotpEnabled ? (
+              <button
+                type="button"
+                onClick={() => void onDisableTotp()}
+                disabled={adminDisableTotp.isPending}
+                className="rounded border border-rose-600 px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+              >
+                無効化
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void onEnableTotp()}
+                disabled={adminEnableTotp.isPending}
+                className="rounded border border-primary-600 px-3 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50 disabled:opacity-50"
+              >
+                有効化
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {liveEmailError && <p className="text-sm text-red-600">{liveEmailError}</p>}
       {livePasswordError && <p className="text-sm text-red-600">{livePasswordError}</p>}
       {passwordError && <p className="text-sm text-red-600">{passwordError}</p>}
     </div>

@@ -119,17 +119,26 @@ export const useUpdateMailNotificationPreference = () => {
 // ========== Projects ==========
 export const useProjects = (params?: Record<string, unknown>, options?: { enabled?: boolean }) =>
   useQuery({ queryKey: ['projects', params], queryFn: () => get<Project[]>('/projects', params), enabled: options?.enabled });
-export const useAllProjects = (options?: { enabled?: boolean }) =>
-  useQuery({
-    queryKey: ['projects', 'all'],
+export const useAllProjects = (
+  paramsOrOptions?: Record<string, unknown> | { enabled?: boolean },
+  maybeOptions?: { enabled?: boolean },
+) => {
+  const optionOnly =
+    paramsOrOptions &&
+    Object.keys(paramsOrOptions).every((key) => key === 'enabled');
+  const params = optionOnly ? undefined : paramsOrOptions as Record<string, unknown> | undefined;
+  const options = optionOnly ? paramsOrOptions as { enabled?: boolean } : maybeOptions;
+
+  return useQuery({
+    queryKey: ['projects', 'all', params],
     queryFn: async () => {
-      const firstPage = await get<Project[]>('/projects', { page: 1, per_page: 100 });
+      const firstPage = await get<Project[]>('/projects', { ...params, page: 1, per_page: 100 });
       const totalPages = firstPage.pagination?.totalPages ?? 1;
       if (totalPages <= 1) return firstPage;
 
       const rest = await Promise.all(
         Array.from({ length: totalPages - 1 }, (_, index) =>
-          get<Project[]>('/projects', { page: index + 2, per_page: 100 }),
+          get<Project[]>('/projects', { ...params, page: index + 2, per_page: 100 }),
         ),
       );
 
@@ -140,6 +149,7 @@ export const useAllProjects = (options?: { enabled?: boolean }) =>
     },
     enabled: options?.enabled ?? true,
   });
+};
 export const useProject = (
   id: string,
   options?: { enabled?: boolean; refetchOnMount?: boolean | 'always'; cacheScope?: string },
@@ -532,6 +542,16 @@ export const useUser = (id: string) => useQuery({ queryKey: ['user', id], queryF
 export const useCreateUser = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (body: Record<string, unknown>) => post<User>('/users', body), onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }) }); };
 export const useUpdateUser = () => { const qc = useQueryClient(); return useMutation({ mutationFn: ({ id, ...body }: { id: string } & Record<string, unknown>) => put<User>(`/users/${id}`, body), onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }) }); };
 export const useDeleteUser = () => { const qc = useQueryClient(); return useMutation({ mutationFn: (id: string) => del(`/users/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }) }); };
+export const useAdminEnableTotp = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => post<{ totpEnabled: boolean }>(`/users/${id}/totp/enable`),
+    onSuccess: (_res, id) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: ['user', id] });
+    },
+  });
+};
 export const useAdminDisableTotp = () => {
   const qc = useQueryClient();
   return useMutation({

@@ -2,6 +2,8 @@ import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import { useUser, useIssues, useActivities } from '../api/hooks';
+import NotFoundPage from './NotFoundPage';
+import { isNotFoundError } from '../utils/http-error';
 import type { Issue, Activity } from '../types';
 
 export default function UserProfilePage() {
@@ -9,7 +11,7 @@ export default function UserProfilePage() {
   const { userId } = useParams<{ userId: string }>();
   const id = userId ?? '';
 
-  const { data: userData, isLoading, isError } = useUser(id);
+  const { data: userData, isLoading, isError, error } = useUser(id);
   const user = userData?.data;
 
   const assignedQuery = useIssues({ assignee: id, closed: 'false', perPage: 10 });
@@ -24,6 +26,7 @@ export default function UserProfilePage() {
   const reportedTotal = reportedQuery.data?.pagination?.total ?? 0;
 
   if (isLoading) return <div className="px-4 py-8"><p className="text-slate-500">{t('app.loading')}</p></div>;
+  if (isError && isNotFoundError(error)) return <NotFoundPage />;
   if (isError || !user) return <div className="px-4 py-8"><p className="text-red-600">{t('app.error')}</p></div>;
 
   const fullName = `${user.lastname} ${user.firstname}`.trim() || user.login;

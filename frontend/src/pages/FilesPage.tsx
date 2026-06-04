@@ -197,20 +197,21 @@ export default function FilesPage() {
     setFileDescriptions((prev) => prev.filter((_, i) => i !== index));
   };
 
-  if (!identifier) return <p className="text-gray-500">データがありません</p>;
+  if (!identifier) return <p className="text-slate-500">データがありません</p>;
 
   return (
     <div className="space-y-6">
       <ProjectSubNav identifier={identifier} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-gray-900">ファイル</h1>
+        <h1 className="text-2xl font-bold text-slate-900">ファイル</h1>
         {canManage && (
           <button
             type="button"
             onClick={() => setUploadOpen(true)}
-            className="rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-700"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-700"
           >
+            <Upload className="h-4 w-4" aria-hidden />
             ファイルを追加
           </button>
         )}
@@ -225,42 +226,42 @@ export default function FilesPage() {
           {groupedFiles.map((group) => (
             <section key={group.id}>
               {!(group.id === '__none__' && versions.length === 0) && (
-                <h2 className="mb-3 text-lg font-semibold text-gray-800">{group.name}</h2>
+                <h2 className="mb-3 text-lg font-semibold text-slate-800">{group.name}</h2>
               )}
-              <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div className="overflow-x-auto overflow-y-hidden">
+                  <table className="min-w-[920px] w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50">
                       <tr>
-                        <th className="px-4 py-3">ファイル</th>
-                        <th className="px-4 py-3">サイズ</th>
-                        <th className="px-4 py-3">説明</th>
-                        <th className="px-4 py-3">作成者</th>
-                        <th className="px-4 py-3">登録日</th>
-                        <th className="px-4 py-3 text-right">操作</th>
+                        <th className="min-w-72 px-3 py-3 text-left font-semibold text-slate-700">ファイル</th>
+                        <th className="w-24 px-3 py-3 text-left font-semibold text-slate-700">サイズ</th>
+                        <th className="min-w-64 px-3 py-3 text-left font-semibold text-slate-700">説明</th>
+                        <th className="w-36 px-3 py-3 text-left font-semibold text-slate-700">作成者</th>
+                        <th className="w-40 px-3 py-3 text-left font-semibold text-slate-700">登録日</th>
+                        <th className="w-28 px-3 py-3 text-right font-semibold text-slate-700">操作</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-slate-100">
                       {group.files.map((file) => (
-                        <tr key={file.id} className="align-top">
-                          <td className="px-4 py-3">
+                        <tr key={file.id} className="align-top hover:bg-slate-50/80">
+                          <td className="px-3 py-3">
                             <button
                               type="button"
                               onClick={() => downloadProjectFile(file)}
                               disabled={downloadingId === file.id}
-                              className="inline-flex max-w-[18rem] items-center gap-2 text-left font-medium text-primary-700 hover:underline disabled:opacity-50"
+                              className="inline-flex max-w-[22rem] items-center gap-2 text-left font-medium text-slate-900 hover:text-primary-700 disabled:opacity-50"
                             >
-                              {isImageFile(file) ? <ImageIcon size={16} className="shrink-0" /> : <FileText size={16} className="shrink-0" />}
+                              {isImageFile(file) ? <ImageIcon size={16} className="shrink-0 text-slate-500" /> : <FileText size={16} className="shrink-0 text-slate-500" />}
                               <span className="truncate">{file.filename}</span>
                             </button>
                           </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-gray-600">{formatBytes(file.filesize)}</td>
-                          <td className="max-w-md px-4 py-3 text-gray-700">
+                          <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-600">{formatBytes(file.filesize)}</td>
+                          <td className="max-w-md px-3 py-3 text-slate-700">
                             <span className="line-clamp-2 whitespace-pre-wrap">{file.description || '-'}</span>
                           </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-gray-600">{userName(file.author)}</td>
-                          <td className="whitespace-nowrap px-4 py-3 text-gray-600">{formatDateTime(file.createdAt)}</td>
-                          <td className="px-4 py-3">
+                          <td className="max-w-36 truncate px-3 py-3 text-slate-700">{userName(file.author)}</td>
+                          <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-600">{formatDateTime(file.createdAt)}</td>
+                          <td className="px-3 py-3">
                             <div className="flex justify-end gap-1">
                               {isImageFile(file) && (
                                 <button
@@ -269,7 +270,7 @@ export default function FilesPage() {
                                   disabled={downloadingId === file.id}
                                   title="プレビュー"
                                   aria-label="プレビュー"
-                                  className="rounded border border-slate-300 bg-white p-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                                  className="rounded p-1.5 text-slate-600 hover:bg-slate-100 disabled:opacity-50"
                                 >
                                   <Eye size={15} />
                                 </button>
@@ -280,7 +281,7 @@ export default function FilesPage() {
                                 disabled={downloadingId === file.id}
                                 title="ダウンロード"
                                 aria-label="ダウンロード"
-                                className="rounded border border-slate-300 bg-white p-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                                className="rounded p-1.5 text-slate-600 hover:bg-slate-100 disabled:opacity-50"
                               >
                                 <Download size={15} />
                               </button>
@@ -295,7 +296,7 @@ export default function FilesPage() {
                                   disabled={deleteFile.isPending && deleteFile.variables === file.id}
                                   title="削除"
                                   aria-label="削除"
-                                  className="rounded border border-red-300 bg-white p-1.5 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                  className="rounded p-1.5 text-red-600 hover:bg-red-50 disabled:opacity-50"
                                 >
                                   <Trash2 size={15} />
                                 </button>
@@ -316,32 +317,32 @@ export default function FilesPage() {
       <Dialog open={uploadOpen} onClose={closeUpload} className="relative z-50">
         <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
         <div className="fixed inset-0 flex items-center justify-center p-4">
-          <DialogPanel className="w-full max-w-xl rounded-xl bg-white p-6 shadow-xl">
-            <div className="flex items-start justify-between gap-3">
-              <DialogTitle className="text-lg font-semibold">ファイルを追加</DialogTitle>
+          <DialogPanel className="w-full max-w-xl rounded-xl bg-white shadow-xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 bg-slate-50 px-5 py-4">
+              <DialogTitle className="text-lg font-semibold text-slate-900">ファイルを追加</DialogTitle>
               <button type="button" onClick={closeUpload} className="rounded p-1 text-slate-500 hover:bg-slate-100">
                 <X size={18} />
               </button>
             </div>
 
-            <div className="mt-4 space-y-4">
+            <div className="space-y-4 p-5">
               {formError && <p className="text-sm text-red-600">{formError}</p>}
 
               {versions.length > 0 && (
                 <label className="block text-sm">
-                  <span className="text-gray-700">バージョン</span>
+                  <span className="mb-1 block text-xs font-medium text-slate-500">バージョン</span>
                   <AppSelect
                     value={versionId}
                     onChange={setVersionId}
                     options={[{ value: '', label: '未設定' }, ...versions.map((version) => ({ value: version.id, label: version.name }))]}
                     ariaLabel="バージョン"
-                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                   />
                 </label>
               )}
 
-              <div className="rounded border border-gray-200 bg-gray-50 px-3 py-3">
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
                   <Upload size={16} />
                   ファイル選択
                   <input
@@ -373,22 +374,22 @@ export default function FilesPage() {
                         item.key === `${file.name}-${file.size}-${file.lastModified}-${index}`,
                       );
                       return (
-                        <li key={`${file.name}-${file.size}-${file.lastModified}-${index}`} className="rounded border border-gray-200 bg-white p-3 text-sm">
+                        <li key={`${file.name}-${file.size}-${file.lastModified}-${index}`} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
                           <div className="flex gap-3">
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2">
-                                <span className="min-w-0 flex-1 truncate font-medium text-gray-700">{file.name}</span>
-                                <span className="shrink-0 text-xs text-gray-500">{formatBytes(file.size)}</span>
+                                <span className="min-w-0 flex-1 truncate font-medium text-slate-700">{file.name}</span>
+                                <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">{formatBytes(file.size)}</span>
                                 <button
                                   type="button"
                                   onClick={() => removeSelectedFile(index)}
-                                  className="rounded p-1 text-gray-500 hover:bg-gray-100"
+                                  className="rounded p-1 text-slate-500 hover:bg-slate-100"
                                 >
                                   <X size={14} />
                                 </button>
                               </div>
                               <label className="mt-2 block">
-                                <span className="text-xs font-medium text-gray-600">説明</span>
+                                <span className="text-xs font-medium text-slate-600">説明</span>
                                 <textarea
                                   value={fileDescriptions[index] ?? ''}
                                   onChange={(e) => {
@@ -400,7 +401,7 @@ export default function FilesPage() {
                                     });
                                   }}
                                   rows={2}
-                                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
                                 />
                               </label>
                             </div>
@@ -415,10 +416,10 @@ export default function FilesPage() {
                                 }}
                                 className="group w-28 shrink-0 text-left"
                               >
-                                <div className="aspect-[4/3] overflow-hidden rounded border border-gray-300 bg-white">
+                                <div className="aspect-[4/3] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                                   <img src={previewItem.url} alt={previewItem.name} className="h-full w-full object-cover" />
                                 </div>
-                                <p className="mt-1 truncate text-xs text-gray-600 group-hover:text-primary-700">プレビュー</p>
+                                <p className="mt-1 truncate text-xs text-slate-600 group-hover:text-primary-700">プレビュー</p>
                               </button>
                             )}
                           </div>
@@ -429,23 +430,23 @@ export default function FilesPage() {
                 )}
               </div>
 
-              <div className="flex items-center justify-between gap-3 pt-2">
-                <p className="text-sm text-gray-600">ファイルサイズ上限は5MBです。</p>
+            </div>
+              <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-slate-600">ファイルサイズ上限は5MBです。</p>
                 <div className="flex justify-end gap-2">
-                  <button type="button" onClick={closeUpload} className="rounded-lg border border-gray-300 px-4 py-2 text-sm">
-                    キャンセル
-                  </button>
                   <button
                     type="button"
                     onClick={submitUpload}
                     disabled={!selectedFiles.length || uploadFiles.isPending}
-                    className="rounded-lg bg-primary-600 px-4 py-2 text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+                    className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {uploadFiles.isPending ? '保存中...' : '追加'}
                   </button>
+                  <button type="button" onClick={closeUpload} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                    キャンセル
+                  </button>
                 </div>
               </div>
-            </div>
           </DialogPanel>
         </div>
       </Dialog>

@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { useProject, useProjectAiBottleneckDetection, useProjectAiProgressSummary, useProjectAiTaskInstruction, useProjectAiWeeklyReport, useProjectIssues } from '../api/hooks';
 import ProjectSubNav from '../components/ProjectSubNav';
 import { renderMarkdown } from '../components/RichTextEditor';
+import NotFoundPage from './NotFoundPage';
+import { isNotFoundError } from '../utils/http-error';
 
 const aiActionOptions = [
   { key: 'progress-summary', label: 'AI進捗要約/指示' },
@@ -78,7 +80,7 @@ export default function ProjectDetailPage() {
   const [weeklyReportDateRange, setWeeklyReportDateRange] = useState(initialWeeklyDateRange);
   const [aiActionMessage, setAiActionMessage] = useState('');
   const id = identifier ?? '';
-  const { data, isLoading, isError } = useProject(id);
+  const { data, isLoading, isError, error } = useProject(id);
   const project = data?.data;
   const progressSummary = useProjectAiProgressSummary();
   const weeklyReport = useProjectAiWeeklyReport();
@@ -174,6 +176,10 @@ export default function ProjectDetailPage() {
     bottleneckDetection.reset();
     taskInstruction.reset();
   };
+
+  if (isError && isNotFoundError(error)) {
+    return <NotFoundPage />;
+  }
 
   return (
     <div className="space-y-6">

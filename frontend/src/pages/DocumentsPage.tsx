@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
-import { FileText, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Eye, FileText, Pencil, Plus, Trash2, X } from 'lucide-react';
 import ProjectSubNav from '../components/ProjectSubNav';
 import AppSelect from '../components/AppSelect';
 import {
@@ -18,6 +18,8 @@ import {
 } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 import api from '../api/client';
+import NotFoundPage from './NotFoundPage';
+import { isNotFoundError } from '../utils/http-error';
 import type { Attachment, Document } from '../types';
 
 function unwrapList<T>(raw: unknown): T[] {
@@ -467,17 +469,18 @@ export default function DocumentsPage() {
   const isListLoading = projectQuery.isLoading || docsQuery.isLoading;
   const isDetailLoading = projectQuery.isLoading || (Boolean(documentId) && documentQuery.isLoading);
 
-  if (!identifier) return <p className="text-gray-500">{t('app.noData')}</p>;
+  if (!identifier) return <p className="text-slate-500">{t('app.noData')}</p>;
+  if (documentId && documentQuery.isError && isNotFoundError(documentQuery.error)) return <NotFoundPage />;
 
   return (
     <div className="space-y-6">
       <ProjectSubNav identifier={identifier} />
 
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">{t('documents.title')}</h1>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-gray-600">
-            並び替え
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <h1 className="text-2xl font-bold text-slate-900">{t('documents.title')}</h1>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="min-w-[10rem] text-sm">
+            <span className="mb-1 block text-xs font-medium text-slate-500">並び替え</span>
             <AppSelect
               value={sortBy}
               onChange={(value) => setSortBy(value as SortKey)}
@@ -488,7 +491,7 @@ export default function DocumentsPage() {
                 { value: 'author', label: '作成者順' },
               ]}
               ariaLabel="並び替え"
-              className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
+              className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
             />
           </label>
           {canModify && (
@@ -496,7 +499,7 @@ export default function DocumentsPage() {
               type="button"
               onClick={openCreateModal}
               disabled={!projectId || categories.length === 0}
-              className="inline-flex items-center gap-2 rounded border border-slate-300 bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus size={16} />
               {t('documents.new')}
@@ -513,27 +516,29 @@ export default function DocumentsPage() {
           <div className="space-y-6">
             {sortedSections.map((group) => (
               <section key={group.id}>
-                <h2 className="mb-3 text-lg font-semibold text-gray-800">{group.name}</h2>
-                <ul className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm divide-y divide-gray-100">
+                <h2 className="mb-3 text-lg font-semibold text-slate-800">{group.name}</h2>
+                <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                   {group.docs.map((doc) => (
                     <li key={doc.id} className="px-4 py-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <Link
                             to={`/projects/${identifier}/documents/${doc.id}`}
-                            className="text-lg font-semibold text-primary-700 hover:underline"
+                            className="text-lg font-semibold text-slate-900 hover:text-primary-700"
                           >
                             {doc.title}
                           </Link>
-                          <p className="mt-1 text-xs text-gray-500">{formatDateTime(doc.createdAt)}</p>
-                          <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700">{doc.description || '-'}</p>
+                          <p className="mt-1 text-xs text-slate-500">{formatDateTime(doc.createdAt)}</p>
+                          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{doc.description || '-'}</p>
                         </div>
                         {canModify && (
                           <div className="flex items-center gap-1">
                             <button
                               type="button"
                               onClick={() => openEditModal(doc)}
-                              className="rounded border border-gray-300 bg-white p-1.5 text-gray-600 hover:bg-gray-50"
+                              className="rounded p-1.5 text-primary-600 hover:bg-primary-50"
+                              title={t('app.edit')}
+                              aria-label={t('app.edit')}
                             >
                               <Pencil size={14} />
                             </button>
@@ -541,7 +546,9 @@ export default function DocumentsPage() {
                               type="button"
                               onClick={() => handleDelete(doc)}
                               disabled={deleteDoc.isPending && deleteDoc.variables === doc.id}
-                              className="rounded border border-red-300 bg-white p-1.5 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                              className="rounded p-1.5 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                              title={t('app.delete')}
+                              aria-label={t('app.delete')}
                             >
                               <Trash2 size={14} />
                             </button>
@@ -560,9 +567,13 @@ export default function DocumentsPage() {
       ) : !currentDocument ? (
         <p className="text-slate-500">{t('app.noData')}</p>
       ) : (
-        <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <Link to={`/projects/${identifier}/documents`} className="text-sm text-primary-700 underline hover:text-primary-900">
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <Link
+              to={`/projects/${identifier}/documents`}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 hover:text-primary-700"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden />
               {t('app.back')}
             </Link>
             {canModify && (
@@ -570,43 +581,46 @@ export default function DocumentsPage() {
                 <button
                   type="button"
                   onClick={() => openEditModal(currentDocument)}
-                  className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
                 >
+                  <Pencil className="h-4 w-4" aria-hidden />
                   {t('app.edit')}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleDelete(currentDocument)}
-                  className="rounded border border-red-300 bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 shadow-sm hover:bg-red-50"
                 >
+                  <Trash2 className="h-4 w-4" aria-hidden />
                   {t('app.delete')}
                 </button>
               </div>
             )}
           </div>
 
-          <h2 className="text-xl font-semibold text-gray-900">{currentDocument.title}</h2>
-          <p className="mt-1 text-sm text-gray-500">{formatDateTime(currentDocument.createdAt)}</p>
+          <div className="p-5">
+            <h2 className="text-xl font-semibold text-slate-900">{currentDocument.title}</h2>
+            <p className="mt-1 text-sm text-slate-500">{formatDateTime(currentDocument.createdAt)}</p>
 
-          <div className="mt-6">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">説明</h3>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-gray-800">{currentDocument.description || '-'}</p>
-          </div>
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">説明</h3>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">{currentDocument.description || '-'}</p>
+            </div>
 
-          <div className="mt-6">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">添付ファイル</h3>
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">添付ファイル</h3>
             {(currentDocument.attachments?.length ?? 0) === 0 ? (
-              <p className="mt-2 text-sm text-gray-500">-</p>
+              <p className="mt-2 text-sm text-slate-500">-</p>
             ) : (
               <ul className="mt-2 space-y-2">
                 {currentDocument.attachments!.map((att) => (
-                  <li key={att.id} className="flex items-center gap-3 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+                  <li key={att.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                     <FileText size={16} className="text-slate-500" />
                     <button
                       type="button"
                       onClick={() => downloadAttachmentFile(att)}
                       disabled={downloadingId === att.id}
-                      className="text-left text-primary-700 hover:underline disabled:opacity-50"
+                      className="min-w-0 flex-1 text-left text-primary-700 hover:underline disabled:opacity-50"
                     >
                       {att.filename}
                     </button>
@@ -616,8 +630,9 @@ export default function DocumentsPage() {
                         type="button"
                         onClick={() => previewImageAttachment(att)}
                         disabled={downloadingId === att.id}
-                        className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                       >
+                        <Eye className="h-3.5 w-3.5" aria-hidden />
                         プレビュー
                       </button>
                     )}
@@ -628,9 +643,9 @@ export default function DocumentsPage() {
 
             {(currentDocument.attachments?.some((att) => isImageAttachment(att) || isPdfAttachment(att)) ?? false) && (
               <div className="mt-4">
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">サムネイル</h4>
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">サムネイル</h4>
                 {thumbnailLoading ? (
-                  <p className="mt-2 text-sm text-gray-500">{t('app.loading')}</p>
+                  <p className="mt-2 text-sm text-slate-500">{t('app.loading')}</p>
                 ) : (
                   <div className="mt-2 flex flex-wrap gap-3">
                     {currentDocument.attachments!
@@ -644,9 +659,9 @@ export default function DocumentsPage() {
                             onClick={() => (isImageAttachment(att) ? previewImageAttachment(att) : downloadAttachmentFile(att))}
                             className="group w-24"
                           >
-                            <div className="flex h-28 w-24 items-center justify-center overflow-hidden rounded border border-gray-300 bg-white">
+                            <div className="flex h-28 w-24 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                               {!thumb ? (
-                                <div className="h-8 w-8 animate-pulse rounded bg-gray-200" />
+                                <div className="h-8 w-8 animate-pulse rounded bg-slate-200" />
                               ) : thumb.kind === 'image' ? (
                                 <img src={thumb.url} alt={att.filename} className="h-full w-full object-cover" />
                               ) : (
@@ -657,7 +672,7 @@ export default function DocumentsPage() {
                                 />
                               )}
                             </div>
-                            <p className="mt-1 line-clamp-2 text-left text-[11px] text-gray-600 group-hover:text-primary-700">
+                            <p className="mt-1 line-clamp-2 text-left text-[11px] text-slate-600 group-hover:text-primary-700">
                               {att.filename}
                             </p>
                           </button>
@@ -667,6 +682,7 @@ export default function DocumentsPage() {
                 )}
               </div>
             )}
+            </div>
           </div>
         </section>
       )}
@@ -678,32 +694,34 @@ export default function DocumentsPage() {
       <Dialog open={modalOpen} onClose={closeModal} className="relative z-50">
         <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
         <div className="fixed inset-0 flex items-center justify-center p-4">
-          <DialogPanel className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
-            <DialogTitle className="text-lg font-semibold">{editingDoc ? t('app.edit') : t('documents.new')}</DialogTitle>
-            <div className="mt-4 space-y-3">
+          <DialogPanel className="w-full max-w-lg rounded-xl bg-white shadow-xl">
+            <div className="border-b border-slate-100 bg-slate-50 px-5 py-4">
+              <DialogTitle className="text-lg font-semibold text-slate-900">{editingDoc ? t('app.edit') : t('documents.new')}</DialogTitle>
+            </div>
+            <div className="space-y-4 p-5">
               {formError && <p className="text-sm text-red-600">{formError}</p>}
 
               <label className="block text-sm">
-                <span className="text-gray-700">{t('documents.titleField')}</span>
+                <span className="mb-1 block text-xs font-medium text-slate-500">{t('documents.titleField')}</span>
                 <input
                   value={form.title}
                   onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
-                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
                 />
               </label>
 
               <label className="block text-sm">
-                <span className="text-gray-700">{t('projects.description')}</span>
+                <span className="mb-1 block text-xs font-medium text-slate-500">{t('projects.description')}</span>
                 <textarea
                   value={form.description}
                   onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
                   rows={4}
-                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
                 />
               </label>
 
               <label className="block text-sm">
-                <span className="text-gray-700">{t('documents.category')}</span>
+                <span className="mb-1 block text-xs font-medium text-slate-500">{t('documents.category')}</span>
                 <AppSelect
                   value={form.categoryId}
                   onChange={(value) => setForm((prev) => ({ ...prev, categoryId: value }))}
@@ -712,13 +730,13 @@ export default function DocumentsPage() {
                     ...categories.map((c) => ({ value: c.id, label: c.name })),
                   ]}
                   ariaLabel={t('documents.category')}
-                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                 />
               </label>
 
               {editingDoc && (editingDoc.attachments?.length ?? 0) > 0 && (
-                <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2">
-                  <p className="mb-2 text-xs font-medium text-gray-600">{t('settings.attachments')}</p>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <p className="mb-2 text-xs font-medium text-slate-600">{t('settings.attachments')}</p>
                   <ul className="space-y-1 text-sm">
                     {editingDoc.attachments!.map((att) => (
                       <li key={att.id} className="flex items-center gap-2">
@@ -729,7 +747,7 @@ export default function DocumentsPage() {
                         >
                           {att.filename}
                         </button>
-                        <span className="shrink-0 text-xs text-gray-400">{(att.filesize / 1024).toFixed(0)} KB</span>
+                        <span className="shrink-0 text-xs text-slate-400">{(att.filesize / 1024).toFixed(0)} KB</span>
                         <button
                           type="button"
                           onClick={() => handleDeleteAttachment(att.id)}
@@ -744,9 +762,9 @@ export default function DocumentsPage() {
                 </div>
               )}
 
-              <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                 <label className="block text-sm">
-                  <span className="text-gray-700">{t('settings.attachments')}</span>
+                  <span className="text-slate-700">{t('settings.attachments')}</span>
                   <input
                     type="file"
                     multiple
@@ -762,12 +780,12 @@ export default function DocumentsPage() {
                   <ul className="mt-2 space-y-1 text-sm">
                     {attachFiles.map((file, idx) => (
                       <li key={`${file.name}-${idx}`} className="flex items-center gap-2">
-                        <span className="min-w-0 flex-1 truncate text-gray-700">{file.name}</span>
-                        <span className="shrink-0 text-xs text-gray-400">{(file.size / 1024).toFixed(0)} KB</span>
+                        <span className="min-w-0 flex-1 truncate text-slate-700">{file.name}</span>
+                        <span className="shrink-0 text-xs text-slate-400">{(file.size / 1024).toFixed(0)} KB</span>
                         <button
                           type="button"
                           onClick={() => setAttachFiles((prev) => prev.filter((_, i) => i !== idx))}
-                          className="rounded p-1 text-gray-500 hover:bg-gray-200"
+                          className="rounded p-1 text-slate-500 hover:bg-slate-200"
                         >
                           <X size={14} />
                         </button>
@@ -777,20 +795,20 @@ export default function DocumentsPage() {
                 )}
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={closeModal} className="rounded-lg border border-gray-300 px-4 py-2 text-sm">
-                  {t('app.cancel')}
-                </button>
+            </div>
+              <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
                 <button
                   type="button"
                   disabled={!form.title.trim() || !form.categoryId || saving}
                   onClick={submitForm}
-                  className="rounded-lg bg-primary-600 px-4 py-2 text-sm text-white hover:bg-primary-700 disabled:opacity-50"
+                  className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {editingDoc ? t('app.save') : t('app.create')}
                 </button>
+                <button type="button" onClick={closeModal} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                  {t('app.cancel')}
+                </button>
               </div>
-            </div>
           </DialogPanel>
         </div>
       </Dialog>

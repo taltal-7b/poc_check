@@ -44,6 +44,7 @@ const SearchPage = lazy(() => import('./pages/SearchPage'));
 const MyPagePage = lazy(() => import('./pages/MyPagePage'));
 const MyAccountPage = lazy(() => import('./pages/MyAccountPage'));
 const UserProfilePage = lazy(() => import('./pages/UserProfilePage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 const AdminUsersPage = lazy(() => import('./pages/admin/UsersPage'));
 const AdminUserDetailPage = lazy(() => import('./pages/admin/UserDetailPage'));
@@ -223,6 +224,7 @@ export default function App() {
         <Route path="admin/statuses" element={<AdminRoute><AdminStatusesPage /></AdminRoute>} />
         <Route path="admin/custom-fields" element={<AdminRoute><AdminCustomFieldsPage /></AdminRoute>} />
         <Route path="admin/enumerations" element={<AdminRoute><AdminEnumerationsPage /></AdminRoute>} />
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
       </Routes>
     </Suspense>

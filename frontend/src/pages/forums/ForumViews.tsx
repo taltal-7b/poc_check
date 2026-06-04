@@ -9,6 +9,8 @@ import { useBoards, useBoardMessage, useBoardTopicsPage, useMembers, useProject 
 import api from '../../api/client';
 import { renderMarkdown } from '../../components/RichTextEditor';
 import WatchButton from '../../components/WatchButton';
+import NotFoundPage from '../NotFoundPage';
+import { isNotFoundError } from '../../utils/http-error';
 import type { Board, Message } from '../../types';
 
 function unwrapList<T>(raw: unknown): T[] {
@@ -133,6 +135,8 @@ export function ForumBoardIndex() {
   const { t } = useTranslation();
   const { identifier } = useParams<{ identifier: string }>();
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const currentUser = useAuthStore((s) => s.user);
   const projectRes = useProject(identifier ?? '');
   const project = projectRes.data?.data ?? null;
   const projectId = project?.id ?? '';
@@ -140,6 +144,18 @@ export function ForumBoardIndex() {
   const boards = useMemo(() => unwrapList<Board>(boardsRaw.data), [boardsRaw.data]);
   const { canManageBoards, canManageProject } = useForumPermissions(projectId);
   const canCreateBoard = canManageBoards || canManageProject;
+  const canShowBoardActions = Boolean(
+    currentUser && boards.some((board) => canUserEditOrDeleteBoard(board, currentUser, { canManageBoards, canManageProject })),
+  );
+
+  const deleteBoard = useMutation({
+    mutationFn: async (boardId: string) => {
+      await api.delete(`/projects/${projectId}/boards/${boardId}`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['boards', projectId] });
+    },
+  });
 
   if (!identifier) return <p className="text-gray-500">{t('app.noData')}</p>;
 
@@ -170,23 +186,64 @@ export function ForumBoardIndex() {
                 <th className="px-4 py-3 font-medium">{t('forums.boardName')}</th>
                 <th className="px-4 py-3 font-medium">{t('forums.description')}</th>
                 <th className="px-4 py-3 font-medium w-28">{t('forums.topicCount')}</th>
+                {canShowBoardActions && (
+                  <th className="px-4 py-3 font-medium whitespace-nowrap w-40">{t('forums.actions')}</th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {boards.map((b) => (
-                <tr
-                  key={b.id}
-                  className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => navigate(`/projects/${identifier}/forums/${b.id}`)}
-                >
-                  <td className="px-4 py-2 font-medium text-primary-700">{b.name}</td>
-                  <td className="px-4 py-2 text-gray-700 max-w-md truncate">{b.description?.trim() ? b.description : '—'}</td>
-                  <td className="px-4 py-2 text-gray-800">{b.topicCount ?? 0}</td>
+              {boards.map((b) => {
+                const canEditBoard = canUserEditOrDeleteBoard(b, currentUser, { canManageBoards, canManageProject });
+                return (
+                  <tr
+                    key={b.id}
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() => navigate(`/projects/${identifier}/forums/${b.id}`)}
+                  >
+                    <td className="px-4 py-2 font-medium text-primary-700">{b.name}</td>
+                    <td className="px-4 py-2 text-gray-700 max-w-md truncate">{b.description?.trim() ? b.description : '—'}</td>
+                    <td className="px-4 py-2 text-gray-800">{b.topicCount ?? 0}</td>
+                    {canShowBoardActions && (
+                      <td className="px-4 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        {canEditBoard ? (
+                          <div className="flex flex-wrap items-center justify-end gap-1.5">
+                            <Link
+                              to={`/projects/${identifier}/forums/${b.id}/edit`}
+                              className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              <Pencil className="h-3.5 w-3.5" aria-hidden />
+                              {t('app.edit')}
+                            </Link>
+                            <button
+                              type="button"
+                              disabled={deleteBoard.isPending}
+                              onClick={() => {
+                                if (!window.confirm('このフォーラムを削除しますか？')) return;
+                                deleteBoard.mutate(b.id);
+                              }}
+                              className="inline-flex items-center gap-1 rounded border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                              {t('app.delete')}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="flex justify-end text-gray-400">—</span>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+              {boards.length === 0 && (
+                <tr>
+                  <td colSpan={canShowBoardActions ? 4 : 3} className="px-4 py-8 text-center text-gray-500">
+                    {t('app.noData')}
+                  </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
-          {boards.length === 0 && <p className="p-6 text-center text-gray-500">{t('app.noData')}</p>}
         </div>
       )}
     </div>
@@ -301,7 +358,7 @@ export function ForumEditBoard() {
 
   if (!identifier || !boardId || !projectId) return <p className="text-gray-500">{t('app.loading')}</p>;
   if (boardsRaw.isLoading && !board) return <p className="text-gray-500">{t('app.loading')}</p>;
-  if (!board) return <p className="text-gray-500">{t('app.error')}</p>;
+  if (!board) return <NotFoundPage showProjectNav={false} />;
   if (!canUserEditOrDeleteBoard(board, currentUser, forumPerms)) {
     return <p className="text-gray-600">{t('forums.noPermissionEditBoard')}</p>;
   }
@@ -373,6 +430,7 @@ export function ForumTopicList() {
   const board = boards.find((b) => b.id === boardId);
   const forumPerms = useForumPermissions(projectId);
   const { canAddMessages } = forumPerms;
+  const canEditBoard = canUserEditOrDeleteBoard(board, currentUser, forumPerms);
 
   const topicsQuery = useBoardTopicsPage(projectId, boardId ?? '', page, 10);
   const topics = topicsQuery.data?.data ?? [];
@@ -390,7 +448,19 @@ export function ForumTopicList() {
     },
   });
 
+  const deleteBoard = useMutation({
+    mutationFn: async () => {
+      await api.delete(`/projects/${projectId}/boards/${boardId}`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['boards', projectId] });
+      navigate(`/projects/${identifier}/forums`);
+    },
+  });
+
   if (!identifier || !boardId) return <p className="text-gray-500">{t('app.noData')}</p>;
+  if (boardsRaw.isLoading && !board) return <p className="text-gray-500">{t('app.loading')}</p>;
+  if (!board) return <NotFoundPage showProjectNav={false} />;
 
   return (
     <div className="space-y-4">
@@ -405,6 +475,29 @@ export function ForumTopicList() {
         <h1 className="text-2xl font-bold text-gray-900">{board?.name ?? t('forums.title')}</h1>
         <div className="flex flex-wrap items-center gap-2">
           <WatchButton watchableType="Board" watchableId={boardId} />
+          {canEditBoard && (
+            <>
+              <Link
+                to={`/projects/${identifier}/forums/${boardId}/edit`}
+                className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                <Pencil className="h-4 w-4" aria-hidden />
+                {t('app.edit')}
+              </Link>
+              <button
+                type="button"
+                disabled={deleteBoard.isPending}
+                onClick={() => {
+                  if (!window.confirm('このフォーラムを削除しますか？')) return;
+                  deleteBoard.mutate();
+                }}
+                className="inline-flex items-center gap-1 rounded border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+              >
+                <Trash2 className="h-4 w-4" aria-hidden />
+                {t('app.delete')}
+              </button>
+            </>
+          )}
           {canAddMessages && (
             <Link
               to={`/projects/${identifier}/forums/${boardId}/topics/new`}
@@ -651,6 +744,7 @@ export function ForumEditTopic() {
 
   if (!identifier || !boardId || !topicId || !projectId) return <p className="text-gray-500">{t('app.loading')}</p>;
   if (messageQuery.isLoading) return <p className="text-gray-500">{t('app.loading')}</p>;
+  if (messageQuery.isError && isNotFoundError(messageQuery.error)) return <NotFoundPage showProjectNav={false} />;
   if (!root) return <p className="text-gray-500">{t('app.error')}</p>;
   if (!canEditTopic) return <p className="text-gray-600">{t('forums.noPermissionEditTopic')}</p>;
 
@@ -954,6 +1048,8 @@ export function ForumTopicShow() {
 
       {messageQuery.isLoading ? (
         <p className="text-gray-500">{t('app.loading')}</p>
+      ) : messageQuery.isError && isNotFoundError(messageQuery.error) ? (
+        <NotFoundPage showProjectNav={false} />
       ) : !root ? (
         <p className="text-gray-500">{t('app.error')}</p>
       ) : (

@@ -1,9 +1,10 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, CircleHelp } from 'lucide-react';
-import { useCreateProject, useProject, useUpdateProject, useProjects, useTrackers } from '../api/hooks';
+import { useCreateProject, useProject, useUpdateProject, useAllProjects, useTrackers } from '../api/hooks';
 import AppSelect from '../components/AppSelect';
+import { httpStatus } from '../utils/http-error';
 import type { Project } from '../types';
 
 const DEFAULT_MODULES = [
@@ -45,10 +46,12 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
   const navigate = useNavigate();
   const location = useLocation();
   const { identifier: projectId } = useParams<{ identifier?: string }>();
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const identifierInputRef = useRef<HTMLInputElement>(null);
   const createMutation = useCreateProject();
   const updateMutation = useUpdateProject();
   const projectQuery = useProject(isEdit && projectId ? projectId : '');
-  const projectsQuery = useProjects({ perPage: 1000 });
+  const projectsQuery = useAllProjects();
   const trackersQuery = useTrackers();
 
   const [name, setName] = useState('');
@@ -58,6 +61,7 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
   const [isPublic, setIsPublic] = useState(true);
   const [parentId, setParentId] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+  const [identifierError, setIdentifierError] = useState<string | null>(null);
   const [enabledModules, setEnabledModules] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(DEFAULT_MODULES.map((m) => [m, true])),
   );
@@ -208,14 +212,17 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+    setIdentifierError(null);
     const trimmedName = name.trim();
     if (!trimmedName) {
       setFormError('プロジェクト名は必須です。');
+      nameInputRef.current?.focus();
       return;
     }
     const idf = identifier.trim() || toKebabIdentifier(trimmedName);
     if (!idf) {
       setFormError('識別子は必須です。');
+      identifierInputRef.current?.focus();
       return;
     }
     const data = {
@@ -229,6 +236,15 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
       trackerIds,
     };
 
+    const handleError = (error: unknown) => {
+      if (httpStatus(error) === 409) {
+        setIdentifierError('すでに使用されている識別子です。');
+        identifierInputRef.current?.focus();
+        return;
+      }
+      setFormError(t('app.error'));
+    };
+
     if (isEdit && projectId) {
       updateMutation.mutate(
         { id: projectId, ...data },
@@ -237,6 +253,7 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
             const updated = res.data;
             if (updated?.identifier) navigate(`/projects/${updated.identifier}`);
           },
+          onError: handleError,
         },
       );
     } else {
@@ -247,6 +264,7 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
             const created = res.data;
             if (created?.identifier) navigate(`/projects/${created.identifier}`);
           },
+          onError: handleError,
         },
       );
     }
@@ -281,6 +299,7 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
             {t('projects.name')}<span className="ml-1 text-red-500">*</span>
           </label>
           <input
+            ref={nameInputRef}
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
@@ -292,14 +311,27 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
             {t('projects.identifier')}<span className="ml-1 text-red-500">*</span>
           </label>
           <input
+            ref={identifierInputRef}
             value={identifier}
             onChange={(e) => {
               setIdentifierTouched(true);
               setIdentifier(e.target.value);
+              setIdentifierError(null);
             }}
             required
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
+            aria-invalid={identifierError ? 'true' : undefined}
+            aria-describedby={identifierError ? 'project-identifier-error' : undefined}
+            className={`w-full rounded-lg border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 ${
+              identifierError
+                ? 'border-red-400 focus:border-red-500 focus:ring-red-500/30'
+                : 'border-slate-300 focus:border-primary-500 focus:ring-primary-500/30'
+            }`}
           />
+          {identifierError && (
+            <p id="project-identifier-error" className="mt-1 text-sm text-red-600">
+              {identifierError}
+            </p>
+          )}
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">{t('projects.description')}</label>
@@ -384,7 +416,6 @@ export default function ProjectNewPage({ isEdit = false }: { isEdit?: boolean })
           </div>
         </fieldset>
         {formError && <p className="text-sm text-red-600">{formError}</p>}
-        {createMutation.isError && <p className="text-sm text-red-600">{t('app.error')}</p>}
         <div className="flex gap-3">
           <button
             type="submit"

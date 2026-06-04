@@ -21,7 +21,8 @@ export function sendError(res: Response, statusCode: number, code: string, messa
 
 export function parsePagination(query: Record<string, unknown>) {
   const page = Math.max(1, Number(query.page) || 1);
-  const perPage = Math.min(100, Math.max(1, Number(query.per_page) || 10));
+  const perPageRaw = query.per_page ?? query.perPage;
+  const perPage = Math.min(100, Math.max(1, Number(perPageRaw) || 10));
   const skip = (page - 1) * perPage;
   return { page, perPage, skip };
 }

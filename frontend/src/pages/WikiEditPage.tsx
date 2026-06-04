@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Image, Link as LinkIcon, Trash2 } from 'lucide-react';
+import { Image, Link as LinkIcon, Save, Trash2 } from 'lucide-react';
 import ProjectSubNav from '../components/ProjectSubNav';
 import RichTextEditor from '../components/RichTextEditor';
 import { AttachmentLink } from '../components/AttachmentLink';
@@ -15,6 +15,8 @@ import {
   useDeleteAttachment,
 } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
+import NotFoundPage from './NotFoundPage';
+import { isNotFoundError } from '../utils/http-error';
 import type { Attachment, WikiPage as WikiPageType } from '../types';
 
 function unwrap<T>(raw: unknown): T | undefined {
@@ -162,13 +164,17 @@ export default function WikiEditPage() {
     else navigate(`/projects/${identifier}/wiki/${encodeURIComponent(decodedTitle)}`);
   };
 
-  if (!identifier) return <p className="text-gray-500">{t('app.noData')}</p>;
+  if (!identifier) return <p className="text-slate-500">{t('app.noData')}</p>;
+
+  if (!isNew && pageQuery.isError && isNotFoundError(pageQuery.error)) {
+    return <NotFoundPage />;
+  }
 
   if (!canEditWiki && !membersQuery.isLoading) {
     return (
       <div className="space-y-6">
         <ProjectSubNav identifier={identifier} />
-        <p className="text-gray-500">{t('app.loading')}</p>
+        <p className="text-slate-500">{t('app.loading')}</p>
       </div>
     );
   }
@@ -176,104 +182,120 @@ export default function WikiEditPage() {
   return (
     <div className="space-y-6">
       <ProjectSubNav identifier={identifier} />
-      <div className="space-y-4">
-        <h1 className="text-2xl font-bold text-gray-900">{t('wiki.editPage')}</h1>
-      {saveMessage && (
-        <div
-          className={`rounded-md border px-3 py-2 text-sm ${
-            saveMessage.type === 'success'
-              ? 'border-green-200 bg-green-50 text-green-700'
-              : 'border-red-200 bg-red-50 text-red-700'
-          }`}
-        >
-          {saveMessage.text}
+      <div className="mx-auto w-full space-y-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-2xl font-bold text-slate-900">{t('wiki.editPage')}</h1>
+          <button
+            type="button"
+            onClick={cancel}
+            className="inline-flex justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            {t('app.cancel')}
+          </button>
         </div>
-      )}
 
-      <label className="block max-w-xl text-sm">
-        <span className="text-gray-700">タイトル</span>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-          placeholder="ページタイトル"
-        />
-      </label>
+        {saveMessage && (
+          <div
+            className={`rounded-lg border px-4 py-3 text-sm ${
+              saveMessage.type === 'success'
+                ? 'border-green-200 bg-green-50 text-green-700'
+                : 'border-red-200 bg-red-50 text-red-700'
+            }`}
+          >
+            {saveMessage.text}
+          </div>
+        )}
 
-      <RichTextEditor
-        value={text}
-        onChange={setText}
-        rows={18}
-        placeholder="Wiki本文"
-        files={attachFiles}
-        onFilesChange={setAttachFiles}
-        showAttachments={true}
-      />
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="space-y-5 p-4 sm:p-5">
+            <label className="block text-sm">
+              <span className="mb-1 block text-xs font-medium text-slate-500">タイトル</span>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                placeholder="ページタイトル"
+              />
+            </label>
 
-      <label className="block max-w-xl text-sm">
-        <span className="text-gray-700">コメント</span>
-        <input
-          value={comments}
-          onChange={(e) => setComments(e.target.value)}
-          className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-          placeholder="更新コメント（任意）"
-        />
-      </label>
+            <div>
+              <span className="mb-1 block text-xs font-medium text-slate-500">本文</span>
+              <RichTextEditor
+                value={text}
+                onChange={setText}
+                rows={18}
+                placeholder="Wiki本文"
+                files={attachFiles}
+                onFilesChange={setAttachFiles}
+                showAttachments={true}
+              />
+            </div>
 
-      {(attachedFiles.length > 0 || attachFiles.length > 0) && (
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <h2 className="mb-2 text-sm font-semibold text-gray-700">{t('settings.attachments')}</h2>
-          {attachedFiles.length > 0 && (
-            <ul className="space-y-2 text-sm">
-              {attachedFiles.map((att) => (
-                <li key={att.id} className="flex flex-wrap items-center gap-2">
-                  <AttachmentLink
-                    id={att.id}
-                    filename={att.filename}
-                    className="text-primary-700 hover:underline"
-                  >
-                    {att.filename}
-                  </AttachmentLink>
-                  <button
-                    type="button"
-                    onClick={() => insertAttachmentMarkup(att, false)}
-                    className="inline-flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50"
-                  >
-                    <LinkIcon className="h-3.5 w-3.5" />
-                    リンク挿入
-                  </button>
-                  {(att.contentType ?? '').startsWith('image/') && (
-                    <button
-                      type="button"
-                      onClick={() => insertAttachmentMarkup(att, true)}
-                      className="inline-flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50"
-                    >
-                      <Image className="h-3.5 w-3.5" />
-                      画像挿入
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await deleteAttachment.mutateAsync(att.id);
-                      setAttachedFiles((prev) => prev.filter((f) => f.id !== att.id));
-                    }}
-                    className="inline-flex items-center gap-1 rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    削除
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {attachFiles.length > 0 && (
-            <p className="mt-2 text-xs text-gray-500">新規追加ファイルは保存時にアップロードされます。</p>
-          )}
-        </div>
-      )}
+            <label className="block text-sm">
+              <span className="mb-1 block text-xs font-medium text-slate-500">コメント</span>
+              <input
+                value={comments}
+                onChange={(e) => setComments(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                placeholder="更新コメント（任意）"
+              />
+            </label>
 
-        <div className="flex gap-2">
+            {(attachedFiles.length > 0 || attachFiles.length > 0) && (
+              <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <h2 className="mb-3 text-sm font-semibold text-slate-700">{t('settings.attachments')}</h2>
+                {attachedFiles.length > 0 && (
+                  <ul className="space-y-2 text-sm">
+                    {attachedFiles.map((att) => (
+                      <li key={att.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                        <AttachmentLink
+                          id={att.id}
+                          filename={att.filename}
+                          className="min-w-0 flex-1 text-primary-700 hover:underline"
+                        >
+                          {att.filename}
+                        </AttachmentLink>
+                        <button
+                          type="button"
+                          onClick={() => insertAttachmentMarkup(att, false)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          <LinkIcon className="h-3.5 w-3.5" />
+                          リンク挿入
+                        </button>
+                        {(att.contentType ?? '').startsWith('image/') && (
+                          <button
+                            type="button"
+                            onClick={() => insertAttachmentMarkup(att, true)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          >
+                            <Image className="h-3.5 w-3.5" />
+                            画像挿入
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await deleteAttachment.mutateAsync(att.id);
+                            setAttachedFiles((prev) => prev.filter((f) => f.id !== att.id));
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          削除
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {attachFiles.length > 0 && (
+                  <p className="mt-3 text-xs text-slate-500">新規追加ファイルは保存時にアップロードされます。</p>
+                )}
+              </section>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-4 py-3 sm:px-5">
           <button
             type="button"
             onClick={save}
@@ -284,13 +306,15 @@ export default function WikiEditPage() {
               deleteAttachment.isPending ||
               !title.trim()
             }
-            className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
+            <Save className="h-4 w-4" aria-hidden />
             {t('app.save')}
           </button>
-          <button type="button" onClick={cancel} className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50">
+          <button type="button" onClick={cancel} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
             {t('app.cancel')}
           </button>
+          </div>
         </div>
       </div>
     </div>

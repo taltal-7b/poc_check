@@ -364,6 +364,28 @@ router.post('/:id/totp/disable', requireAdmin, async (req: Request, res: Respons
   }
 });
 
+router.post('/:id/totp/enable', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = z.string().uuid().parse(req.params.id);
+    const user = await prisma.user.findUnique({ where: { id }, select: { id: true } });
+    if (!user) {
+      throw AppError.notFound('ユーザーが見つかりません');
+    }
+
+    await prisma.user.update({
+      where: { id },
+      data: {
+        totpSecret: 'email',
+        totpEnabled: true,
+      },
+    });
+
+    return sendSuccess(res, { totpEnabled: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = z

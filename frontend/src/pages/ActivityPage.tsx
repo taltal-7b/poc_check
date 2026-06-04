@@ -300,10 +300,11 @@ export default function ActivityPage() {
         <ul className="relative border-l-2 border-gray-200 ml-3 space-y-6 pl-8 py-2">
           {rows.map((r) => {
             const Icon = typeIcon(r.actType);
-            const issueUrl =
-              r.actType.toLowerCase().startsWith('issue') && r.project?.identifier
+            const activityUrl =
+              r.url ??
+              (r.actType.toLowerCase().startsWith('issue') && r.project?.identifier
                 ? `/projects/${r.project.identifier}/issues/${r.actId}`
-                : null;
+                : null);
             return (
               <li key={r.id} className="relative">
                 <span className="absolute -left-[2.125rem] top-0 flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 text-primary-700 border-2 border-white shadow-sm">
@@ -311,8 +312,8 @@ export default function ActivityPage() {
                 </span>
                 <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                   <p className="font-medium text-gray-900">
-                    {issueUrl ? (
-                      <Link to={issueUrl} className="text-primary-700 hover:underline">
+                    {activityUrl ? (
+                      <Link to={activityUrl} className="text-primary-700 hover:underline">
                         {r.title}
                       </Link>
                     ) : (

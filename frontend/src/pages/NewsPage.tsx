@@ -10,6 +10,8 @@ import { useProject, useProjectNews, useProjectNewsItem, useMembers } from '../a
 import api from '../api/client';
 import { AttachmentLink } from '../components/AttachmentLink';
 import { renderMarkdown } from '../components/RichTextEditor';
+import NotFoundPage from './NotFoundPage';
+import { isNotFoundError } from '../utils/http-error';
 import type { News, Comment } from '../types';
 
 const NEWS_LIST_TITLE_MAX = 50;
@@ -36,6 +38,15 @@ function unwrapList<T>(raw: unknown): T[] {
     return (raw as { data: T[] }).data;
   }
   return [];
+}
+
+function newsListDate(value?: string | null): string {
+  if (!value) return '-';
+  try {
+    return format(parseISO(value), 'yyyy-MM-dd HH:mm');
+  } catch {
+    return value;
+  }
 }
 
 export default function NewsPage() {
@@ -130,6 +141,10 @@ export default function NewsPage() {
   const deletingCommentId =
     deleteComment.isPending && deleteComment.variables ? deleteComment.variables.commentId : null;
 
+  if (newsId && detailQuery.isError && isNotFoundError(detailQuery.error)) {
+    return <NotFoundPage />;
+  }
+
   return (
     <div className="space-y-6">
       {identifier && <ProjectSubNav identifier={identifier} />}
@@ -171,11 +186,11 @@ export default function NewsPage() {
                     <dl className="grid gap-1 text-xs text-gray-500">
                       <div className="flex gap-2">
                         <dt className="shrink-0">{t('users.createdAt')}</dt>
-                        <dd>{n.createdAt ? format(parseISO(n.createdAt), 'yyyy-MM-dd HH:mm') : '-'}</dd>
+                        <dd>{newsListDate(n.createdAt)}</dd>
                       </div>
                       <div className="flex gap-2">
                         <dt className="shrink-0">{t('forums.lastMessage')}</dt>
-                        <dd>{n.updatedAt ? format(parseISO(n.updatedAt), 'yyyy-MM-dd HH:mm') : '-'}</dd>
+                        <dd>{newsListDate(n.updatedAt)}</dd>
                       </div>
                     </dl>
                   </article>
@@ -216,8 +231,8 @@ export default function NewsPage() {
                               : '-'}
                           </span>
                         </td>
-                        <td className="px-4 py-2 align-top">{n.createdAt ? format(parseISO(n.createdAt), 'yyyy-MM-dd HH:mm') : '-'}</td>
-                        <td className="px-4 py-2 align-top">{n.updatedAt ? format(parseISO(n.updatedAt), 'yyyy-MM-dd HH:mm') : '-'}</td>
+                        <td className="px-4 py-2 align-top text-xs text-slate-600">{newsListDate(n.createdAt)}</td>
+                        <td className="px-4 py-2 align-top text-xs text-slate-600">{newsListDate(n.updatedAt)}</td>
                       </tr>
                     ))}
                   </tbody>

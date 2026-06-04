@@ -1,8 +1,8 @@
-import { useMemo, type MouseEvent } from 'react';
+import { useEffect, useMemo, type MouseEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Pencil, Rss } from 'lucide-react';
-import { useMyProjects, useProjects } from '../api/hooks';
+import { useAllProjects, useMyProjects } from '../api/hooks';
 import { useAuthStore } from '../stores/auth';
 import { openAuthenticatedAtom } from '../utils/atom';
 import type { Project } from '../types';
@@ -14,6 +14,7 @@ const STATUS_ARCHIVED = 5;
 const STATUS_CLOSED = 9;
 const LEGACY_STATUS_ARCHIVED = 2;
 const LEGACY_STATUS_CLOSED = 3;
+const PER_PAGE = 10;
 
 function isTab(value: string | null): value is Tab {
   return value === 'active' || value === 'member' || value === 'archived' || value === 'closed' || value === 'all';
@@ -39,6 +40,7 @@ export default function ProjectsPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentTab = searchParams.get('tab');
   const tab: Tab = isTab(currentTab) ? currentTab : 'active';
+  const page = Math.max(1, Number(searchParams.get('page') || '1') || 1);
 
   const params = useMemo(() => {
     if (tab === 'all' || tab === 'member') return undefined;
@@ -60,10 +62,7 @@ export default function ProjectsPage() {
     await openAuthenticatedAtom(atomUrl);
   };
 
-  const { data, isLoading, isError } = useProjects({
-    ...(params ?? {}),
-    perPage: 1000,
-  });
+  const { data, isLoading, isError } = useAllProjects(params);
   const myProjectsQuery = useMyProjects();
 
   const projects: Project[] = data?.data ?? [];
@@ -98,6 +97,21 @@ export default function ProjectsPage() {
     [visibleProjects],
   );
 
+  const totalPages = Math.max(1, Math.ceil(rootProjects.length / PER_PAGE));
+  const currentPage = Math.min(page, totalPages);
+  const pagedRootProjects = useMemo(
+    () => rootProjects.slice((currentPage - 1) * PER_PAGE, currentPage * PER_PAGE),
+    [currentPage, rootProjects],
+  );
+
+  useEffect(() => {
+    if (page <= totalPages) return;
+    const nextParams = new URLSearchParams(searchParams);
+    if (totalPages <= 1) nextParams.delete('page');
+    else nextParams.set('page', String(totalPages));
+    setSearchParams(nextParams, { replace: true });
+  }, [page, searchParams, setSearchParams, totalPages]);
+
   const canManageProject = (project: Project): boolean => {
     if (isAdmin) return true;
     if (!user) return false;
@@ -119,7 +133,15 @@ export default function ProjectsPage() {
     } else {
       nextParams.set('tab', nextTab);
     }
+    nextParams.delete('page');
     setSearchParams(nextParams, { replace: true });
+  };
+
+  const setPage = (nextPage: number) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextPage <= 1) nextParams.delete('page');
+    else nextParams.set('page', String(nextPage));
+    setSearchParams(nextParams);
   };
 
   const renderProjectNode = (project: Project, depth = 0): JSX.Element => {
@@ -205,9 +227,40 @@ export default function ProjectsPage() {
       )}
 
       {!isLoading && !isError && !(tab === 'member' && myProjectsQuery.isLoading) && visibleProjects.length > 0 && (
-        <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {rootProjects.map((p) => renderProjectNode(p))}
-        </ul>
+        <>
+          <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {pagedRootProjects.map((p) => renderProjectNode(p))}
+          </ul>
+
+          {totalPages > 1 && (
+            <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <span className="text-slate-600">
+                {rootProjects.length}件中 {(currentPage - 1) * PER_PAGE + 1} - {Math.min(currentPage * PER_PAGE, rootProjects.length)}件
+              </span>
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  disabled={currentPage <= 1}
+                  onClick={() => setPage(currentPage - 1)}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {t('forums.prev')}
+                </button>
+                <span className="min-w-16 text-center text-slate-600">
+                  {currentPage} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setPage(currentPage + 1)}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {t('forums.next')}
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {tab !== 'member' && (

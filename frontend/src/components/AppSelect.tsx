@@ -60,7 +60,7 @@ export default function AppSelect({
   };
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="relative text-slate-900">
       <button
         type="button"
         aria-haspopup="listbox"
@@ -121,11 +121,11 @@ export default function AppSelect({
                       color: isSelected ? '#1e40af' : '#1f2937',
                     }}
                     className={`flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-100 ${
-                      isSelected ? 'bg-primary-50 text-primary-800' : 'text-slate-800'
+                      isSelected ? '!bg-primary-50 !text-primary-800' : '!bg-white !text-slate-800'
                     }`}
                   >
                     <Check className={`h-4 w-4 shrink-0 ${isSelected ? 'opacity-100' : 'opacity-0'}`} aria-hidden />
-                    <span className="min-w-0 truncate">{option.label}</span>
+                    <span className="min-w-0 truncate" style={{ color: 'inherit' }}>{option.label}</span>
                   </button>
                 </li>
               );

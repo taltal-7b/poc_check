@@ -11,10 +11,12 @@ import IssueCustomFieldInputs from '../components/IssueCustomFieldInputs';
 import WatchButton from '../components/WatchButton';
 import ProgressRangeInput from '../components/ProgressRangeInput';
 import ProjectSubNav from '../components/ProjectSubNav';
+import NotFoundPage from './NotFoundPage';
 import { useDeleteIssue, useIssue, useUpdateIssue, useUploadAttachments, useDeleteAttachment, useUpdateJournal, useDeleteJournal, useTrackers, useStatuses, useMembers, useProjectIssues, useIssueCustomFields, useProjectIssueCategories } from '../api/hooks';
 import { AttachmentLink, AttachmentPreview } from '../components/AttachmentLink';
 import { useAuthStore } from '../stores/auth';
 import { openAuthenticatedAtom } from '../utils/atom';
+import { isNotFoundError } from '../utils/http-error';
 import type { CustomField, Issue, IssueCustomFieldValue, Journal, JournalDetail, User, Attachment } from '../types';
 import {
   convertEstimatedEffortInput,
@@ -447,6 +449,7 @@ export default function IssueDetailPage() {
   if (isLoading) return <div className="mx-auto max-w-5xl px-4 py-8 text-center">{t('app.loading')}</div>;
   if (isError || !issue) {
     console.error('IssueDetailPage error:', { isError, isLoading, issue, data, error });
+    if (isNotFoundError(error)) return <NotFoundPage />;
     return <div className="mx-auto max-w-5xl px-4 py-8 text-center text-red-600">{t('app.error')}</div>;
   }
 
@@ -727,7 +730,10 @@ export default function IssueDetailPage() {
   };
 
   if (isLoading) return <div className="px-4 py-8"><p className="text-slate-500">{t('app.loading')}</p></div>;
-  if (isError || !issue) return <div className="px-4 py-8"><p className="text-red-600">{t('app.error')}</p></div>;
+  if (isError || !issue) {
+    if (isNotFoundError(error)) return <NotFoundPage />;
+    return <div className="px-4 py-8"><p className="text-red-600">{t('app.error')}</p></div>;
+  }
 
   const watchers = issue.watchers ?? [];
   const relations = issue.relations ?? [];

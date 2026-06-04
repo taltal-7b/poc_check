@@ -41,6 +41,24 @@ const userSelect = {
   userPreference: { select: { others: true } },
 } satisfies Prisma.UserSelect;
 
+const ISSUE_FIELD_LABELS: Record<string, string> = {
+  projectId: 'プロジェクト',
+  trackerId: '作業分類',
+  statusId: 'ステータス',
+  priority: '優先度',
+  subject: '題名',
+  description: '説明',
+  assigneeId: '担当者',
+  assigneeGroupId: '担当者',
+  categoryId: 'カテゴリ',
+  parentId: '親チケット',
+  startDate: '開始日',
+  dueDate: '期日',
+  estimatedHours: '予定工数',
+  doneRatio: '進捗率',
+  repository: 'リポジトリ',
+};
+
 function actionLabel(action: NotificationAction): string {
   const labels: Record<NotificationAction, string> = {
     created: '新規作成',
@@ -51,9 +69,16 @@ function actionLabel(action: NotificationAction): string {
   return labels[action];
 }
 
+function actionMessage(entityLabel: string, action: NotificationAction): string {
+  if (action === 'created') return `${entityLabel}が新規作成されました。`;
+  if (action === 'updated') return `${entityLabel}が更新されました。`;
+  if (action === 'commented') return `${entityLabel}に新しいコメントが追加されました。`;
+  return `${entityLabel}にメンバーが追加されました。`;
+}
+
 function issueUpdateSummaryLabel(actions: Set<IssueUpdateNotificationAction>): string {
-  if (actions.has('commented') && actions.has('updated')) return 'updated/commented';
-  return actions.has('commented') ? 'commented' : 'updated';
+  if (actions.has('commented') && actions.has('updated')) return '更新・コメント追加';
+  return actions.has('commented') ? 'コメント追加' : '更新';
 }
 
 function baseUrl(): string {
@@ -181,7 +206,8 @@ function parseIssueUpdateQueuePayload(value: string): IssueUpdateQueuePayload | 
 function journalDetailLine(detail: { propKey: string; oldValue: string | null; newValue: string | null }): string {
   const before = detail.oldValue ?? '-';
   const after = detail.newValue ?? '-';
-  return `  - ${detail.propKey}: ${before} -> ${after}`;
+  const label = ISSUE_FIELD_LABELS[detail.propKey] ?? detail.propKey;
+  return `  - ${label}: ${before} → ${after}`;
 }
 
 async function sendQueuedIssueUpdateNotification(
@@ -228,28 +254,28 @@ async function sendQueuedIssueUpdateNotification(
     ...issue.watchers.map((watcher) => watcher.userId),
     ...(issue.assigneeGroup?.groupUsers.map((groupUser) => groupUser.userId) ?? []),
   ]);
-  const projectName = issue.project?.name ?? 'Project';
+  const projectName = issue.project?.name ?? 'プロジェクト';
   const url = absoluteUrl(`/projects/${issue.project?.identifier ?? issue.projectId}/issues/${issue.id}`);
   const label = issueUpdateSummaryLabel(actions);
   const actorNames = actors.map(displayName).join(', ') || '-';
   const changeLines = issue.journals.flatMap((journal) => {
     const header = `- ${journal.createdAt.toISOString()} ${displayName(journal.user)}`;
     const details = journal.details.map(journalDetailLine);
-    const notes = journal.notes?.trim() ? [`  Comment: ${journal.notes.trim()}`] : [];
+    const notes = journal.notes?.trim() ? [`  コメント: ${journal.notes.trim()}`] : [];
     return [header, ...details, ...notes];
   });
 
   await sendNotification({
     userIds,
-    subject: `TaskNova: [${projectName}] Issue - ${label}`,
+    subject: `TaskNova: [${projectName}] チケット - ${label}`,
     lines: [
-      `Issue #${issue.number} "${issue.subject}" was updated. Recent changes are summarized below.`,
-      `Project: ${projectName}`,
-      `Actors: ${actorNames}`,
+      `チケット #${issue.number}「${issue.subject}」に${label}がありました。`,
+      `プロジェクト: ${projectName}`,
+      `操作ユーザー: ${actorNames}`,
       `URL: ${url}`,
       '',
-      'Recent changes:',
-      ...(changeLines.length ? changeLines : ['- See the issue page for details.']),
+      '最近の変更:',
+      ...(changeLines.length ? changeLines : ['- 詳細はチケット画面で確認してください。']),
     ],
   });
 }
@@ -260,7 +286,7 @@ export function scheduleIssueUpdateNotification(
   action: IssueUpdateNotificationAction,
 ): void {
   queueIssueUpdateNotification(issueId, actorId, action).catch((error) => {
-    logger.warn('Issue update notification queue failed', {
+    logger.warn('チケット更新通知のキュー登録に失敗しました', {
       issueId,
       error: error instanceof Error ? error.message : String(error),
     });
@@ -325,7 +351,7 @@ function armIssueUpdateTimer(name: string, sendAfter: Date): void {
   const timer = setTimeout(() => {
     issueUpdateTimers.delete(name);
     processQueuedIssueUpdateNotification(name).catch((error) => {
-      logger.warn('Issue update notification failed', {
+      logger.warn('チケット更新通知の送信に失敗しました', {
         queueName: name,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -449,7 +475,7 @@ export async function notifyIssueEvent(
     userIds,
     subject: `TaskNova: [${projectName}] チケット - ${actionLabel(action)}`,
     lines: [
-      `チケット #${issue.number}「${issue.subject}」が${actionLabel(action)}されました。`,
+      actionMessage(`チケット #${issue.number}「${issue.subject}」`, action),
       `プロジェクト: ${projectName}`,
       `操作ユーザー: ${actor ? displayName(actor) : '-'}`,
       `URL: ${url}`,
@@ -484,7 +510,7 @@ export async function notifyBoardEvent(
     userIds,
     subject: `TaskNova: [${projectName}] フォーラム - ${actionLabel(action)}`,
     lines: [
-      `フォーラム「${board.name}」が${actionLabel(action)}されました。`,
+      actionMessage(`フォーラム「${board.name}」`, action),
       `プロジェクト: ${projectName}`,
       `操作ユーザー: ${actor ? displayName(actor) : '-'}`,
       `URL: ${url}`,
@@ -565,7 +591,7 @@ export async function notifyMessageEvent(
     userIds,
     subject: `TaskNova: [${projectName}] フォーラム - ${actionLabel(action)}`,
     lines: [
-      `フォーラムトピック「${message.subject}」が${actionLabel(action)}されました。`,
+      actionMessage(`フォーラムトピック「${message.subject}」`, action),
       `プロジェクト: ${projectName}`,
       `操作ユーザー: ${actor ? displayName(actor) : '-'}`,
       `URL: ${url}`,
@@ -604,7 +630,7 @@ export async function notifyWikiPageEvent(
     userIds,
     subject: `TaskNova: [${project.name}] Wiki - ${actionLabel(action)}`,
     lines: [
-      `Wikiページ「${page.title}」が${actionLabel(action)}されました。`,
+      actionMessage(`Wikiページ「${page.title}」`, action),
       `プロジェクト: ${project.name}`,
       `操作ユーザー: ${actor ? displayName(actor) : '-'}`,
       `URL: ${url}`,
@@ -643,7 +669,7 @@ export async function notifyNewsEvent(
     userIds,
     subject: `TaskNova: [${projectName}] ニュース - ${actionLabel(action)}`,
     lines: [
-      `ニュース「${news.title}」が${actionLabel(action)}されました。`,
+      actionMessage(`ニュース「${news.title}」`, action),
       `プロジェクト: ${projectName}`,
       `操作ユーザー: ${actor ? displayName(actor) : '-'}`,
       `URL: ${url}`,

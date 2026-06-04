@@ -470,6 +470,7 @@ export interface Activity {
   projectId: string | null;
   userId: string | null;
   createdAt: string;
+  url?: string | null;
   project?: Project;
   user?: Pick<User, 'id' | 'login' | 'firstname' | 'lastname'> | null;
 }

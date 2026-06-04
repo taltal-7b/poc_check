@@ -7,6 +7,8 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+let refreshAccessTokenPromise: Promise<string> | null = null;
+
 api.interceptors.request.use((cfg) => {
   const token = useAuthStore.getState().accessToken;
   if (token) cfg.headers.Authorization = `Bearer ${token}`;
@@ -30,6 +32,21 @@ function redirectToLoginPreservingReturn(): void {
   window.location.assign(buildLoginNavigateTo(`${path}${window.location.search}`));
 }
 
+async function refreshAccessToken(refreshToken: string): Promise<string> {
+  refreshAccessTokenPromise ??= axios
+    .post('/api/v1/auth/refresh', { refreshToken })
+    .then((res) => {
+      const { accessToken, refreshToken: nextRefreshToken } = res.data.data;
+      useAuthStore.getState().setTokens(accessToken, nextRefreshToken ?? refreshToken);
+      return accessToken;
+    })
+    .finally(() => {
+      refreshAccessTokenPromise = null;
+    });
+
+  return refreshAccessTokenPromise;
+}
+
 api.interceptors.response.use(
   (res) => res,
   async (error) => {
@@ -42,9 +59,8 @@ api.interceptors.response.use(
       const refreshToken = useAuthStore.getState().refreshToken;
       if (refreshToken) {
         try {
-          const res = await axios.post('/api/v1/auth/refresh', { refreshToken });
-          const { accessToken } = res.data.data;
-          useAuthStore.getState().setTokens(accessToken, refreshToken);
+          const accessToken = await refreshAccessToken(refreshToken);
+          original.headers = original.headers ?? {};
           original.headers.Authorization = `Bearer ${accessToken}`;
           return api(original);
         } catch {

@@ -6,6 +6,7 @@ import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import {
   useAddGroupUser,
   useAdminDisableTotp,
+  useAdminEnableTotp,
   useAddUserProject,
   useAllProjects,
   useGroups,
@@ -14,6 +15,8 @@ import {
   useRoles,
   useUser,
 } from '../../api/hooks';
+import NotFoundPage from '../NotFoundPage';
+import { isNotFoundError } from '../../utils/http-error';
 
 type TabKey = 'general' | 'groups' | 'projects';
 
@@ -54,6 +57,7 @@ export default function UserDetailPage() {
   const removeGroupUser = useRemoveGroupUser();
   const addProject = useAddUserProject();
   const removeProject = useRemoveUserProject();
+  const adminEnableTotp = useAdminEnableTotp();
   const adminDisableTotp = useAdminDisableTotp();
 
   const user = userQuery.data?.data;
@@ -188,6 +192,19 @@ export default function UserDetailPage() {
     }
   };
 
+  const onEnableTotp = async () => {
+    if (!userId) return;
+    setError('');
+    setMessage('');
+    try {
+      await adminEnableTotp.mutateAsync(userId);
+      await userQuery.refetch();
+      setMessage('二段階認証を有効化しました');
+    } catch (err: unknown) {
+      setError(mutationErrorMessage(err, t('app.error')));
+    }
+  };
+
   const onDisableTotp = async () => {
     if (!userId) return;
     setError('');
@@ -203,6 +220,7 @@ export default function UserDetailPage() {
 
   if (!userId) return <p className="text-gray-500">{t('app.noData')}</p>;
   if (userQuery.isLoading) return <p className="text-gray-500">{t('app.loading')}</p>;
+  if (userQuery.isError && isNotFoundError(userQuery.error)) return <NotFoundPage />;
   if (!user) return <p className="text-red-600">{t('app.error')}</p>;
 
   return (
@@ -266,7 +284,7 @@ export default function UserDetailPage() {
               <dt className="text-gray-500">{t('myAccount.twoFactor')}</dt>
               <dd className="flex items-center gap-3 text-gray-900">
                 <span>{user.totpEnabled ? t('app.yes') : t('app.no')}</span>
-                {user.totpEnabled && (
+                {user.totpEnabled ? (
                   <button
                     type="button"
                     onClick={onDisableTotp}
@@ -274,6 +292,15 @@ export default function UserDetailPage() {
                     className="rounded border border-rose-600 px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"
                   >
                     無効化
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onEnableTotp}
+                    disabled={adminEnableTotp.isPending}
+                    className="rounded border border-primary-600 px-3 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50 disabled:opacity-50"
+                  >
+                    有効化
                   </button>
                 )}
               </dd>

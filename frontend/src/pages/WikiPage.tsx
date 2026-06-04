@@ -7,10 +7,12 @@ import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { renderMarkdown } from '../components/RichTextEditor';
 import { AttachmentLink } from '../components/AttachmentLink';
 import WatchButton from '../components/WatchButton';
-import { Book, Download, History, Lock, LockOpen, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Book, Download, History, Lock, LockOpen, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useProject, useWikiPage, useWikiPages, useMembers } from '../api/hooks';
 import api from '../api/client';
 import { useAuthStore } from '../stores/auth';
+import NotFoundPage from './NotFoundPage';
+import { isNotFoundError } from '../utils/http-error';
 import type { WikiPage as WikiPageType } from '../types';
 
 function unwrap<T>(raw: unknown): T | undefined {
@@ -226,29 +228,33 @@ export default function WikiPage() {
   const base = `/projects/${identifier}/wiki`;
 
   if (!identifier) {
-    return <p className="text-gray-500">{t('app.noData')}</p>;
+    return <p className="text-slate-500">{t('app.noData')}</p>;
+  }
+
+  if (decodedTitle && pageQuery.isError && isNotFoundError(pageQuery.error)) {
+    return <NotFoundPage />;
   }
 
   return (
     <div className="space-y-6">
       {identifier && <ProjectSubNav identifier={identifier} />}
-      <div className="flex flex-col lg:flex-row gap-6">
-      <aside className="lg:w-64 shrink-0 rounded-lg border border-gray-200 bg-white p-4 shadow-sm h-fit">
-        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-500">
+      <div className="flex flex-col gap-6 lg:flex-row">
+      <aside className="h-fit shrink-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:w-64">
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-500">
           <Book size={16} />
           {t('wiki.title')}
         </h2>
         <nav className="space-y-1 text-sm">
           {tree.map((node) => (
-            <div key={node.full} className="pl-2 border-l border-gray-100">
-              <Link to={`${base}/${encodeURIComponent(node.full)}`} className="block py-1 text-gray-800 hover:text-primary-700">
+            <div key={node.full} className="border-l border-slate-100 pl-2">
+              <Link to={`${base}/${encodeURIComponent(node.full)}`} className="block rounded px-2 py-1 font-medium text-slate-800 hover:bg-slate-50 hover:text-primary-700">
                 {node.name}
               </Link>
               {node.children.map((c) => (
                 <Link
                   key={c.full}
                   to={`${base}/${encodeURIComponent(c.full)}`}
-                  className="block py-0.5 pl-2 text-gray-600 hover:text-primary-700 text-xs"
+                  className="block rounded px-2 py-0.5 pl-4 text-xs text-slate-600 hover:bg-slate-50 hover:text-primary-700"
                 >
                   {c.name}
                 </Link>
@@ -258,27 +264,27 @@ export default function WikiPage() {
         </nav>
       </aside>
 
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 flex-1">
         {!decodedTitle ? (
-          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h1 className="text-2xl font-bold text-gray-900">{t('wiki.title')}</h1>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3">
+              <h1 className="text-2xl font-bold text-slate-900">{t('wiki.title')}</h1>
               {canEditWiki && (
                 <Link
                   to={`${base}/new/edit`}
-                  className="rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700"
+                  className="inline-flex justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-700"
                 >
                   {t('wiki.newPage')}
                 </Link>
               )}
             </div>
-            <ul className="divide-y divide-gray-100">
+            <ul className="divide-y divide-slate-100">
               {pages.length === 0 ? (
-                <li className="py-6 text-center text-gray-500">{t('app.noData')}</li>
+                <li className="py-8 text-center text-slate-500">{t('app.noData')}</li>
               ) : (
                 pages.map((p) => (
                   <li key={p.id}>
-                    <Link to={`${base}/${encodeURIComponent(p.title)}`} className="block py-3 hover:bg-gray-50 px-2 rounded">
+                    <Link to={`${base}/${encodeURIComponent(p.title)}`} className="block px-4 py-3 hover:bg-slate-50">
                       <span className="font-medium text-primary-700">{p.title}</span>
                       {p.protected && (
                         <span className="ml-2 text-xs text-amber-600">
@@ -292,12 +298,21 @@ export default function WikiPage() {
             </ul>
           </div>
         ) : (
-          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-            <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-4 py-3 bg-gray-50">
-              <h1 className="text-xl font-bold text-gray-900 min-w-0 flex-1 basis-full sm:basis-auto sm:min-w-[12rem]">
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
+              <h1 className="min-w-0 flex-1 basis-full text-xl font-bold text-slate-900 sm:basis-auto sm:min-w-[12rem]">
                 {decodedTitle}
               </h1>
               <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+                {canEditWiki && (
+                  <Link
+                    to={`${base}/new/edit`}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-2 text-sm font-semibold text-white shadow hover:bg-primary-700"
+                  >
+                    <Plus size={14} />
+                    {t('wiki.newPage')}
+                  </Link>
+                )}
                 {wikiPage && (
                   <WatchButton watchableType="WikiPage" watchableId={wikiPage.id} className="h-[34px] px-3 py-1.5" />
                 )}
@@ -305,17 +320,30 @@ export default function WikiPage() {
                   <button
                     type="button"
                     onClick={() => navigate(`${base}/${encodeURIComponent(decodedTitle)}/edit`)}
-                    className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
                   >
                     <Pencil size={14} />
                     {t('wiki.editPage')}
+                  </button>
+                )}
+                {canEditWiki && wikiPage && !wikiPage.protected && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeleteErrorMessage(null);
+                      setDeleteWikiOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 shadow-sm hover:bg-red-50"
+                  >
+                    <Trash2 size={14} />
+                    {t('app.delete')}
                   </button>
                 )}
                 <button
                   type="button"
                   disabled={exportWikiPdf.isPending || !projectId || !decodedTitle}
                   onClick={() => exportWikiPdf.mutate()}
-                  className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Download size={14} />
                   {t('wiki.export')}
@@ -326,7 +354,7 @@ export default function WikiPage() {
                   aria-haspopup="menu"
                   aria-expanded={wikiActionsOpen}
                   onClick={() => setWikiActionsOpen((o) => !o)}
-                  className="inline-flex h-[34px] min-w-[34px] items-center justify-center rounded border border-gray-300 bg-white px-2 text-gray-700 hover:bg-gray-50"
+                  className="inline-flex h-[38px] min-w-[38px] items-center justify-center rounded-lg border border-slate-300 bg-white px-2 text-slate-700 shadow-sm hover:bg-slate-50"
                   title={t('wiki.moreActions')}
                 >
                   <MoreHorizontal className="h-5 w-5" aria-hidden />
@@ -342,13 +370,13 @@ export default function WikiPage() {
                     />
                     <ul
                       role="menu"
-                      className="absolute right-0 z-50 mt-1 min-w-[11rem] rounded-md border border-gray-200 bg-white py-1 shadow-lg"
+                      className="absolute right-0 z-50 mt-1 min-w-[11rem] rounded-lg border border-slate-200 bg-white py-1 text-slate-900 shadow-lg ring-1 ring-black/5"
                     >
                       <li role="none">
                         <button
                           type="button"
                           role="menuitem"
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-50"
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-50"
                           onClick={() => {
                             setWikiActionsOpen(false);
                             navigate(`${base}/${encodeURIComponent(decodedTitle)}/history`);
@@ -364,7 +392,7 @@ export default function WikiPage() {
                             type="button"
                             role="menuitem"
                             disabled={toggleProtect.isPending || !wikiPage}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-50 disabled:opacity-50"
                             onClick={() => {
                               setWikiActionsOpen(false);
                               toggleProtect.mutate();
@@ -379,23 +407,6 @@ export default function WikiPage() {
                           </button>
                         </li>
                       )}
-                      {canEditWiki && wikiPage && !wikiPage.protected && (
-                        <li role="none">
-                          <button
-                            type="button"
-                            role="menuitem"
-                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50"
-                            onClick={() => {
-                              setWikiActionsOpen(false);
-                              setDeleteErrorMessage(null);
-                              setDeleteWikiOpen(true);
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4 shrink-0" />
-                            {t('app.delete')}
-                          </button>
-                        </li>
-                      )}
                     </ul>
                   </>
                 )}
@@ -403,9 +414,9 @@ export default function WikiPage() {
               </div>
             </div>
             {pageQuery.isLoading ? (
-              <div className="p-8 text-center text-gray-500">{t('app.loading')}</div>
+              <div className="p-8 text-center text-slate-500">{t('app.loading')}</div>
             ) : pageQuery.isError || !wikiPage ? (
-              <div className="p-8 text-center text-gray-500">{t('app.error')}</div>
+              <div className="p-8 text-center text-slate-500">{t('app.error')}</div>
             ) : (
               <>
                 {exportErrorMessage && (
@@ -414,11 +425,11 @@ export default function WikiPage() {
                   </div>
                 )}
                 <article
-                  className="p-6 text-sm text-gray-800 max-w-none space-y-3 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-semibold [&_pre]:bg-gray-100 [&_pre]:p-3 [&_pre]:rounded-md [&_pre]:overflow-x-auto [&_a]:text-primary-700 [&_ul]:list-disc [&_ul]:pl-5"
+                  className="max-w-none space-y-3 p-6 text-sm text-slate-800 [&_a]:text-primary-700 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-semibold [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-slate-100 [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5"
                   dangerouslySetInnerHTML={{ __html: html || `<p>${t('app.noData')}</p>` }}
                 />
                 {(wikiPage.attachments?.length ?? 0) > 0 && (
-                  <section className="border-t border-gray-100 px-6 py-4">
+                  <section className="border-t border-slate-100 px-6 py-4">
                     <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">{t('settings.attachments')}</h2>
                     <ul className="space-y-1 text-sm">
                       {wikiPage.attachments!.map((att) => (
@@ -453,8 +464,8 @@ export default function WikiPage() {
         <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <DialogPanel className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <DialogTitle className="text-lg font-semibold text-gray-900">{t('wiki.deletePage')}</DialogTitle>
-            <p className="mt-3 text-sm text-gray-700">
+            <DialogTitle className="text-lg font-semibold text-slate-900">{t('wiki.deletePage')}</DialogTitle>
+            <p className="mt-3 text-sm text-slate-700">
               {t('wiki.deletePageConfirm', { title: decodedTitle || '—' })}
             </p>
             {deleteErrorMessage && (
@@ -467,7 +478,7 @@ export default function WikiPage() {
                   setDeleteErrorMessage(null);
                   setDeleteWikiOpen(false);
                 }}
-                className="rounded border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 {t('app.cancel')}
               </button>
@@ -478,7 +489,7 @@ export default function WikiPage() {
                   setDeleteErrorMessage(null);
                   deleteWikiPage.mutate();
                 }}
-                className="rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
               >
                 {t('app.delete')}
               </button>

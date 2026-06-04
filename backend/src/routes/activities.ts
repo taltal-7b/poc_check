@@ -10,6 +10,79 @@ const router = Router();
 const PROJECT_STATUS_ARCHIVED = 5;
 const LEGACY_PROJECT_STATUS_ARCHIVED = 2;
 
+type ActivityWithProject = Prisma.ActivityGetPayload<{
+  include: {
+    project: { select: { id: true; name: true; identifier: true } };
+  };
+}>;
+
+function projectUrl(row: ActivityWithProject, suffix = '') {
+  const identifier = row.project?.identifier;
+  if (!identifier) return null;
+  return `/projects/${identifier}${suffix}`;
+}
+
+async function findRootTopicId(boardId: string, messageId: string): Promise<string | null> {
+  let currentId: string | null = messageId;
+  while (currentId) {
+    const row: { id: string; parentId: string | null } | null = await prisma.message.findFirst({
+      where: { id: currentId, boardId },
+      select: { id: true, parentId: true },
+    });
+    if (!row) return null;
+    if (!row.parentId) return row.id;
+    currentId = row.parentId;
+  }
+  return null;
+}
+
+async function resolveActivityUrl(row: ActivityWithProject): Promise<string | null> {
+  const actType = row.actType.toLowerCase();
+  const isDelete = actType.endsWith('_delete');
+
+  if (actType.startsWith('issue')) {
+    return isDelete ? projectUrl(row, '/issues') : projectUrl(row, `/issues/${row.actId}`);
+  }
+
+  if (actType.startsWith('time_entry')) return projectUrl(row, '/time_entries');
+  if (actType.startsWith('file')) return projectUrl(row, '/files');
+
+  if (actType.startsWith('news')) {
+    return isDelete ? projectUrl(row, '/news') : projectUrl(row, `/news/${row.actId}`);
+  }
+
+  if (actType.startsWith('document')) {
+    return isDelete ? projectUrl(row, '/documents') : projectUrl(row, `/documents/${row.actId}`);
+  }
+
+  if (actType.startsWith('wiki')) {
+    if (isDelete) return projectUrl(row, '/wiki');
+    const page = await prisma.wikiPage.findUnique({
+      where: { id: row.actId },
+      select: { title: true },
+    });
+    const title = page?.title ?? row.title;
+    return title ? projectUrl(row, `/wiki/${encodeURIComponent(title)}`) : projectUrl(row, '/wiki');
+  }
+
+  if (actType.startsWith('board')) {
+    return isDelete ? projectUrl(row, '/forums') : projectUrl(row, `/forums/${row.actId}`);
+  }
+
+  if (actType.startsWith('message')) {
+    if (isDelete) return projectUrl(row, '/forums');
+    const message = await prisma.message.findUnique({
+      where: { id: row.actId },
+      select: { id: true, boardId: true, parentId: true },
+    });
+    if (!message) return projectUrl(row, '/forums');
+    const topicId = message.parentId ? await findRootTopicId(message.boardId, message.id) : message.id;
+    return topicId ? projectUrl(row, `/forums/${message.boardId}/topics/${topicId}`) : projectUrl(row, `/forums/${message.boardId}`);
+  }
+
+  return projectUrl(row);
+}
+
 async function getVisibleProjectIds(userId: string | undefined, isAdmin: boolean | undefined) {
   if (isAdmin) {
     const rows = await prisma.project.findMany({
@@ -45,6 +118,22 @@ async function getVisibleProjectIds(userId: string | undefined, isAdmin: boolean
     }
   }
   return visible;
+}
+
+function isIssueActivity(row: { actType: string }) {
+  return row.actType.toLowerCase().startsWith('issue');
+}
+
+async function removeDeletedIssueActivities(rows: ActivityWithProject[]) {
+  const issueIds = Array.from(new Set(rows.filter(isIssueActivity).map((row) => row.actId)));
+  if (!issueIds.length) return rows;
+
+  const existingIssues = await prisma.issue.findMany({
+    where: { id: { in: issueIds } },
+    select: { id: true },
+  });
+  const existingIssueIds = new Set(existingIssues.map((issue) => issue.id));
+  return rows.filter((row) => !isIssueActivity(row) || existingIssueIds.has(row.actId));
 }
 
 router.get(
@@ -131,18 +220,25 @@ router.get(
         where.createdAt = { ...(where.createdAt as Prisma.DateTimeFilter), lte: end };
       }
 
-      const [total, rows] = await Promise.all([
-        prisma.activity.count({ where }),
-        prisma.activity.findMany({
+      const total = await prisma.activity.count({ where });
+      const rows: ActivityWithProject[] = [];
+      let offset = skip;
+      const batchSize = Math.max(perPage * 2, perPage);
+      while (rows.length < perPage && offset < total) {
+        const batch = await prisma.activity.findMany({
           where,
-          skip,
-          take: perPage,
+          skip: offset,
+          take: batchSize,
           orderBy: { createdAt: 'desc' },
           include: {
             project: { select: { id: true, name: true, identifier: true } },
           },
-        }),
-      ]);
+        });
+        if (!batch.length) break;
+        rows.push(...(await removeDeletedIssueActivities(batch)));
+        offset += batch.length;
+      }
+      rows.length = Math.min(rows.length, perPage);
 
       const userIds = Array.from(new Set(rows.map((row) => row.userId).filter((id): id is string => Boolean(id))));
       const users = userIds.length
@@ -152,10 +248,13 @@ router.get(
         })
         : [];
       const userMap = new Map(users.map((user) => [user.id, user]));
-      const enrichedRows = rows.map((row) => ({
-        ...row,
-        user: row.userId ? userMap.get(row.userId) ?? null : null,
-      }));
+      const enrichedRows = await Promise.all(
+        rows.map(async (row) => ({
+          ...row,
+          user: row.userId ? userMap.get(row.userId) ?? null : null,
+          url: await resolveActivityUrl(row),
+        })),
+      );
 
       return sendPaginated(res, enrichedRows, {
         total,
