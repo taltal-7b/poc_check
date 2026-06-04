@@ -152,6 +152,10 @@ jobs:
           GHCR_USERNAME="${2:-}"
           GHCR_TOKEN="${3:-}"
           cd "$DEPLOY_PATH"
+          docker image prune -af || true
+          DOCKER_CONFIG="$(mktemp -d "${TMPDIR:-/tmp}/tasknova-docker-config.XXXXXX")"
+          export DOCKER_CONFIG
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
           if [ -n "$GHCR_USERNAME" ] && [ -n "$GHCR_TOKEN" ]; then
             printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
           fi
