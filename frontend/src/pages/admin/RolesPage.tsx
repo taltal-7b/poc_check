@@ -51,7 +51,7 @@ const FEATURES: FeaturePermission[] = [
     key: 'calendar',
     label: 'カレンダー',
     viewPerms: ['view_calendar'],
-    editPerms: ['manage_calendar'], // カレンダーの編集権限を追加
+    editPerms: [],
   },
   {
     key: 'time_tracking',

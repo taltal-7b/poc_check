@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
@@ -54,6 +55,7 @@ function mutationErrorMessage(err: unknown, fallback: string) {
 
 const PASSWORD_MIN = 8;
 const PASSWORD_MAX = 128;
+const PER_PAGE = 10;
 const SYSTEM_ADMIN_LABEL = 'システム管理者';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -64,8 +66,14 @@ function validateEmail(mail: string) {
 
 export default function UsersPage() {
   const { t } = useTranslation();
-  const { data: usersRes, isLoading, isError } = useUsers();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const page = Math.max(1, Number(searchParams.get('page') || '1') || 1);
+  const usersParams = useMemo(() => ({ page, per_page: PER_PAGE }), [page]);
+  const { data: usersRes, isLoading, isError } = useUsers(usersParams);
   const users = usersRes?.data ?? [];
+  const pagination = usersRes?.pagination;
+  const totalPages = pagination?.totalPages ?? 1;
+  const currentPage = Math.min(page, totalPages);
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
   const deleteUser = useDeleteUser();
@@ -374,6 +382,21 @@ export default function UsersPage() {
 
   const editTotpEnabled = userDetail?.totpEnabled ?? editUser?.totpEnabled ?? false;
 
+  useEffect(() => {
+    if (!pagination || page <= totalPages) return;
+    const nextParams = new URLSearchParams(searchParams);
+    if (totalPages <= 1) nextParams.delete('page');
+    else nextParams.set('page', String(totalPages));
+    setSearchParams(nextParams, { replace: true });
+  }, [page, pagination, searchParams, setSearchParams, totalPages]);
+
+  const setPage = (nextPage: number) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextPage <= 1) nextParams.delete('page');
+    else nextParams.set('page', String(nextPage));
+    setSearchParams(nextParams);
+  };
+
   const formFields = (
     <div className="space-y-3">
       <div>
@@ -552,6 +575,35 @@ export default function UsersPage() {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {!isLoading && !isError && pagination && pagination.totalPages > 1 && (
+        <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <span className="text-slate-600">
+            {pagination.total}件中 {(currentPage - 1) * PER_PAGE + 1} - {Math.min(currentPage * PER_PAGE, pagination.total)}件
+          </span>
+          <div className="flex items-center justify-center gap-2">
+            <button
+              type="button"
+              disabled={currentPage <= 1}
+              onClick={() => setPage(currentPage - 1)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {t('forums.prev')}
+            </button>
+            <span className="min-w-16 text-center text-slate-600">
+              {currentPage} / {pagination.totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={currentPage >= pagination.totalPages}
+              onClick={() => setPage(currentPage + 1)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {t('forums.next')}
+            </button>
+          </div>
         </div>
       )}
 
