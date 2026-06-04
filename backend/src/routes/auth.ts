@@ -23,6 +23,22 @@ const EMAIL_OTP_SETUP_ACTION = 'email_2fa_setup';
 const PASSWORD_RESET_ACTION = 'password_reset';
 const PASSWORD_RESET_EXPIRES_MINUTES = 60;
 
+type LoginUser = {
+  id: string;
+  login: string;
+  hashedPassword: string;
+  firstname: string;
+  lastname: string;
+  mail: string;
+  admin: boolean;
+  status: number;
+  language: string;
+  totpEnabled: boolean;
+  lastLoginOn: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 function serializeUser(user: {
   id: string;
   login: string;
@@ -51,6 +67,102 @@ function serializeUser(user: {
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
+}
+
+function isMissingColumnError(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2022';
+}
+
+function withLoginDefaults(user: Omit<LoginUser, 'totpEnabled' | 'lastLoginOn'> & Partial<Pick<LoginUser, 'totpEnabled' | 'lastLoginOn'>>): LoginUser {
+  return {
+    ...user,
+    totpEnabled: user.totpEnabled ?? false,
+    lastLoginOn: user.lastLoginOn ?? null,
+  };
+}
+
+async function findLoginUserByLogin(login: string): Promise<LoginUser | null> {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { login },
+      select: {
+        id: true,
+        login: true,
+        hashedPassword: true,
+        firstname: true,
+        lastname: true,
+        mail: true,
+        admin: true,
+        status: true,
+        language: true,
+        totpEnabled: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    return user ? withLoginDefaults(user) : null;
+  } catch (err) {
+    if (!isMissingColumnError(err)) throw err;
+    const user = await prisma.user.findUnique({
+      where: { login },
+      select: {
+        id: true,
+        login: true,
+        hashedPassword: true,
+        firstname: true,
+        lastname: true,
+        mail: true,
+        admin: true,
+        status: true,
+        language: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    return user ? withLoginDefaults(user) : null;
+  }
+}
+
+async function findLoginUserById(id: string): Promise<LoginUser | null> {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        login: true,
+        hashedPassword: true,
+        firstname: true,
+        lastname: true,
+        mail: true,
+        admin: true,
+        status: true,
+        language: true,
+        totpEnabled: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    return user ? withLoginDefaults(user) : null;
+  } catch (err) {
+    if (!isMissingColumnError(err)) throw err;
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        login: true,
+        hashedPassword: true,
+        firstname: true,
+        lastname: true,
+        mail: true,
+        admin: true,
+        status: true,
+        language: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    return user ? withLoginDefaults(user) : null;
+  }
 }
 
 function signAccessToken(payload: AuthPayload): string {
@@ -183,7 +295,7 @@ async function issuePasswordResetMail(user: { id: string; login: string; mail: s
 }
 
 async function issueTokensForUser(userId: string) {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const user = await findLoginUserById(userId);
   if (!user || user.status !== 1) {
     throw AppError.unauthorized('アカウントが利用できません');
   }
@@ -195,6 +307,8 @@ async function issueTokensForUser(userId: string) {
   await prisma.user.update({
     where: { id: userId },
     data: { lastLoginOn: new Date() },
+  }).catch((err) => {
+    if (!isMissingColumnError(err)) throw err;
   });
   return {
     accessToken: signAccessToken(payload),
@@ -214,9 +328,7 @@ router.post(
         })
         .parse(req.body);
 
-      const user = await prisma.user.findUnique({
-        where: { login: body.login },
-      });
+      const user = await findLoginUserByLogin(body.login);
       if (!user) {
         throw AppError.unauthorized('ログインまたはパスワードが正しくありません');
       }
@@ -475,9 +587,7 @@ router.get(
   authenticate,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const user = await prisma.user.findUnique({
-        where: { id: req.user!.userId },
-      });
+      const user = await findLoginUserById(req.user!.userId);
       if (!user) {
         throw AppError.notFound('ユーザーが見つかりません');
       }
