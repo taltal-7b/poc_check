@@ -437,7 +437,7 @@ router.post(
       const activity = await prisma.enumeration.findFirst({
         where: { id: body.activityId, type: 'TimeEntryActivity', active: true },
       });
-      if (!activity) throw AppError.badRequest('無効な作業分類です');
+      if (!activity) throw AppError.badRequest('無効な工数分類です');
 
       const entry = await prisma.timeEntry.create({
         data: {
@@ -504,7 +504,7 @@ router.put(
         const activity = await prisma.enumeration.findFirst({
           where: { id: body.activityId, type: 'TimeEntryActivity', active: true },
         });
-        if (!activity) throw AppError.badRequest('無効な作業分類です');
+        if (!activity) throw AppError.badRequest('無効な工数分類です');
       }
 
       if (body.issueId) {
