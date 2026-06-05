@@ -22,7 +22,7 @@ const DEFAULT_MODULES = [
 
 const MODULE_LABELS: Record<string, string> = {
   issue_tracking: 'チケットトラッキング',
-  time_tracking: '時間管理',
+  time_tracking: '工数管理',
   news: 'ニュース',
   documents: '文書',
   files: 'ファイル',
