@@ -497,6 +497,7 @@ export const UserStatusCode = {
   Active: 1,
   Registered: 2,
   Locked: 3,
+  Deleted: 4,
 } as const;
 
 export interface IssueStatusUsage {

@@ -42,6 +42,12 @@ const FEATURES: FeaturePermission[] = [
     editPerms: ['manage_news'], // Assuming manage_news for edit
   },
   {
+    key: 'documents',
+    label: '文書',
+    viewPerms: ['view_documents'],
+    editPerms: ['manage_documents'],
+  },
+  {
     key: 'forums',
     label: 'フォーラム',
     viewPerms: ['view_messages'],

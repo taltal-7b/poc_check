@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../utils/db';
@@ -12,6 +13,7 @@ import { logger } from '../utils/logger';
 const router = Router();
 
 const BCRYPT_ROUNDS = 12;
+const USER_STATUS_DELETED = 4;
 
 function dispatchMemberAddedNotification(params: {
   projectId: string;
@@ -88,9 +90,11 @@ router.use(authenticate);
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { page, perPage, skip } = parsePagination(req.query as Record<string, unknown>);
+    const where = { status: { not: USER_STATUS_DELETED } };
     const [total, rows] = await prisma.$transaction([
-      prisma.user.count(),
+      prisma.user.count({ where }),
       prisma.user.findMany({
+        where,
         skip,
         take: perPage,
         orderBy: { login: 'asc' },
@@ -125,6 +129,30 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     next(err);
   }
 });
+
+async function markUserDeleted(id: string) {
+  const deletedLogin = `deleted-${id}`;
+  await prisma.$transaction(async (tx) => {
+    await tx.token.deleteMany({ where: { userId: id } });
+    await tx.groupUser.deleteMany({ where: { userId: id } });
+    await tx.member.deleteMany({ where: { userId: id } });
+    await tx.watcher.deleteMany({ where: { userId: id } });
+    await tx.reaction.deleteMany({ where: { userId: id } });
+    await tx.issue.updateMany({ where: { assigneeId: id }, data: { assigneeId: null } });
+    await tx.user.update({
+      where: { id },
+      data: {
+        login: deletedLogin,
+        mail: `${deletedLogin}@deleted.local`,
+        firstname: '',
+        lastname: '削除済みユーザー',
+        admin: false,
+        status: USER_STATUS_DELETED,
+        hashedPassword: await bcrypt.hash(crypto.randomUUID(), BCRYPT_ROUNDS),
+      },
+    });
+  });
+}
 
 router.post(
   '/bulk_lock',
@@ -494,8 +522,16 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response, next: Ne
     if (id === req.user!.userId) {
       throw AppError.badRequest('自分自身は削除できません');
     }
-    await prisma.user.delete({ where: { id } });
-    return sendSuccess(res, { ok: true });
+    try {
+      await prisma.user.delete({ where: { id } });
+      return sendSuccess(res, { ok: true, deleted: true });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
+        await markUserDeleted(id);
+        return sendSuccess(res, { ok: true, deleted: false, softDeleted: true });
+      }
+      throw err;
+    }
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
       return next(AppError.notFound('ユーザーが見つかりません'));

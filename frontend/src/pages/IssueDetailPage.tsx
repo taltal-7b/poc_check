@@ -698,6 +698,9 @@ export default function IssueDetailPage() {
 
   const renderDetail = (detail: JournalDetail) => {
     const label = propKeyLabel(detail);
+    if (detail.propKey === 'description') {
+      return <span><strong>{label}</strong>を編集</span>;
+    }
     if (detail.oldValue && detail.newValue) {
       return <span><strong>{label}</strong> を <del className="text-red-500">{formatDetailOldValue(detail)}</del> から <ins className="text-green-600 no-underline">{formatDetailValue(detail)}</ins> に変更</span>;
     }

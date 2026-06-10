@@ -507,12 +507,12 @@ export default function TimeEntriesPage() {
           </>
         )}
         <div className="text-sm min-w-[14rem]">
-          <span className="mb-1 block text-xs font-medium text-slate-500">{t('issues.author')}</span>
+          <span className="mb-1 block text-xs font-medium text-slate-500">{t('issues.assignee')}</span>
           <AppSelect
             value={filterUserId}
             onChange={setFilterUserId}
             options={[{ value: '', label: '－' }, ...memberUserOptions]}
-            ariaLabel={t('issues.author')}
+            ariaLabel={t('issues.assignee')}
             className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
           />
         </div>
