@@ -69,18 +69,23 @@ function parseDateOnly(s: string | null | undefined): Date | null {
   }
 }
 
-function issueEffectiveRange(issue: Issue): { start: Date; end: Date } {
+function issueBarRange(issue: Issue): { start: Date; end: Date } | null {
   const start = parseDateOnly(issue.startDate);
   const due = parseDateOnly(issue.dueDate);
-  const created = parseDateOnly(issue.createdAt) ?? startOfDay(new Date());
+
+  if (!start) return null;
 
   if (start && due) {
     if (differenceInCalendarDays(due, start) < 0) return { start: due, end: start };
     return { start, end: due };
   }
-  if (start) return { start, end: start };
-  if (due) return { start: due, end: due };
-  return { start: created, end: created };
+  return { start, end: start };
+}
+
+function issueDueOnlyLabel(issue: Issue): string {
+  const status = issue.status?.name?.trim();
+  const progress = `${issue.doneRatio}%`;
+  return status ? `${status} ${progress}` : progress;
 }
 
 type HeaderSeg = { key: string; label: string; days: number };
@@ -380,7 +385,10 @@ export default function GanttPage() {
                   {/* Project row - horizontal connector line */}
                   {(() => {
                     if (issueRows.length === 0) return null;
-                    const ranges = issueRows.map(({ issue }) => issueEffectiveRange(issue));
+                    const ranges = issueRows
+                      .map(({ issue }) => issueBarRange(issue))
+                      .filter((range): range is { start: Date; end: Date } => range !== null);
+                    if (ranges.length === 0) return null;
                     const allStarts = ranges.map((r) => r.start);
                     const allEnds = ranges.map((r) => r.end);
                     const minS = min(allStarts);
@@ -409,23 +417,46 @@ export default function GanttPage() {
                   {/* Issue bars with tree branches */}
                   {issueRows.map(({ issue }, idx) => {
                     const rowY = (idx + 1) * ROW_H;
-                    const range = issueEffectiveRange(issue);
-                    const { left, width } = barLayout(range);
+                    const range = issueBarRange(issue);
                     const cy = rowY + ROW_H / 2;
                     const issueUrl = `/projects/${identifier}/issues/${issue.id}`;
                     const ts = issueTextStyle(issue, today);
 
                     const projectCy = ROW_H / 2;
                     const branchX = 6;
+                    const start = parseDateOnly(issue.startDate);
+                    const due = parseDateOnly(issue.dueDate);
+                    const showDueOnlyLabel = !start && !!due;
 
+                    if (!range) {
+                      return (
+                        <g key={issue.id}>
+                          <line x1={branchX} y1={projectCy + 5} x2={branchX} y2={cy} stroke="#c7d2fe" strokeWidth={1} />
+                          <line x1={branchX} y1={cy} x2={branchX + 16} y2={cy} stroke="#c7d2fe" strokeWidth={1} />
+                          {showDueOnlyLabel && (
+                            <a href={issueUrl}>
+                              <text
+                                x={24}
+                                y={cy + 4}
+                                fontSize={10}
+                                fill={ts.color}
+                                textDecoration={ts.strikethrough ? 'line-through' : undefined}
+                              >
+                                {issueDueOnlyLabel(issue)}
+                              </text>
+                            </a>
+                          )}
+                        </g>
+                      );
+                    }
+
+                    const { left, width } = barLayout(range);
                     const barH = 14;
                     const barY = cy - barH / 2;
                     const barW = Math.max(width, 4);
 
                     const progressW = barW * (issue.doneRatio / 100);
 
-                    const start = parseDateOnly(issue.startDate);
-                    const due = parseDateOnly(issue.dueDate);
                     let lateW = 0;
                     if (start && due && !issue.status?.isClosed) {
                       const totalSpan = differenceInCalendarDays(due, start);
