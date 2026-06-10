@@ -38,7 +38,7 @@ export const en: TranslationKeys = {
     updated: 'Issue updated',
     deleted: 'Issue deleted',
     bulkUpdated: 'Issues updated',
-    priorities: { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent', immediate: 'Immediate' },
+    priorities: { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Emergency' },
   },
   trackers: { name: 'Tracker' },
   statuses: { name: 'Status' },

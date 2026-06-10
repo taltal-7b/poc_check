@@ -36,7 +36,7 @@ export const ja = {
     updated: 'チケットを更新しました',
     deleted: 'チケットを削除しました',
     bulkUpdated: 'チケットを一括更新しました',
-    priorities: { low: '低め', normal: '通常', high: '高め', urgent: '急いで', immediate: '今すぐ' },
+    priorities: { low: '低め', normal: '通常', high: '高め', urgent: '緊急' },
   },
   trackers: { name: '作業分類' },
   statuses: { name: 'ステータス' },

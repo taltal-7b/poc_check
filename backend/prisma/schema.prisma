@@ -349,7 +349,7 @@ model Issue {
   statusId       String    @map("status_id")
   status         IssueStatus @relation(fields: [statusId], references: [id])
   number         Int       @unique @default(0)
-  priority       Int       @default(2) // 1=low,2=normal,3=high,4=urgent,5=immediate
+  priority       Int       @default(2) // 1=low,2=normal,3=high,4=emergency
   subject        String
   description    String?
   authorId       String    @map("author_id")

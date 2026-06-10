@@ -487,7 +487,7 @@ export default function IssueNewPage() {
           <AppSelect
             value={String(priority)}
             onChange={(value) => setPriority(Number(value))}
-            options={[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: t(`issues.priorities.${n}` as const) }))}
+            options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: t(`issues.priorities.${n}` as const) }))}
             ariaLabel={t('issues.priority')}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />

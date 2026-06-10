@@ -87,7 +87,7 @@ router.post(
         status_id: z.string().uuid(),
         subject: z.string().min(1),
         description: z.string().optional(),
-        priority: z.coerce.number().int().min(1).max(5).optional(),
+        priority: z.coerce.number().int().min(1).max(4).optional(),
         assignee_id: z.string().uuid().optional().or(z.literal('')),
       });
 

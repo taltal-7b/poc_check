@@ -76,9 +76,7 @@ function priorityLabel(priority: number | null | undefined) {
     case 3:
       return '高め';
     case 4:
-      return '急いで';
-    case 5:
-      return '今すぐ';
+      return '緊急';
     default:
       return '-';
   }

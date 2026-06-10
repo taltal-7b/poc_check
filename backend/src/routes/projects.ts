@@ -188,8 +188,7 @@ function priorityLabel(priority: number): string {
     1: '低め',
     2: '通常',
     3: '高め',
-    4: '急いで',
-    5: '今すぐ',
+    4: '緊急',
   };
   return labels[priority] ?? String(priority);
 }

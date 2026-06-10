@@ -55,16 +55,16 @@ async function main() {
     { type: 'IssuePriority', name: '低め', position: 1 },
     { type: 'IssuePriority', name: '通常', position: 2, isDefault: true },
     { type: 'IssuePriority', name: '高め', position: 3 },
-    { type: 'IssuePriority', name: '急いで', position: 4 },
-    { type: 'IssuePriority', name: '今すぐ', position: 5 },
+    { type: 'IssuePriority', name: '緊急', position: 4 },
   ];
   for (const p of priorities) {
     await prisma.enumeration.upsert({
       where: { id: `priority-${p.position}` },
-      update: {},
+      update: p,
       create: { id: `priority-${p.position}`, ...p },
     });
   }
+  await prisma.enumeration.deleteMany({ where: { id: 'priority-5', type: 'IssuePriority' } });
 
   const docCategories = [
     { type: 'DocumentCategory', name: 'ユーザー文書', position: 1 },

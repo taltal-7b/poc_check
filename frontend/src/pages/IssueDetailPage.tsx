@@ -151,8 +151,7 @@ function priorityBadgeClass(p: number) {
     1: 'bg-slate-100 text-slate-800',
     2: 'bg-sky-100 text-sky-900',
     3: 'bg-amber-100 text-amber-900',
-    4: 'bg-orange-100 text-orange-900',
-    5: 'bg-red-100 text-red-900',
+    4: 'bg-red-100 text-red-900',
   };
   return map[p] ?? 'bg-slate-100 text-slate-800';
 }
@@ -1010,7 +1009,7 @@ export default function IssueDetailPage() {
               <AppSelect
                 value={form.priority}
                 onChange={(value) => setField('priority', value)}
-                options={[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: t(`issues.priorities.${n}` as 'issues.priorities.1') }))}
+                options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: t(`issues.priorities.${n}` as 'issues.priorities.1') }))}
                 ariaLabel={t('issues.priority')}
                 className={selectCls}
               />

@@ -64,8 +64,7 @@ function priorityBadge(p: number) {
     1: 'bg-slate-100 text-slate-700 ring-slate-500/20',
     2: 'bg-sky-100 text-sky-800 ring-sky-600/20',
     3: 'bg-amber-100 text-amber-900 ring-amber-600/20',
-    4: 'bg-orange-100 text-orange-900 ring-orange-600/20',
-    5: 'bg-red-100 text-red-800 ring-red-600/20',
+    4: 'bg-red-100 text-red-800 ring-red-600/20',
   };
   return map[p] ?? 'bg-slate-100 text-slate-700 ring-slate-500/20';
 }
@@ -306,7 +305,7 @@ export default function IssuesPage() {
   const priorityOptions = useMemo(
     () => [
       { value: '', label: EMPTY_MARK },
-      ...[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: t(`issues.priorities.${n}` as const) })),
+      ...[1, 2, 3, 4].map((n) => ({ value: String(n), label: t(`issues.priorities.${n}` as const) })),
     ],
     [t],
   );
