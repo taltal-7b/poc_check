@@ -665,7 +665,7 @@ export default function IssuesPage() {
                     onChange={applySavedQuery}
                     options={savedQueryOptions}
                     ariaLabel="保存した検索条件"
-                    className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm sm:max-w-xs"
+                    className="w-full min-w-[14rem] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm sm:w-auto sm:min-w-[18rem] sm:max-w-md"
                   />
                   {savedQueriesQuery.isLoading && <span className="text-xs text-slate-500">{t('app.loading')}</span>}
                 </div>
